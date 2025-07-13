@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timeline Cheyne - 会议时间线</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部信息 -->
+        <header class="header">
+            <div class="meeting-info">
+                <h1 class="meeting-title" id="meetingTitle">项目进展汇报会议</h1>
+                <div class="meeting-meta">
+                    <span class="meeting-date" id="meetingDate"></span>
+                    <span class="meeting-duration" id="meetingDuration">总时长: 90分钟</span>
+                </div>
+            </div>
+            <div class="overall-progress">
+                <div class="progress-info">
+                    <span class="progress-text" id="progressText">0% 完成</span>
+                    <span class="time-remaining" id="timeRemaining">剩余: 90分钟</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要时间线区域 -->
+        <main class="timeline-container">
+            <div class="timeline-header">
+                <h2>会议议程</h2>
+                <div class="timeline-controls">
+                    <button class="control-btn" id="prevBtn" title="上一个环节">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                    </button>
+                    <button class="control-btn primary" id="playPauseBtn" title="开始/暂停">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5,3 19,12 5,21"/>
+                        </svg>
+                    </button>
+                    <button class="control-btn" id="nextBtn" title="下一个环节">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                    <button class="control-btn" id="resetBtn" title="重置会议">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                            <path d="M3 3v5h5"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 时间线显示区域 -->
+            <div class="timeline-track" id="timelineTrack">
+                <!-- 时间线项目会通过JavaScript动态生成 -->
+            </div>
+
+            <!-- 当前环节详情 -->
+            <div class="current-session">
+                <div class="session-header">
+                    <h3 class="session-title" id="currentSessionTitle">准备开始...</h3>
+                    <div class="session-time">
+                        <span class="session-duration" id="currentSessionDuration">0分钟</span>
+                        <span class="session-elapsed" id="currentSessionElapsed">已用时: 0分钟</span>
+                    </div>
+                </div>
+                <div class="session-content">
+                    <p class="session-description" id="currentSessionDescription">请点击开始按钮开始会议</p>
+                    <div class="session-details" id="sessionDetails">
+                        <div class="detail-item">
+                            <span class="detail-label">主讲人:</span>
+                            <span class="detail-value" id="sessionPresenter">-</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">类型:</span>
+                            <span class="detail-value" id="sessionType">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="session-progress">
+                    <div class="session-progress-bar">
+                        <div class="session-progress-fill" id="sessionProgressFill"></div>
+                    </div>
+                    <div class="session-progress-text" id="sessionProgressText">0%</div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 底部状态栏 -->
+        <footer class="footer">
+            <div class="status-info">
+                <span class="status-text" id="statusText">等待开始</span>
+                <span class="current-time" id="currentTime"></span>
+            </div>
+            <div class="footer-controls">
+                <button class="footer-btn" id="fullscreenBtn" title="全屏模式">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                    </svg>
+                </button>
+                <button class="footer-btn" id="settingsBtn" title="设置">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                </button>
+                <button class="footer-btn" id="exportBtn" title="导出数据">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7,10 12,15 17,10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 设置模态框 -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>设置</h3>
+                <button class="modal-close" id="closeSettings">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label for="meetingTitleInput">会议标题:</label>
+                    <input type="text" id="meetingTitleInput" placeholder="输入会议标题">
+                </div>
+                <div class="setting-group">
+                    <label for="autoAdvanceToggle">自动切换环节:</label>
+                    <input type="checkbox" id="autoAdvanceToggle" checked>
+                </div>
+                <div class="setting-group">
+                    <label for="themeSelect">主题:</label>
+                    <select id="themeSelect">
+                        <option value="default">默认</option>
+                        <option value="dark">深色</option>
+                        <option value="light">浅色</option>
+                    </select>
+                </div>
+                <div class="setting-group">
+                    <label for="alertTimeInput">结束前提醒(分钟):</label>
+                    <input type="number" id="alertTimeInput" min="0" max="30" value="2">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelSettings">取消</button>
+                <button class="btn btn-primary" id="saveSettings">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知容器 -->
+    <div class="notification-container" id="notificationContainer"></div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
