@@ -33,15 +33,17 @@
         <!-- 左侧会话抽屉 -->
         <div id="sessionDrawer" class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col transition-all duration-300">
             <!-- 抽屉头部 -->
-            <div class="p-4 border-b border-gray-700">
+            <div class="drawer-header p-4 border-b border-gray-700">
                 <div class="flex justify-between items-center mb-3">
-                    <h2 class="text-lg font-bold">💬 会话</h2>
-                    <button id="newSessionBtn" class="px-2 py-1 bg-blue-600 rounded hover:bg-blue-500 text-sm">
-                        ➕ 新建
+                    <h2 class="drawer-title text-lg font-bold">💬 会话</h2>
+                    <button id="toggleDrawerCollapseBtn" class="p-2 rounded hover:bg-gray-700 transition-colors" title="折叠抽屉">
+                        <svg class="w-4 h-4 text-gray-400 hover:text-white collapse-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>
+                        </svg>
                     </button>
                 </div>
                 <!-- 搜索框 -->
-                <div class="relative">
+                <div class="drawer-search relative">
                     <input
                         type="search"
                         id="searchInput"
@@ -54,8 +56,17 @@
                 </div>
             </div>
 
+            <!-- 折叠状态的最小化头部 -->
+            <div class="drawer-collapsed-header hidden p-2 border-b border-gray-700">
+                <button id="expandDrawerBtn" class="w-full p-2 rounded hover:bg-gray-700 transition-colors flex justify-center" title="展开抽屉">
+                    <svg class="w-5 h-5 text-gray-400 hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
+            </div>
+
             <!-- 会话列表容器 -->
-            <div class="flex-1 overflow-y-auto">
+            <div class="drawer-content flex-1 overflow-y-auto">
                 <!-- 会话列表 -->
                 <ul id="sessionList" class="p-2 space-y-2">
                     <!-- 会话项将动态生成 -->
@@ -68,6 +79,29 @@
                         <!-- 搜索结果将动态生成 -->
                     </div>
                 </div>
+            </div>
+
+            <!-- 折叠状态的会话图标列表 -->
+            <div class="drawer-collapsed-content hidden flex-1 overflow-y-auto p-1">
+                <div id="collapsedSessionList" class="space-y-1">
+                    <!-- 折叠状态的会话图标将动态生成 -->
+                </div>
+            </div>
+
+            <!-- 抽屉底部 - 新建会话按钮 -->
+            <div class="drawer-footer p-3 border-t border-gray-700">
+                <button id="newSessionBtn" class="w-full py-2 bg-blue-600 rounded hover:bg-blue-500 text-sm font-medium transition-colors">
+                    ➕ 新建会话
+                </button>
+            </div>
+
+            <!-- 折叠状态的底部 -->
+            <div class="drawer-collapsed-footer hidden p-2 border-t border-gray-700">
+                <button id="newSessionCollapsedBtn" class="w-full p-2 rounded hover:bg-gray-700 transition-colors flex justify-center" title="新建会话">
+                    <svg class="w-4 h-4 text-blue-400 hover:text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                    </svg>
+                </button>
             </div>
         </div>
 
@@ -87,8 +121,8 @@
                         <button id="settingsBtn" class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm">
                             ⚙️ 设置
                         </button>
-                        <button id="clearBtn" class="px-3 py-1 bg-red-600 rounded hover:bg-red-500 text-sm">
-                            🗑️ 新建会话
+                        <button id="clearBtn" class="px-3 py-1 bg-green-600 rounded hover:bg-green-500 text-sm">
+                            ➕ 新建
                         </button>
                     </div>
                 </div>
@@ -178,8 +212,8 @@
                             class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                             <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
-                            <option value="gpt-4">GPT-4</option>
-                            <option value="gpt-4-turbo">GPT-4.1</option>
+                            <option value="gpt-5-nano-2025-08-07">GPT-5-nano</option>
+                            <option value="gpt-4.1">GPT-4.1</option>
                         </select>
                     </div>
                 </div>

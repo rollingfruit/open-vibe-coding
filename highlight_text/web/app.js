@@ -7,6 +7,7 @@ class AIAssistant {
         this.isStreaming = false;
         this.isSearchActive = false; // 是否正在搜索模式
         this.searchIndex = null; // 搜索索引（可选）
+        this.isDrawerCollapsed = false; // 抽屉是否折叠
 
         this.init();
     }
@@ -33,7 +34,7 @@ class AIAssistant {
         return stored ? JSON.parse(stored) : {
             apiKey: '',
             endpoint: 'https://api.openai.com/v1/chat/completions',
-            model: 'gpt-3.5-turbo'
+            model: 'gpt-5-nano-2025-08-07'
         };
     }
 
@@ -137,30 +138,41 @@ class AIAssistant {
         return truncated;
     }
 
-    renderSessionList() {
-        const sessionList = document.getElementById('sessionList');
-        sessionList.innerHTML = '';
 
-        this.sessions.slice().reverse().forEach(session => {
-            const listItem = document.createElement('li');
-            listItem.className = `session-item cursor-pointer p-3 rounded hover:bg-gray-700 transition-colors ${
-                session.id === this.activeSessionId ? 'bg-blue-600' : ''
-            }`;
+    deleteSession(sessionId) {
+        // 防止删除最后一个会话
+        if (this.sessions.length <= 1) {
+            this.showNotification('至少需要保留一个会话', 'error');
+            return;
+        }
 
-            listItem.innerHTML = `
-                <div class="session-title font-medium text-sm truncate">${this.escapeHtml(session.title)}</div>
-                <div class="session-info text-xs text-gray-400 mt-1">
-                    <span>${session.messages.length} 条消息</span>
-                    <span class="ml-2">${new Date(session.updatedAt).toLocaleDateString()}</span>
-                </div>
-            `;
+        const session = this.sessions.find(s => s.id === sessionId);
+        if (!session) {
+            return;
+        }
 
-            listItem.addEventListener('click', () => {
-                this.switchSession(session.id);
-            });
+        // 确认删除
+        if (!confirm(`确定要删除会话"${session.title}"吗？此操作不可撤销。`)) {
+            return;
+        }
 
-            sessionList.appendChild(listItem);
-        });
+        // 从数组中移除会话
+        this.sessions = this.sessions.filter(s => s.id !== sessionId);
+
+        // 如果删除的是当前活动会话，切换到最新的会话
+        if (this.activeSessionId === sessionId) {
+            if (this.sessions.length > 0) {
+                this.activeSessionId = this.sessions[this.sessions.length - 1].id;
+                this.renderActiveSessionMessages();
+                this.updateCurrentSessionTitle();
+            }
+        }
+
+        // 保存更新并重新渲染列表
+        this.saveSessions();
+        this.renderSessionList();
+
+        this.showNotification('会话已删除', 'success');
     }
 
     // 搜索功能方法
@@ -317,6 +329,128 @@ class AIAssistant {
         }
     }
 
+    // 抽屉折叠/展开切换
+    toggleDrawerCollapse() {
+        this.isDrawerCollapsed = !this.isDrawerCollapsed;
+        const drawer = document.getElementById('sessionDrawer');
+
+        if (this.isDrawerCollapsed) {
+            drawer.classList.add('collapsed');
+            this.renderCollapsedSessionList();
+        } else {
+            drawer.classList.remove('collapsed');
+            // 退出搜索模式并重新渲染正常列表
+            this.exitSearchMode();
+            this.renderSessionList();
+        }
+    }
+
+    // 渲染折叠状态下的会话图标列表
+    renderCollapsedSessionList() {
+        const collapsedList = document.getElementById('collapsedSessionList');
+        collapsedList.innerHTML = '';
+
+        this.sessions.slice().reverse().forEach((session, index) => {
+            const iconItem = document.createElement('div');
+            iconItem.className = `collapsed-session-item ${
+                session.id === this.activeSessionId ? 'active' : ''
+            }`;
+
+            // 生成会话图标（取标题首字符或默认图标）
+            const iconText = session.title === '新对话' ? '💬' :
+                            (session.title.charAt(0) || '💬');
+
+            iconItem.innerHTML = `
+                <span class="session-icon">${iconText}</span>
+                <div class="delete-btn-collapsed" data-session-id="${session.id}">✕</div>
+                <div class="tooltip-collapsed">${this.escapeHtml(session.title)}</div>
+            `;
+
+            // 点击切换会话
+            iconItem.addEventListener('click', (e) => {
+                if (e.target.classList.contains('delete-btn-collapsed')) {
+                    return;
+                }
+                this.switchSession(session.id);
+            });
+
+            // 删除按钮事件
+            const deleteBtn = iconItem.querySelector('.delete-btn-collapsed');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.deleteSession(session.id);
+            });
+
+            collapsedList.appendChild(iconItem);
+        });
+    }
+
+    // 重写renderSessionList方法，考虑折叠状态
+    renderSessionList() {
+        if (this.isDrawerCollapsed) {
+            this.renderCollapsedSessionList();
+            return;
+        }
+
+        const sessionList = document.getElementById('sessionList');
+        sessionList.innerHTML = '';
+
+        this.sessions.slice().reverse().forEach(session => {
+            const listItem = document.createElement('li');
+            listItem.className = `session-item cursor-pointer p-3 rounded hover:bg-gray-700 transition-colors ${
+                session.id === this.activeSessionId ? 'bg-blue-600' : ''
+            }`;
+
+            listItem.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div class="flex-1 min-w-0">
+                        <div class="session-title font-medium text-sm truncate">${this.escapeHtml(session.title)}</div>
+                        <div class="session-info text-xs text-gray-400 mt-1">
+                            <span>${session.messages.length} 条消息</span>
+                            <span class="ml-2">${new Date(session.updatedAt).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                    <button class="delete-session-btn opacity-0 transition-opacity duration-200 text-gray-400 hover:text-red-400 p-1"
+                            data-session-id="${session.id}"
+                            title="删除会话">
+                        ✕
+                    </button>
+                </div>
+            `;
+
+            // 点击会话项切换会话
+            listItem.addEventListener('click', (e) => {
+                // 如果点击的是删除按钮，不执行切换
+                if (e.target.classList.contains('delete-session-btn')) {
+                    return;
+                }
+                this.switchSession(session.id);
+            });
+
+            // 悬浮显示删除按钮
+            listItem.addEventListener('mouseenter', () => {
+                const deleteBtn = listItem.querySelector('.delete-session-btn');
+                deleteBtn.classList.remove('opacity-0');
+                deleteBtn.classList.add('opacity-100');
+            });
+
+            listItem.addEventListener('mouseleave', () => {
+                const deleteBtn = listItem.querySelector('.delete-session-btn');
+                deleteBtn.classList.remove('opacity-100');
+                deleteBtn.classList.add('opacity-0');
+            });
+
+            // 删除按钮事件
+            const deleteBtn = listItem.querySelector('.delete-session-btn');
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.deleteSession(session.id);
+            });
+
+            sessionList.appendChild(listItem);
+        });
+    }
+
     renderActiveSessionMessages() {
         const messagesContainer = document.getElementById('messages');
         messagesContainer.innerHTML = '';
@@ -363,14 +497,29 @@ class AIAssistant {
             this.hideSettings();
         });
 
-        // 新建会话（原来的清空按钮）
+        // 新建会话按钮（顶部的➕新建按钮）
         document.getElementById('clearBtn').addEventListener('click', () => {
             this.createNewSession();
         });
 
-        // 新建会话按钮
+        // 左侧抽屉的新建按钮
         document.getElementById('newSessionBtn').addEventListener('click', () => {
             this.createNewSession();
+        });
+
+        // 折叠状态的新建按钮
+        document.getElementById('newSessionCollapsedBtn').addEventListener('click', () => {
+            this.createNewSession();
+        });
+
+        // 折叠抽屉按钮
+        document.getElementById('toggleDrawerCollapseBtn').addEventListener('click', () => {
+            this.toggleDrawerCollapse();
+        });
+
+        // 展开抽屉按钮
+        document.getElementById('expandDrawerBtn').addEventListener('click', () => {
+            this.toggleDrawerCollapse();
         });
 
         // 抽屉切换按钮（移动端）

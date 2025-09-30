@@ -408,3 +408,141 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* 会话删除按钮样式 */
+.delete-session-btn {
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 2px;
+    min-width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.delete-session-btn:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #EF4444;
+}
+
+/* 防止删除按钮触发会话项点击 */
+.session-item .delete-session-btn {
+    z-index: 10;
+    position: relative;
+}
+
+/* 抽屉折叠状态样式 */
+#sessionDrawer {
+    transition: width 0.3s ease;
+}
+
+#sessionDrawer.collapsed {
+    width: 60px;
+}
+
+/* 折叠状态下隐藏的元素 */
+#sessionDrawer.collapsed .drawer-header,
+#sessionDrawer.collapsed .drawer-content,
+#sessionDrawer.collapsed .drawer-footer {
+    display: none;
+}
+
+/* 折叠状态下显示的元素 */
+#sessionDrawer.collapsed .drawer-collapsed-header,
+#sessionDrawer.collapsed .drawer-collapsed-content,
+#sessionDrawer.collapsed .drawer-collapsed-footer {
+    display: block !important;
+}
+
+/* 折叠状态下的会话图标 */
+.collapsed-session-item {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    background: #374151;
+    border: 2px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    margin: 0 auto;
+}
+
+.collapsed-session-item:hover {
+    background: #4B5563;
+    border-color: #6B7280;
+}
+
+.collapsed-session-item.active {
+    background: #2563EB;
+    border-color: #3B82F6;
+}
+
+/* 折叠状态下的会话图标内容 */
+.collapsed-session-item .session-icon {
+    font-size: 16px;
+    color: #D1D5DB;
+}
+
+.collapsed-session-item.active .session-icon {
+    color: white;
+}
+
+/* 折叠状态下的删除按钮 */
+.collapsed-session-item .delete-btn-collapsed {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 16px;
+    height: 16px;
+    background: #EF4444;
+    border-radius: 50%;
+    color: white;
+    font-size: 10px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 20;
+}
+
+.collapsed-session-item:hover .delete-btn-collapsed {
+    display: flex;
+}
+
+/* 工具提示样式 */
+.tooltip-collapsed {
+    position: absolute;
+    left: 65px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #1F2937;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    border: 1px solid #374151;
+}
+
+.collapsed-session-item:hover .tooltip-collapsed {
+    opacity: 1;
+}
+
+/* 箭头指示器 */
+.tooltip-collapsed::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-right-color: #1F2937;
+}
