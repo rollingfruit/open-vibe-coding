@@ -21,6 +21,7 @@
     "defaultEndpoint": "https://api.openai.com/v1/chat/completions",
     "model": "gpt-4.1-mini",
     "temperature": 0.7,
-    "maxTokens": 6000
+    "maxTokens": 10000,
+    "maxContextTokens": 20000
   }
 }

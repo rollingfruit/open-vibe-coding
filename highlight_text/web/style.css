@@ -546,3 +546,86 @@
     border: 5px solid transparent;
     border-right-color: #1F2937;
 }
+
+/* Token指示器样式 */
+#tokenIndicator {
+    transition: all 0.3s ease;
+}
+
+#tokenProgressCircle {
+    transition: stroke-dashoffset 0.5s ease, stroke 0.3s ease;
+}
+
+#tokenPercentage {
+    transition: color 0.3s ease;
+}
+
+/* Token用量颜色变化 */
+#tokenIndicator.warning #tokenProgressCircle {
+    stroke: #F59E0B; /* 橙色 */
+}
+
+#tokenIndicator.warning #tokenPercentage {
+    color: #F59E0B;
+}
+
+#tokenIndicator.danger #tokenProgressCircle {
+    stroke: #EF4444; /* 红色 */
+}
+
+#tokenIndicator.danger #tokenPercentage {
+    color: #EF4444;
+}
+
+/* 压缩按钮动画 */
+#compressContextBtn {
+    animation: pulseGlow 2s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+    0%, 100% {
+        box-shadow: 0 0 5px rgba(249, 115, 22, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 15px rgba(249, 115, 22, 0.6);
+    }
+}
+
+/* 上下文摘要区域样式 */
+#summaryContainer {
+    animation: slideDown 0.4s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+#summaryContent {
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+#summaryContent::-webkit-scrollbar {
+    width: 4px;
+}
+
+#summaryContent::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+}
+
+#summaryContent::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.5);
+    border-radius: 2px;
+}
+
+#summaryContent::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 246, 0.7);
+}

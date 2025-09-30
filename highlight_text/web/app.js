@@ -59,6 +59,15 @@ class AIAssistant {
         this.renderSessionList();
         this.renderActiveSessionMessages();
         this.updateCurrentSessionTitle();
+
+        // 检查并显示摘要
+        const activeSession = this.getActiveSession();
+        if (activeSession && activeSession.summary) {
+            this.showSummary(activeSession.summary);
+        }
+
+        // 更新Token用量
+        this.updateTokenUsage();
     }
 
     saveSessions() {
@@ -88,6 +97,10 @@ class AIAssistant {
             document.getElementById('messages').innerHTML = '';
             this.addWelcomeMessage();
 
+            // 隐藏摘要并更新Token用量
+            this.hideSummary();
+            this.updateTokenUsage();
+
             this.showNotification('已创建新会话', 'success');
         }
 
@@ -102,6 +115,17 @@ class AIAssistant {
 
         // 退出搜索模式
         this.exitSearchMode();
+
+        // 检查并显示摘要
+        const activeSession = this.getActiveSession();
+        if (activeSession && activeSession.summary) {
+            this.showSummary(activeSession.summary);
+        } else {
+            this.hideSummary();
+        }
+
+        // 更新Token用量
+        this.updateTokenUsage();
     }
 
     getActiveSession() {
@@ -124,6 +148,153 @@ class AIAssistant {
         const titleElement = document.getElementById('currentSessionTitle');
         if (titleElement && activeSession) {
             titleElement.textContent = `- ${activeSession.title}`;
+        }
+    }
+
+    updateTokenUsage() {
+        const activeSession = this.getActiveSession();
+        if (!activeSession || !this.config || !this.config.apiSettings) {
+            return;
+        }
+
+        // 使用maxContextTokens作为会话支持的最大token数
+        const maxTokens = this.config.apiSettings.maxContextTokens || 20000;
+        let currentTokens = 0;
+
+        // 计算当前Token用量
+        if (activeSession.summary) {
+            // 如果已压缩，只计算摘要的长度
+            currentTokens = activeSession.summary.length;
+            // 加上压缩点之后的新消息
+            if (activeSession.summarySplitIndex !== undefined) {
+                const newMessages = activeSession.messages.slice(activeSession.summarySplitIndex);
+                currentTokens += newMessages.reduce((sum, msg) => sum + msg.content.length, 0);
+            }
+        } else {
+            // 未压缩，计算所有消息的长度
+            currentTokens = activeSession.messages.reduce((sum, msg) => sum + msg.content.length, 0);
+        }
+
+        // 计算百分比
+        const percentage = Math.min(100, Math.round((currentTokens / maxTokens) * 100));
+
+        // 更新UI
+        const tokenPercentage = document.getElementById('tokenPercentage');
+        const tokenProgressCircle = document.getElementById('tokenProgressCircle');
+        const tokenIndicator = document.getElementById('tokenIndicator');
+        const compressBtn = document.getElementById('compressContextBtn');
+
+        if (tokenPercentage && tokenProgressCircle && tokenIndicator && compressBtn) {
+            tokenPercentage.textContent = `${percentage}%`;
+
+            // 计算圆形进度条的stroke-dashoffset
+            const circumference = 2 * Math.PI * 16; // 半径为16
+            const offset = circumference - (percentage / 100) * circumference;
+            tokenProgressCircle.style.strokeDashoffset = offset;
+
+            // 根据百分比改变颜色
+            tokenIndicator.classList.remove('warning', 'danger');
+            if (percentage >= 80) {
+                tokenIndicator.classList.add('danger');
+                // 显示压缩按钮（仅当未压缩过）
+                if (!activeSession.summary) {
+                    compressBtn.classList.remove('hidden');
+                } else {
+                    compressBtn.classList.add('hidden');
+                }
+            } else if (percentage >= 60) {
+                tokenIndicator.classList.add('warning');
+                compressBtn.classList.add('hidden');
+            } else {
+                compressBtn.classList.add('hidden');
+            }
+        }
+    }
+
+    async compressContext() {
+        const activeSession = this.getActiveSession();
+        if (!activeSession || activeSession.messages.length === 0) {
+            this.showNotification('当前会话没有可压缩的内容', 'error');
+            return;
+        }
+
+        if (activeSession.summary) {
+            this.showNotification('当前会话已经压缩过了', 'error');
+            return;
+        }
+
+        // 显示加载提示
+        this.showNotification('正在压缩上下文...', 'info');
+
+        try {
+            // 构造摘要请求
+            let conversationText = '请将以下对话内容进行简洁的总结，保留核心上下文信息、关键要点和重要细节：\n\n';
+            activeSession.messages.forEach((msg, index) => {
+                const role = msg.role === 'user' ? '用户' : 'AI助手';
+                conversationText += `${role}: ${msg.content}\n\n`;
+            });
+
+            // 调用AI生成摘要
+            const response = await fetch(this.settings.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.settings.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: this.settings.model,
+                    messages: [{ role: 'user', content: conversationText }],
+                    stream: false,
+                    temperature: 0.5,
+                    max_tokens: 1000
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const summary = data.choices?.[0]?.message?.content || '';
+
+            if (!summary) {
+                throw new Error('未能生成摘要');
+            }
+
+            // 保存摘要和压缩点
+            activeSession.summary = summary;
+            activeSession.summarySplitIndex = activeSession.messages.length;
+            activeSession.updatedAt = new Date().toISOString();
+
+            // 保存到localStorage
+            this.saveSessions();
+
+            // 更新UI
+            this.showSummary(summary);
+            this.updateTokenUsage();
+
+            this.showNotification('上下文压缩完成！', 'success');
+
+        } catch (error) {
+            console.error('压缩上下文失败:', error);
+            this.showNotification(`压缩失败: ${error.message}`, 'error');
+        }
+    }
+
+    showSummary(summary) {
+        const summaryContainer = document.getElementById('summaryContainer');
+        const summaryContent = document.getElementById('summaryContent');
+
+        if (summaryContainer && summaryContent) {
+            summaryContent.innerHTML = this.escapeHtml(summary).replace(/\n/g, '<br>');
+            summaryContainer.classList.remove('hidden');
+        }
+    }
+
+    hideSummary() {
+        const summaryContainer = document.getElementById('summaryContainer');
+        if (summaryContainer) {
+            summaryContainer.classList.add('hidden');
         }
     }
 
@@ -522,6 +693,11 @@ class AIAssistant {
             this.toggleDrawerCollapse();
         });
 
+        // 压缩上下文按钮
+        document.getElementById('compressContextBtn').addEventListener('click', () => {
+            this.compressContext();
+        });
+
         // 抽屉切换按钮（移动端）
         const toggleDrawerBtn = document.getElementById('toggleDrawerBtn');
         if (toggleDrawerBtn) {
@@ -675,6 +851,9 @@ class AIAssistant {
             this.saveSessions();
         }
 
+        // 更新Token用量
+        this.updateTokenUsage();
+
         await this.getAIResponse(message);
     }
 
@@ -686,6 +865,25 @@ class AIAssistant {
         const contentElement = aiMessageElement.querySelector('.message-content');
 
         try {
+            const activeSession = this.getActiveSession();
+            let messagesToSend = [];
+
+            // 如果会话已压缩，构造新的消息数组
+            if (activeSession && activeSession.summary && activeSession.summarySplitIndex !== undefined) {
+                // 添加摘要作为系统消息
+                messagesToSend.push({
+                    role: 'system',
+                    content: '以下是之前对话的摘要：\n' + activeSession.summary
+                });
+
+                // 添加压缩点之后的新消息
+                const newMessages = activeSession.messages.slice(activeSession.summarySplitIndex);
+                messagesToSend = messagesToSend.concat(newMessages);
+            } else {
+                // 未压缩，使用完整的消息历史
+                messagesToSend = activeSession?.messages || [];
+            }
+
             const response = await fetch(this.settings.endpoint, {
                 method: 'POST',
                 headers: {
@@ -694,10 +892,10 @@ class AIAssistant {
                 },
                 body: JSON.stringify({
                     model: this.settings.model,
-                    messages: this.getActiveSession()?.messages || [],
+                    messages: messagesToSend,
                     stream: true,
-                    temperature: 0.7,
-                    max_tokens: 2000
+                    temperature: this.config?.apiSettings?.temperature || 0.7,
+                    max_tokens: this.config?.apiSettings?.maxTokens || 10000
                 })
             });
 
@@ -738,7 +936,6 @@ class AIAssistant {
             }
 
             // 将AI响应添加到当前活动会话
-            const activeSession = this.getActiveSession();
             if (activeSession) {
                 activeSession.messages.push({ role: 'assistant', content: fullResponse });
                 activeSession.updatedAt = new Date().toISOString();
@@ -746,7 +943,8 @@ class AIAssistant {
                 this.renderSessionList(); // 更新会话列表中的消息计数
             }
 
-            this.logInteraction(userMessage, fullResponse, 'main');
+            // 记录交互，包含完整的发送给LLM的消息
+            this.logInteraction(userMessage, fullResponse, 'main', messagesToSend);
 
         } catch (error) {
             console.error('API Error:', error);
@@ -755,6 +953,7 @@ class AIAssistant {
             this.isStreaming = false;
             this.toggleSendButton(true);
             aiMessageElement.querySelector('.typewriter')?.classList.remove('typewriter');
+            this.updateTokenUsage();
         }
     }
 
@@ -1360,18 +1559,25 @@ class AIAssistant {
         return modal;
     }
 
-    async logInteraction(userInput, aiResponse, type) {
+    async logInteraction(userInput, aiResponse, type, messagesToSend = null) {
         try {
+            const logData = {
+                user_input: userInput,
+                ai_response: aiResponse,
+                type: type
+            };
+
+            // 如果提供了messagesToSend，添加到日志中
+            if (messagesToSend) {
+                logData.messages_to_send = messagesToSend;
+            }
+
             await fetch('/log', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    user_input: userInput,
-                    ai_response: aiResponse,
-                    type: type
-                })
+                body: JSON.stringify(logData)
             });
         } catch (error) {
             console.error('Failed to log interaction:', error);
