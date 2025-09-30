@@ -436,10 +436,14 @@ class AIAssistant {
             // 截取消息内容片段
             const snippet = this.createSearchSnippet(result.messageContent, result.highlights);
 
+            const roleIcon = result.messageRole === 'user' ?
+                `<i data-lucide="user" class="w-4 h-4 text-blue-400"></i>` :
+                `<i data-lucide="bot" class="w-4 h-4 text-green-400"></i>`;
+
             resultItem.innerHTML = `
                 <div class="flex justify-between items-start mb-1">
                     <span class="text-sm font-medium text-blue-400">${this.escapeHtml(result.sessionTitle)}</span>
-                    <span class="text-xs text-gray-500">${result.messageRole === 'user' ? '👤' : '🤖'}</span>
+                    <span class="text-xs text-gray-500">${roleIcon}</span>
                 </div>
                 <div class="text-sm text-gray-300 leading-relaxed">${snippet}</div>
             `;
@@ -450,6 +454,11 @@ class AIAssistant {
 
             searchResults.appendChild(resultItem);
         });
+
+        // Reinitialize icons for search results
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
     }
 
     createSearchSnippet(content, highlights) {
@@ -545,7 +554,9 @@ class AIAssistant {
 
             iconItem.innerHTML = `
                 <span class="session-icon">${iconText}</span>
-                <div class="delete-btn-collapsed" data-session-id="${session.id}">✕</div>
+                <div class="delete-btn-collapsed" data-session-id="${session.id}">
+                    <i data-lucide="x" class="w-3 h-3"></i>
+                </div>
                 <div class="tooltip-collapsed">${this.escapeHtml(session.title)}</div>
             `;
 
@@ -566,6 +577,11 @@ class AIAssistant {
 
             collapsedList.appendChild(iconItem);
         });
+
+        // Reinitialize icons for collapsed list
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
     }
 
     // 重写renderSessionList方法，考虑折叠状态
@@ -588,15 +604,21 @@ class AIAssistant {
                 <div class="flex justify-between items-start">
                     <div class="flex-1 min-w-0">
                         <div class="session-title font-medium text-sm truncate">${this.escapeHtml(session.title)}</div>
-                        <div class="session-info text-xs text-gray-400 mt-1">
-                            <span>${session.messages.length} 条消息</span>
-                            <span class="ml-2">${new Date(session.updatedAt).toLocaleDateString()}</span>
+                        <div class="session-info text-xs text-gray-400 mt-1 flex items-center gap-2">
+                            <span class="flex items-center gap-1">
+                                <i data-lucide="message-circle" class="w-3 h-3"></i>
+                                <span>${session.messages.length}</span>
+                            </span>
+                            <span class="flex items-center gap-1">
+                                <i data-lucide="clock" class="w-3 h-3"></i>
+                                <span>${new Date(session.updatedAt).toLocaleDateString()}</span>
+                            </span>
                         </div>
                     </div>
                     <button class="delete-session-btn opacity-0 transition-opacity duration-200 text-gray-400 hover:text-red-400 p-1"
                             data-session-id="${session.id}"
                             title="删除会话">
-                        ✕
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
                     </button>
                 </div>
             `;
@@ -632,6 +654,11 @@ class AIAssistant {
 
             sessionList.appendChild(listItem);
         });
+
+        // Reinitialize icons for session list
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
     }
 
     renderActiveSessionMessages() {
@@ -902,10 +929,12 @@ class AIAssistant {
     }
 
     addWelcomeMessage() {
+        const aiAvatar = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 8V4H8'/%3E%3Crect width='16' height='12' x='4' y='8' rx='2'/%3E%3Cpath d='M2 14h2'/%3E%3Cpath d='M20 14h2'/%3E%3Cpath d='M15 13v2'/%3E%3Cpath d='M9 13v2'/%3E%3C/svg%3E`;
         const welcomeHTML = `
-            <div class="message-bubble ai-message">
-                <div class="mb-2">
-                    <span class="text-green-400 font-semibold">🤖 AI助手</span>
+            <div class="message-bubble ai-message animate__animated animate__fadeInUp">
+                <div class="mb-2 flex items-center gap-2">
+                    <img src="${aiAvatar}" class="w-6 h-6" alt="AI">
+                    <span class="text-green-400 font-semibold">AI助手</span>
                     <span class="text-gray-400 text-sm ml-2">刚刚</span>
                 </div>
                 <div class="message-content">
@@ -1137,16 +1166,18 @@ class AIAssistant {
         const timestamp = new Date().toLocaleTimeString();
 
         const messageElement = document.createElement('div');
-        messageElement.className = `message-bubble ${type}-message`;
+        messageElement.className = `message-bubble ${type}-message animate__animated animate__fadeInUp`;
 
         if (type === 'user') {
             let imageHtml = '';
             if (imageUrl) {
                 imageHtml = `<img src="${imageUrl}" class="message-image" onclick="window.open('${imageUrl}', '_blank')">`;
             }
+            const userAvatar = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E`;
             messageElement.innerHTML = `
-                <div class="mb-2">
-                    <span class="text-blue-400 font-semibold">👤 你</span>
+                <div class="mb-2 flex items-center gap-2">
+                    <img src="${userAvatar}" class="w-6 h-6" alt="User">
+                    <span class="text-blue-400 font-semibold">你</span>
                     <span class="text-gray-400 text-sm ml-2">${timestamp}</span>
                 </div>
                 <div class="message-content">
@@ -1155,9 +1186,11 @@ class AIAssistant {
                 </div>
             `;
         } else {
+            const aiAvatar = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 8V4H8'/%3E%3Crect width='16' height='12' x='4' y='8' rx='2'/%3E%3Cpath d='M2 14h2'/%3E%3Cpath d='M20 14h2'/%3E%3Cpath d='M15 13v2'/%3E%3Cpath d='M9 13v2'/%3E%3C/svg%3E`;
             messageElement.innerHTML = `
-                <div class="mb-2">
-                    <span class="text-green-400 font-semibold">🤖 AI助手</span>
+                <div class="mb-2 flex items-center gap-2">
+                    <img src="${aiAvatar}" class="w-6 h-6" alt="AI">
+                    <span class="text-green-400 font-semibold">AI助手</span>
                     <span class="text-gray-400 text-sm ml-2">${timestamp}</span>
                 </div>
                 <div class="message-content ${isStreaming ? 'typewriter' : ''}">
@@ -1181,6 +1214,18 @@ class AIAssistant {
         content = this.unescapeUnicodeChars(content);
         element.innerHTML = this.formatMessage(content);
         this.addCopyButtons();
+
+        // Reinitialize Lucide icons for new content
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+
+        // 重新应用代码高亮
+        if (typeof hljs !== 'undefined') {
+            element.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }
     }
 
     formatMessage(content) {
@@ -1298,13 +1343,22 @@ class AIAssistant {
         return `
             <div class="code-block relative bg-gray-800 rounded-lg mt-2 mb-2">
                 <div class="flex justify-between items-center px-4 py-2 bg-gray-700 rounded-t-lg">
-                    <span class="text-sm text-gray-300">${language}</span>
+                    <span class="text-sm text-gray-300 font-medium">${language}</span>
                     <div class="flex space-x-2">
                         ${language.toLowerCase() === 'html' ? `
-                            <button class="render-html-btn text-gray-400 hover:text-white text-sm" data-code-id="${codeId}">🎨 渲染</button>
-                            <button class="fullscreen-html-btn text-gray-400 hover:text-white text-sm" data-code-id="${codeId}">🔍 全屏</button>
+                            <button class="render-html-btn text-gray-400 hover:text-white text-sm flex items-center gap-1" data-code-id="${codeId}">
+                                <i data-lucide="palette" class="w-4 h-4"></i>
+                                <span>渲染</span>
+                            </button>
+                            <button class="fullscreen-html-btn text-gray-400 hover:text-white text-sm flex items-center gap-1" data-code-id="${codeId}">
+                                <i data-lucide="maximize" class="w-4 h-4"></i>
+                                <span>全屏</span>
+                            </button>
                         ` : ''}
-                        <button class="copy-code-btn text-gray-400 hover:text-white text-sm" data-code-id="${codeId}">📋 复制</button>
+                        <button class="copy-code-btn text-gray-400 hover:text-white text-sm flex items-center gap-1" data-code-id="${codeId}">
+                            <i data-lucide="copy" class="w-4 h-4"></i>
+                            <span>复制</span>
+                        </button>
                     </div>
                 </div>
                 <pre class="p-4 overflow-x-auto"><code class="language-${language}">${escapedCode}</code></pre>
@@ -1327,6 +1381,18 @@ class AIAssistant {
 
 
     addCopyButtons() {
+        // Reinitialize Lucide icons for code block buttons
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+
+        // 应用代码高亮到所有代码块
+        if (typeof hljs !== 'undefined') {
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }
+
         // 复制按钮事件
         document.querySelectorAll('.copy-code-btn').forEach(btn => {
             btn.replaceWith(btn.cloneNode(true));
@@ -1439,7 +1505,9 @@ class AIAssistant {
 
         // 高亮代码
         if (typeof hljs !== 'undefined') {
-            hljs.highlightElement(modal.querySelector('code'));
+            modal.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
         }
     }
 
@@ -1822,16 +1890,28 @@ class AIAssistant {
 
     showNotification(message, type = 'info') {
         const notification = document.createElement('div');
-        notification.className = `fixed top-4 right-4 px-4 py-2 rounded shadow-lg text-white z-50 ${
+        notification.className = `fixed top-4 right-4 px-4 py-3 rounded-lg shadow-lg text-white z-50 animate__animated animate__fadeInRight flex items-center gap-2 ${
             type === 'success' ? 'bg-green-600' :
             type === 'error' ? 'bg-red-600' : 'bg-blue-600'
         }`;
-        notification.textContent = message;
+
+        const iconName = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info';
+        notification.innerHTML = `
+            <i data-lucide="${iconName}" class="w-5 h-5"></i>
+            <span>${message}</span>
+        `;
 
         document.body.appendChild(notification);
 
+        // Initialize icons for notification
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+
         setTimeout(() => {
-            notification.remove();
+            notification.classList.remove('animate__fadeInRight');
+            notification.classList.add('animate__fadeOutRight');
+            setTimeout(() => notification.remove(), 300);
         }, 3000);
     }
 
@@ -2260,8 +2340,9 @@ class AIAssistant {
         followups.forEach((followup, index) => {
             html += `
                 <div class="border border-gray-600 rounded-lg p-4">
-                    <div class="mb-2">
-                        <span class="text-blue-400 font-semibold">💬 追问 ${index + 1}</span>
+                    <div class="mb-2 flex items-center gap-2">
+                        <i data-lucide="message-square" class="w-4 h-4 text-blue-400"></i>
+                        <span class="text-blue-400 font-semibold">追问 ${index + 1}</span>
                     </div>
                     <div class="mb-3 text-sm text-gray-300 bg-gray-900 p-2 rounded">
                         <strong>问:</strong> ${this.escapeHtml(followup.question)}
@@ -2277,6 +2358,19 @@ class AIAssistant {
 
         contentElement.innerHTML = html;
         this.addCopyButtons();
+
+        // Initialize icons for followup modal
+        if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+        }
+
+        // 应用代码高亮
+        if (typeof hljs !== 'undefined') {
+            contentElement.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }
+
         document.body.appendChild(modal);
     }
 }
@@ -2288,6 +2382,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化代码高亮
     if (typeof hljs !== 'undefined') {
         hljs.highlightAll();
+    }
+
+    // 初始化Lucide图标
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
     }
 });
 
