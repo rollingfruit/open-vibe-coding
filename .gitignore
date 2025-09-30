@@ -1,0 +1,5 @@
+highlight_text/go.mod
+highlight_text/ai-helper-web
+highlight_text/dev.md
+.gitignore
+highlight_text/interactions.log.json

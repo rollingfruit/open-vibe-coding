@@ -1,0 +1,26 @@
+{
+  "commands": [
+    {
+      "label": "大白话解释",
+      "prompt": "用最简单易懂的大白话解释以下内容：\n"
+    },
+    {
+      "label": "业务代码java解释",
+      "prompt": "作为一名资深Java架构师，请解释以下代码片段的业务逻辑和设计模式：\n"
+    },
+    {
+      "label": "HTML交互式动画解释",
+      "prompt": "将以下概念或描述，用一个可交互的HTML/CSS/JS代码片段来生动地展示：\n"
+    },
+    {
+      "label": "自定义解释",
+      "prompt": "请根据你的知识，对以下内容进行自定义的深入解读：\n"
+    }
+  ],
+  "apiSettings": {
+    "defaultEndpoint": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-4.1-mini",
+    "temperature": 0.7,
+    "maxTokens": 2000
+  }
+}

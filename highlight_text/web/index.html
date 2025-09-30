@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI助手 - Web版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .chat-container {
+            height: calc(100vh - 140px);
+        }
+        .typewriter {
+            animation: blink-caret 0.75s step-end infinite;
+        }
+        @keyframes blink-caret {
+            from, to { border-color: transparent }
+            50% { border-color: orange; }
+        }
+        .tooltip {
+            z-index: 1000;
+        }
+        .modal {
+            z-index: 1001;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <!-- 主容器 -->
+    <div id="app" class="flex flex-col h-screen">
+        <!-- 顶部标题栏 -->
+        <header class="bg-gray-800 p-4 border-b border-gray-700">
+            <div class="flex justify-between items-center">
+                <h1 class="text-xl font-bold">🤖 AI助手</h1>
+                <div class="flex space-x-2">
+                    <button id="settingsBtn" class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm">
+                        ⚙️ 设置
+                    </button>
+                    <button id="clearBtn" class="px-3 py-1 bg-red-600 rounded hover:bg-red-500 text-sm">
+                        🗑️ 清空
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 聊天区域 -->
+        <main class="flex-1 overflow-y-auto p-4 chat-container" id="chatContainer">
+            <div id="messages" class="space-y-4">
+                <!-- 欢迎消息 -->
+                <div class="message-bubble ai-message">
+                    <div class="mb-2">
+                        <span class="text-green-400 font-semibold">🤖 AI助手</span>
+                        <span class="text-gray-400 text-sm ml-2">刚刚</span>
+                    </div>
+                    <div class="message-content">
+                        <p>你好！我是你的AI助手。你可以：</p>
+                        <ul class="list-disc list-inside mt-2 space-y-1">
+                            <li>向我提出任何问题</li>
+                            <li>选中我的回答中的任意文字，会弹出快捷操作菜单</li>
+                            <li>点击代码块右上角的按钮复制代码</li>
+                        </ul>
+                        <p class="mt-2">现在就开始对话吧！</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 输入区域 -->
+        <footer class="bg-gray-800 border-t border-gray-700 p-4">
+            <!-- 快捷提示区域 -->
+            <div id="inputShortcuts" class="hidden mb-3">
+                <div class="text-xs text-gray-400 mb-2">💡 快捷指令:</div>
+                <div class="flex flex-wrap gap-2" id="shortcutButtons">
+                    <!-- 快捷按钮将动态生成 -->
+                </div>
+            </div>
+
+            <form id="chatForm" class="flex space-x-2">
+                <input
+                    type="text"
+                    id="messageInput"
+                    placeholder="输入你的问题..."
+                    class="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autocomplete="off"
+                >
+                <button
+                    type="submit"
+                    id="sendBtn"
+                    class="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    发送
+                </button>
+            </form>
+        </footer>
+    </div>
+
+    <!-- 设置模态框 -->
+    <div id="settingsModal" class="fixed inset-0 bg-black bg-opacity-50 hidden modal">
+        <div class="flex items-center justify-center h-full">
+            <div class="bg-gray-800 rounded-lg p-6 w-96 max-w-md">
+                <h2 class="text-lg font-bold mb-4">⚙️ 设置</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">API密钥</label>
+                        <input
+                            type="password"
+                            id="apiKeyInput"
+                            placeholder="输入你的API密钥"
+                            class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">API端点</label>
+                        <input
+                            type="text"
+                            id="apiEndpointInput"
+                            placeholder="https://api.openai.com/v1/chat/completions"
+                            class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">模型</label>
+                        <select
+                            id="modelSelect"
+                            class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+                            <option value="gpt-4">GPT-4</option>
+                            <option value="gpt-4-turbo">GPT-4.1</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button
+                        id="cancelSettingsBtn"
+                        class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded"
+                    >
+                        取消
+                    </button>
+                    <button
+                        id="saveSettingsBtn"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded"
+                    >
+                        保存
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 追问模态框模板 -->
+    <template id="followupModalTemplate">
+        <div class="fixed inset-0 bg-black bg-opacity-50 modal followup-modal">
+            <div class="flex items-start justify-center h-full pt-10">
+                <div class="bg-gray-800 rounded-lg p-6 w-2/3 max-w-4xl max-h-[80vh] overflow-y-auto">
+                    <div class="flex justify-between items-start mb-4">
+                        <h2 class="text-lg font-bold">💡 追问结果</h2>
+                        <button class="close-followup text-gray-400 hover:text-white">
+                            ✕
+                        </button>
+                    </div>
+                    <div class="followup-content">
+                        <!-- 追问内容将在这里显示 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 划词菜单模板 -->
+    <template id="tooltipTemplate">
+        <div class="tooltip bg-gray-800 border border-gray-600 rounded-lg shadow-lg p-3">
+            <div class="flex flex-wrap gap-2 mb-2">
+                <!-- 快捷按钮将动态生成 -->
+            </div>
+            <div class="flex space-x-2">
+                <input type="text" class="custom-prompt-input flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400" placeholder="自定义提示词...">
+                <button class="custom-prompt-btn px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-sm">发送</button>
+            </div>
+        </div>
+    </template>
+
+    <script src="app.js"></script>
+</body>
+</html>

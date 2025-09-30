@@ -1,0 +1,267 @@
+/* 自定义样式 */
+
+/* 消息气泡样式 */
+.message-bubble {
+    @apply bg-gray-800 rounded-lg p-4 border border-gray-700;
+}
+
+.user-message {
+    @apply bg-blue-900 border-blue-700 ml-8;
+}
+
+.ai-message {
+    @apply bg-gray-800 border-gray-700 mr-8;
+}
+
+/* 代码块样式优化 */
+.code-block {
+    @apply my-4;
+}
+
+.code-block pre {
+    @apply bg-gray-900;
+}
+
+.code-block code {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+/* 滚动条样式 */
+.chat-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-container::-webkit-scrollbar-track {
+    background: #374151;
+}
+
+.chat-container::-webkit-scrollbar-thumb {
+    background: #6B7280;
+    border-radius: 3px;
+}
+
+.chat-container::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF;
+}
+
+/* 打字机效果 */
+.typewriter {
+    position: relative;
+}
+
+.typewriter::after {
+    content: '|';
+    animation: blink 1s infinite;
+    margin-left: 2px;
+}
+
+@keyframes blink {
+    0%, 50% {
+        opacity: 1;
+    }
+    51%, 100% {
+        opacity: 0;
+    }
+}
+
+/* 按钮悬浮效果 */
+.copy-code-btn:hover {
+    @apply bg-gray-600;
+}
+
+/* 工具提示样式 */
+.tooltip {
+    animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 模态框动画 */
+.modal {
+    animation: modalFadeIn 0.3s ease-in-out;
+}
+
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.followup-modal .bg-gray-800 {
+    animation: modalSlideIn 0.3s ease-in-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* 输入框焦点效果 */
+#messageInput:focus {
+    @apply ring-2 ring-blue-500 ring-opacity-50;
+}
+
+/* 设置模态框样式 */
+#settingsModal .bg-gray-800 {
+    animation: modalSlideIn 0.3s ease-in-out;
+}
+
+/* 通知样式 */
+.notification {
+    animation: slideInRight 0.3s ease-in-out;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(100px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* 选择文本的样式 */
+::selection {
+    background-color: rgba(59, 130, 246, 0.3);
+    color: white;
+}
+
+::-moz-selection {
+    background-color: rgba(59, 130, 246, 0.3);
+    color: white;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .user-message {
+        @apply ml-2;
+    }
+
+    .ai-message {
+        @apply mr-2;
+    }
+
+    .followup-modal .bg-gray-800 {
+        @apply w-11/12;
+    }
+}
+
+/* 加载状态 */
+.loading {
+    position: relative;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid #374151;
+    border-top: 2px solid #60A5FA;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* 高亮选中的文本 */
+.highlighted {
+    background-color: rgba(59, 130, 246, 0.2);
+    padding: 1px 2px;
+    border-radius: 2px;
+}
+
+/* 自定义链接样式 */
+.message-content a {
+    @apply text-blue-400 hover:text-blue-300 underline;
+}
+
+/* 列表样式 */
+.message-content ul {
+    @apply list-disc list-inside;
+}
+
+.message-content ol {
+    @apply list-decimal list-inside;
+}
+
+.message-content li {
+    @apply mb-1;
+}
+
+/* 表格样式 */
+.message-content table {
+    @apply w-full border-collapse border border-gray-600 my-4;
+}
+
+.message-content th,
+.message-content td {
+    @apply border border-gray-600 px-4 py-2;
+}
+
+.message-content th {
+    @apply bg-gray-700 font-semibold;
+}
+
+/* 引用块样式 */
+.message-content blockquote {
+    @apply border-l-4 border-gray-600 pl-4 italic text-gray-300;
+}
+
+/* 输入框快捷提示样式 */
+#inputShortcuts {
+    animation: slideInUp 0.2s ease-out;
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 快捷按钮悬浮效果 */
+#shortcutButtons button {
+    transition: all 0.2s ease;
+}
+
+#shortcutButtons button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(147, 51, 234, 0.3);
+}
