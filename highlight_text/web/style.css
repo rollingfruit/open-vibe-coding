@@ -659,40 +659,76 @@
 /* 节点轴SVG样式 */
 .node-axis-line {
     stroke: #6B7280;
-    stroke-width: 3px;
+    stroke-width: 2px;
     stroke-linecap: round;
 }
 
+/* 基础节点样式 */
 .node-axis-circle {
-    stroke: #6B7280;
-    stroke-width: 3px;
-    fill: #1F2937;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
-.node-axis-circle:hover {
+/* 用户消息节点 - 实心蓝色圆 */
+.node-axis-circle.user {
+    fill: #3B82F6;
     stroke: #3B82F6;
-    stroke-width: 4px;
+    stroke-width: 2px;
 }
 
-.node-axis-circle.solid {
+.node-axis-circle.user:hover {
+    fill: #60A5FA;
+    stroke: #60A5FA;
+    stroke-width: 3px;
+}
+
+/* AI消息节点 - 空心绿色圆，稍小 */
+.node-axis-circle.ai {
+    fill: #1F2937;
+    stroke: #10B981;
+    stroke-width: 2px;
+}
+
+.node-axis-circle.ai:hover {
+    fill: #10B981;
+    stroke: #34D399;
+    stroke-width: 3px;
+}
+
+/* 有追问的节点 - 实心填充 */
+.node-axis-circle.has-followup {
     fill: #6B7280;
 }
 
-.node-axis-circle.solid:hover {
+.node-axis-circle.user.has-followup {
     fill: #3B82F6;
-    stroke: #3B82F6;
 }
 
+.node-axis-circle.ai.has-followup {
+    fill: #10B981;
+}
+
+/* 分支节点 - 橙色小圆 */
 .node-axis-circle.branch {
     stroke: #F59E0B;
     fill: #1F2937;
+    stroke-width: 2px;
 }
 
 .node-axis-circle.branch:hover {
     stroke: #FBBF24;
     fill: #F59E0B;
+    stroke-width: 3px;
+}
+
+/* 增加点击区域 - 透明的大圆 */
+.node-axis-clickarea {
+    fill: transparent;
+    cursor: pointer;
+}
+
+.node-axis-clickarea:hover {
+    fill: rgba(59, 130, 246, 0.1);
 }
 
 /* 节点轴折叠图标动画 */

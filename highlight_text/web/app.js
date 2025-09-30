@@ -2074,8 +2074,9 @@ class AIAssistant {
 
         const messages = activeSession.messages;
         const nodeSpacing = 40; // 节点间距
-        const nodeRadius = 6; // 节点半径
-        const lineWidth = 3; // 线条宽度
+        const userNodeRadius = 7; // 用户节点半径（大圆）
+        const aiNodeRadius = 5; // AI节点半径（小圆）
+        const clickAreaRadius = 12; // 点击区域半径
         const startX = 30; // 起始X位置
         const startY = 20; // 起始Y位置
         const branchLength = 20; // 分叉长度
@@ -2090,6 +2091,8 @@ class AIAssistant {
         // 绘制节点和连线
         messages.forEach((message, index) => {
             const y = startY + (index * nodeSpacing);
+            const isUser = message.role === 'user';
+            const nodeRadius = isUser ? userNodeRadius : aiNodeRadius;
 
             // 绘制连线（除了第一个节点）
             if (index > 0) {
@@ -2106,15 +2109,34 @@ class AIAssistant {
             // 判断是否有追问
             const hasFollowups = message.followups && message.followups.length > 0;
 
+            // 创建节点组
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            group.setAttribute('data-message-index', index);
+            group.setAttribute('data-message-id', message.messageId || '');
+
+            // 绘制透明的大点击区域
+            const clickArea = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            clickArea.setAttribute('cx', startX);
+            clickArea.setAttribute('cy', y);
+            clickArea.setAttribute('r', clickAreaRadius);
+            clickArea.setAttribute('class', 'node-axis-clickarea');
+            group.appendChild(clickArea);
+
             // 绘制主节点
             const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             circle.setAttribute('cx', startX);
             circle.setAttribute('cy', y);
             circle.setAttribute('r', nodeRadius);
-            circle.setAttribute('class', hasFollowups ? 'node-axis-circle solid' : 'node-axis-circle');
-            circle.setAttribute('data-message-index', index);
-            circle.setAttribute('data-message-id', message.messageId || '');
-            svg.appendChild(circle);
+
+            // 设置样式类
+            let circleClass = `node-axis-circle ${isUser ? 'user' : 'ai'}`;
+            if (hasFollowups) {
+                circleClass += ' has-followup';
+            }
+            circle.setAttribute('class', circleClass);
+
+            group.appendChild(circle);
+            svg.appendChild(group);
 
             // 如果有追问，绘制分叉
             if (hasFollowups) {
@@ -2127,16 +2149,29 @@ class AIAssistant {
                 branchLine.setAttribute('class', 'node-axis-line');
                 svg.appendChild(branchLine);
 
+                // 创建分支节点组
+                const branchGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                branchGroup.setAttribute('data-message-index', index);
+                branchGroup.setAttribute('data-message-id', message.messageId || '');
+                branchGroup.setAttribute('data-is-branch', 'true');
+
+                // 分支节点的点击区域
+                const branchClickArea = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                branchClickArea.setAttribute('cx', startX + nodeRadius + branchLength);
+                branchClickArea.setAttribute('cy', y);
+                branchClickArea.setAttribute('r', clickAreaRadius * 0.8);
+                branchClickArea.setAttribute('class', 'node-axis-clickarea');
+                branchGroup.appendChild(branchClickArea);
+
                 // 绘制分叉节点
                 const branchCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                 branchCircle.setAttribute('cx', startX + nodeRadius + branchLength);
                 branchCircle.setAttribute('cy', y);
-                branchCircle.setAttribute('r', nodeRadius * 0.7);
+                branchCircle.setAttribute('r', 4); // 分叉节点最小
                 branchCircle.setAttribute('class', 'node-axis-circle branch');
-                branchCircle.setAttribute('data-message-index', index);
-                branchCircle.setAttribute('data-message-id', message.messageId || '');
-                branchCircle.setAttribute('data-is-branch', 'true');
-                svg.appendChild(branchCircle);
+                branchGroup.appendChild(branchCircle);
+
+                svg.appendChild(branchGroup);
             }
         });
     }
@@ -2160,11 +2195,15 @@ class AIAssistant {
     handleNodeClick(e) {
         const target = e.target;
 
-        // 只处理圆形节点的点击
-        if (target.tagName !== 'circle') return;
+        // 查找包含data-message-index的元素（可能是circle或g）
+        let clickedElement = target;
+        if (target.tagName === 'circle') {
+            // 如果点击的是circle，向上查找g元素
+            clickedElement = target.closest('g') || target;
+        }
 
-        const messageIndex = parseInt(target.getAttribute('data-message-index'));
-        const isBranch = target.getAttribute('data-is-branch') === 'true';
+        const messageIndex = parseInt(clickedElement.getAttribute('data-message-index'));
+        const isBranch = clickedElement.getAttribute('data-is-branch') === 'true';
 
         if (isNaN(messageIndex)) return;
 
@@ -2179,7 +2218,12 @@ class AIAssistant {
             }
         }
 
-        // 滚动到对应的消息位置（主节点和分叉节点都执行）
+        // 滚动到对应的消息位置
+        this.scrollToMessage(messageIndex);
+    }
+
+    // 滚动到指定索引的消息
+    scrollToMessage(messageIndex, retryCount = 0) {
         const messagesContainer = document.getElementById('messages');
         const messageElements = messagesContainer.querySelectorAll('[data-message-index]');
 
@@ -2199,8 +2243,11 @@ class AIAssistant {
             setTimeout(() => {
                 targetMessageElement.classList.remove('highlight-search-result');
             }, 3000);
-        } else {
-            console.log('未找到对应的消息元素，messageIndex:', messageIndex);
+        } else if (retryCount < 3) {
+            // 如果没找到且重试次数少于3次，延迟后重试（可能消息还在渲染中）
+            setTimeout(() => {
+                this.scrollToMessage(messageIndex, retryCount + 1);
+            }, 200);
         }
     }
 
