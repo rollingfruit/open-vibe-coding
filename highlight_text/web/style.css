@@ -265,3 +265,146 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(147, 51, 234, 0.3);
 }
+
+/* 会话管理样式 */
+#sessionDrawer {
+    transition: all 0.3s ease;
+}
+
+/* 会话列表项样式 */
+.session-item {
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.session-item:hover {
+    border-color: #4B5563;
+    transform: translateX(2px);
+}
+
+.session-item.active {
+    background-color: #2563EB !important;
+    border-color: #3B82F6;
+}
+
+/* 搜索结果样式 */
+.search-result-item {
+    transition: all 0.2s ease;
+    border-left: 3px solid #3B82F6;
+}
+
+.search-result-item:hover {
+    background-color: #374151;
+    border-left-color: #60A5FA;
+    transform: translateX(2px);
+}
+
+/* 搜索高亮样式 */
+.highlight-search-result {
+    animation: searchHighlight 3s ease-in-out;
+    background-color: rgba(59, 130, 246, 0.2);
+    border-radius: 4px;
+    border: 2px solid #3B82F6;
+}
+
+@keyframes searchHighlight {
+    0% {
+        background-color: rgba(59, 130, 246, 0.4);
+        border-color: #60A5FA;
+    }
+    50% {
+        background-color: rgba(59, 130, 246, 0.3);
+        border-color: #3B82F6;
+    }
+    100% {
+        background-color: rgba(59, 130, 246, 0.1);
+        border-color: #2563EB;
+    }
+}
+
+/* 会话抽屉滚动条样式 */
+#sessionDrawer .overflow-y-auto::-webkit-scrollbar {
+    width: 4px;
+}
+
+#sessionDrawer .overflow-y-auto::-webkit-scrollbar-track {
+    background: #374151;
+}
+
+#sessionDrawer .overflow-y-auto::-webkit-scrollbar-thumb {
+    background: #6B7280;
+    border-radius: 2px;
+}
+
+#sessionDrawer .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF;
+}
+
+/* 搜索输入框样式 */
+#searchInput:focus {
+    ring-width: 2px;
+    ring-color: #3B82F6;
+    ring-opacity: 0.5;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+    #sessionDrawer {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        z-index: 50;
+        width: 280px;
+        transform: translateX(-100%);
+    }
+
+    #sessionDrawer.visible {
+        transform: translateX(0);
+    }
+
+    /* 移动端时添加背景遮罩 */
+    #sessionDrawer.visible::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 280px;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: -1;
+    }
+}
+
+/* 会话标题截断 */
+.session-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+
+/* 新建按钮样式 */
+#newSessionBtn:hover {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
+
+/* 搜索无结果样式 */
+.no-results {
+    opacity: 0.7;
+    font-style: italic;
+}
+
+/* 抽屉收起/展开动画 */
+.drawer-transition {
+    transition: width 0.3s ease, transform 0.3s ease;
+}
+
+/* 当前会话标题样式 */
+#currentSessionTitle {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

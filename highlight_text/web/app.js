@@ -2,8 +2,11 @@ class AIAssistant {
     constructor() {
         this.config = null;
         this.settings = this.loadSettings();
-        this.currentConversation = [];
+        this.sessions = []; // 所有会话的数组
+        this.activeSessionId = null; // 当前活动会话ID
         this.isStreaming = false;
+        this.isSearchActive = false; // 是否正在搜索模式
+        this.searchIndex = null; // 搜索索引（可选）
 
         this.init();
     }
@@ -12,7 +15,7 @@ class AIAssistant {
         await this.loadConfig();
         this.bindEvents();
         this.checkUrlParams();
-        this.loadStoredConversation();
+        this.loadSessions();
     }
 
     async loadConfig() {
@@ -38,26 +41,304 @@ class AIAssistant {
         localStorage.setItem('aiAssistantSettings', JSON.stringify(this.settings));
     }
 
-    loadStoredConversation() {
-        const stored = localStorage.getItem('aiAssistantConversation');
+    loadSessions() {
+        const stored = localStorage.getItem('aiAssistantSessions');
         if (stored) {
-            this.currentConversation = JSON.parse(stored);
-            this.renderStoredMessages();
+            this.sessions = JSON.parse(stored);
+        }
+
+        // 如果没有会话，创建一个默认会话
+        if (this.sessions.length === 0) {
+            this.createNewSession('新对话', true);
+        } else {
+            // 设置最后一个会话为活动会话
+            this.activeSessionId = this.sessions[this.sessions.length - 1].id;
+        }
+
+        this.renderSessionList();
+        this.renderActiveSessionMessages();
+        this.updateCurrentSessionTitle();
+    }
+
+    saveSessions() {
+        localStorage.setItem('aiAssistantSessions', JSON.stringify(this.sessions));
+    }
+
+    // 会话管理方法
+    createNewSession(title = null, isDefault = false) {
+        const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        const newSession = {
+            id: sessionId,
+            title: title || '新对话',
+            messages: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        this.sessions.push(newSession);
+        this.activeSessionId = sessionId;
+
+        if (!isDefault) {
+            this.saveSessions();
+            this.renderSessionList();
+            this.updateCurrentSessionTitle();
+
+            // 清空聊天区域并显示欢迎消息
+            document.getElementById('messages').innerHTML = '';
+            this.addWelcomeMessage();
+
+            this.showNotification('已创建新会话', 'success');
+        }
+
+        return newSession;
+    }
+
+    switchSession(sessionId) {
+        this.activeSessionId = sessionId;
+        this.renderActiveSessionMessages();
+        this.renderSessionList(); // 更新选中状态
+        this.updateCurrentSessionTitle();
+
+        // 退出搜索模式
+        this.exitSearchMode();
+    }
+
+    getActiveSession() {
+        return this.sessions.find(session => session.id === this.activeSessionId);
+    }
+
+    updateSessionTitle(sessionId, newTitle) {
+        const session = this.sessions.find(s => s.id === sessionId);
+        if (session) {
+            session.title = newTitle;
+            session.updatedAt = new Date().toISOString();
+            this.saveSessions();
+            this.renderSessionList();
+            this.updateCurrentSessionTitle();
         }
     }
 
-    saveConversation() {
-        localStorage.setItem('aiAssistantConversation', JSON.stringify(this.currentConversation));
+    updateCurrentSessionTitle() {
+        const activeSession = this.getActiveSession();
+        const titleElement = document.getElementById('currentSessionTitle');
+        if (titleElement && activeSession) {
+            titleElement.textContent = `- ${activeSession.title}`;
+        }
     }
 
-    renderStoredMessages() {
-        const messagesContainer = document.getElementById('messages');
+    generateSessionTitle(firstMessage) {
+        // 从第一条消息生成会话标题
+        if (!firstMessage) return '新对话';
 
-        this.currentConversation.forEach(msg => {
+        const truncated = firstMessage.length > 20 ?
+            firstMessage.substring(0, 20) + '...' :
+            firstMessage;
+
+        return truncated;
+    }
+
+    renderSessionList() {
+        const sessionList = document.getElementById('sessionList');
+        sessionList.innerHTML = '';
+
+        this.sessions.slice().reverse().forEach(session => {
+            const listItem = document.createElement('li');
+            listItem.className = `session-item cursor-pointer p-3 rounded hover:bg-gray-700 transition-colors ${
+                session.id === this.activeSessionId ? 'bg-blue-600' : ''
+            }`;
+
+            listItem.innerHTML = `
+                <div class="session-title font-medium text-sm truncate">${this.escapeHtml(session.title)}</div>
+                <div class="session-info text-xs text-gray-400 mt-1">
+                    <span>${session.messages.length} 条消息</span>
+                    <span class="ml-2">${new Date(session.updatedAt).toLocaleDateString()}</span>
+                </div>
+            `;
+
+            listItem.addEventListener('click', () => {
+                this.switchSession(session.id);
+            });
+
+            sessionList.appendChild(listItem);
+        });
+    }
+
+    // 搜索功能方法
+    performSearch(query) {
+        if (!query.trim()) {
+            this.exitSearchMode();
+            return;
+        }
+
+        this.isSearchActive = true;
+        const results = this.searchInAllSessions(query);
+        this.renderSearchResults(results);
+    }
+
+    searchInAllSessions(query) {
+        const results = [];
+        const searchTerms = query.toLowerCase().split(' ').filter(term => term.length > 0);
+
+        this.sessions.forEach(session => {
+            session.messages.forEach((message, messageIndex) => {
+                const content = message.content.toLowerCase();
+                let matchCount = 0;
+                let highlights = [];
+
+                // 检查每个搜索词是否在消息中
+                searchTerms.forEach(term => {
+                    if (content.includes(term)) {
+                        matchCount++;
+                        // 找到匹配位置用于高亮
+                        let index = content.indexOf(term);
+                        while (index !== -1) {
+                            highlights.push({ start: index, end: index + term.length });
+                            index = content.indexOf(term, index + 1);
+                        }
+                    }
+                });
+
+                // 如果所有搜索词都匹配，则添加到结果中
+                if (matchCount === searchTerms.length) {
+                    results.push({
+                        sessionId: session.id,
+                        sessionTitle: session.title,
+                        messageIndex: messageIndex,
+                        messageContent: message.content,
+                        messageRole: message.role,
+                        highlights: highlights,
+                        score: matchCount / searchTerms.length // 简单的相关性评分
+                    });
+                }
+            });
+        });
+
+        // 按相关性排序
+        results.sort((a, b) => b.score - a.score);
+        return results;
+    }
+
+    renderSearchResults(results) {
+        const sessionList = document.getElementById('sessionList');
+        const searchResultsContainer = document.getElementById('searchResultsContainer');
+        const searchResults = document.getElementById('searchResults');
+
+        // 隐藏会话列表，显示搜索结果
+        sessionList.style.display = 'none';
+        searchResultsContainer.classList.remove('hidden');
+
+        searchResults.innerHTML = '';
+
+        if (results.length === 0) {
+            searchResults.innerHTML = '<div class="p-3 text-gray-400 text-sm">没有找到匹配的结果</div>';
+            return;
+        }
+
+        results.forEach(result => {
+            const resultItem = document.createElement('div');
+            resultItem.className = 'search-result-item cursor-pointer p-3 rounded hover:bg-gray-700 transition-colors border-l-2 border-blue-500';
+
+            // 截取消息内容片段
+            const snippet = this.createSearchSnippet(result.messageContent, result.highlights);
+
+            resultItem.innerHTML = `
+                <div class="flex justify-between items-start mb-1">
+                    <span class="text-sm font-medium text-blue-400">${this.escapeHtml(result.sessionTitle)}</span>
+                    <span class="text-xs text-gray-500">${result.messageRole === 'user' ? '👤' : '🤖'}</span>
+                </div>
+                <div class="text-sm text-gray-300 leading-relaxed">${snippet}</div>
+            `;
+
+            resultItem.addEventListener('click', () => {
+                this.goToSearchResult(result.sessionId, result.messageIndex);
+            });
+
+            searchResults.appendChild(resultItem);
+        });
+    }
+
+    createSearchSnippet(content, highlights) {
+        // 创建带高亮的内容片段
+        let snippet = content;
+        if (snippet.length > 200) {
+            // 找到第一个高亮位置附近的内容
+            if (highlights.length > 0) {
+                const firstHighlight = highlights[0];
+                const start = Math.max(0, firstHighlight.start - 50);
+                const end = Math.min(content.length, firstHighlight.end + 150);
+                snippet = (start > 0 ? '...' : '') + content.substring(start, end) + (end < content.length ? '...' : '');
+            } else {
+                snippet = content.substring(0, 200) + '...';
+            }
+        }
+
+        return this.escapeHtml(snippet);
+    }
+
+    exitSearchMode() {
+        this.isSearchActive = false;
+        const sessionList = document.getElementById('sessionList');
+        const searchResultsContainer = document.getElementById('searchResultsContainer');
+        const searchInput = document.getElementById('searchInput');
+
+        sessionList.style.display = 'block';
+        searchResultsContainer.classList.add('hidden');
+        searchInput.value = '';
+    }
+
+    goToSearchResult(sessionId, messageIndex) {
+        // 切换到指定会话
+        this.switchSession(sessionId);
+
+        // 等待消息渲染完成后滚动到指定消息
+        setTimeout(() => {
+            const messageElement = document.querySelector(`[data-message-index="${messageIndex}"]`);
+            if (messageElement) {
+                messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                // 添加临时高亮效果
+                messageElement.classList.add('highlight-search-result');
+                setTimeout(() => {
+                    messageElement.classList.remove('highlight-search-result');
+                }, 3000);
+            }
+        }, 100);
+
+        this.showNotification('已跳转到搜索结果', 'success');
+    }
+
+    // 移动端抽屉切换
+    toggleDrawer() {
+        const drawer = document.getElementById('sessionDrawer');
+        if (drawer.classList.contains('hidden')) {
+            drawer.classList.remove('hidden');
+        } else {
+            drawer.classList.add('hidden');
+        }
+    }
+
+    renderActiveSessionMessages() {
+        const messagesContainer = document.getElementById('messages');
+        messagesContainer.innerHTML = '';
+
+        const activeSession = this.getActiveSession();
+        if (!activeSession) {
+            this.addWelcomeMessage();
+            return;
+        }
+
+        if (activeSession.messages.length === 0) {
+            this.addWelcomeMessage();
+            return;
+        }
+
+        activeSession.messages.forEach((msg, index) => {
             if (msg.role === 'user') {
-                this.addMessage(msg.content, 'user', false);
+                const messageEl = this.addMessage(msg.content, 'user', false);
+                messageEl.setAttribute('data-message-index', index);
             } else if (msg.role === 'assistant') {
-                this.addMessage(msg.content, 'ai', false);
+                const messageEl = this.addMessage(msg.content, 'ai', false);
+                messageEl.setAttribute('data-message-index', index);
             }
         });
     }
@@ -82,9 +363,32 @@ class AIAssistant {
             this.hideSettings();
         });
 
-        // 清空聊天
+        // 新建会话（原来的清空按钮）
         document.getElementById('clearBtn').addEventListener('click', () => {
-            this.clearChat();
+            this.createNewSession();
+        });
+
+        // 新建会话按钮
+        document.getElementById('newSessionBtn').addEventListener('click', () => {
+            this.createNewSession();
+        });
+
+        // 抽屉切换按钮（移动端）
+        const toggleDrawerBtn = document.getElementById('toggleDrawerBtn');
+        if (toggleDrawerBtn) {
+            toggleDrawerBtn.addEventListener('click', () => {
+                this.toggleDrawer();
+            });
+        }
+
+        // 搜索输入框
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            // 防抖搜索
+            clearTimeout(this.searchTimeout);
+            this.searchTimeout = setTimeout(() => {
+                this.performSearch(query);
+            }, 300);
         });
 
         // 输入框事件
@@ -206,7 +510,21 @@ class AIAssistant {
         input.value = '';
         this.hideInputShortcuts();
         this.addMessage(message, 'user');
-        this.currentConversation.push({ role: 'user', content: message });
+
+        // 将消息添加到当前活动会话
+        const activeSession = this.getActiveSession();
+        if (activeSession) {
+            activeSession.messages.push({ role: 'user', content: message });
+
+            // 如果这是会话的第一条用户消息，自动生成标题
+            if (activeSession.messages.length === 1) {
+                const newTitle = this.generateSessionTitle(message);
+                this.updateSessionTitle(activeSession.id, newTitle);
+            }
+
+            activeSession.updatedAt = new Date().toISOString();
+            this.saveSessions();
+        }
 
         await this.getAIResponse(message);
     }
@@ -227,7 +545,7 @@ class AIAssistant {
                 },
                 body: JSON.stringify({
                     model: this.settings.model,
-                    messages: this.currentConversation,
+                    messages: this.getActiveSession()?.messages || [],
                     stream: true,
                     temperature: 0.7,
                     max_tokens: 2000
@@ -270,8 +588,15 @@ class AIAssistant {
                 }
             }
 
-            this.currentConversation.push({ role: 'assistant', content: fullResponse });
-            this.saveConversation();
+            // 将AI响应添加到当前活动会话
+            const activeSession = this.getActiveSession();
+            if (activeSession) {
+                activeSession.messages.push({ role: 'assistant', content: fullResponse });
+                activeSession.updatedAt = new Date().toISOString();
+                this.saveSessions();
+                this.renderSessionList(); // 更新会话列表中的消息计数
+            }
+
             this.logInteraction(userMessage, fullResponse, 'main');
 
         } catch (error) {
@@ -447,7 +772,10 @@ class AIAssistant {
                 <div class="flex justify-between items-center px-4 py-2 bg-gray-700 rounded-t-lg">
                     <span class="text-sm text-gray-300">${language}</span>
                     <div class="flex space-x-2">
-                        ${language.toLowerCase() === 'html' ? `<button class="render-html-btn text-gray-400 hover:text-white text-sm" data-code-id="${codeId}">🎨 渲染</button>` : ''}
+                        ${language.toLowerCase() === 'html' ? `
+                            <button class="render-html-btn text-gray-400 hover:text-white text-sm" data-code-id="${codeId}">🎨 渲染</button>
+                            <button class="fullscreen-html-btn text-gray-400 hover:text-white text-sm" data-code-id="${codeId}">🔍 全屏</button>
+                        ` : ''}
                         <button class="copy-code-btn text-gray-400 hover:text-white text-sm" data-code-id="${codeId}">📋 复制</button>
                     </div>
                 </div>
@@ -501,6 +829,23 @@ class AIAssistant {
                 const htmlCode = window.codeStorage ? window.codeStorage.get(codeId) : '';
                 if (htmlCode) {
                     this.showHtmlPreview(htmlCode);
+                } else {
+                    this.showNotification('HTML代码不存在', 'error');
+                }
+            });
+        });
+
+        // HTML全屏预览按钮事件
+        document.querySelectorAll('.fullscreen-html-btn').forEach(btn => {
+            btn.replaceWith(btn.cloneNode(true));
+        });
+
+        document.querySelectorAll('.fullscreen-html-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const codeId = btn.getAttribute('data-code-id');
+                const htmlCode = window.codeStorage ? window.codeStorage.get(codeId) : '';
+                if (htmlCode) {
+                    this.showFullscreenHtmlPreview(htmlCode);
                 } else {
                     this.showNotification('HTML代码不存在', 'error');
                 }
@@ -567,6 +912,73 @@ class AIAssistant {
         // 高亮代码
         if (typeof hljs !== 'undefined') {
             hljs.highlightElement(modal.querySelector('code'));
+        }
+    }
+
+    showFullscreenHtmlPreview(htmlCode) {
+        // 确保HTML代码经过正确的反转义处理
+        const cleanHtmlCode = this.unescapeUnicodeChars(htmlCode);
+
+        try {
+            // 方法1: 使用POST请求到后端预览端点
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/preview';
+            form.target = '_blank';
+            form.style.display = 'none';
+
+            const htmlInput = document.createElement('input');
+            htmlInput.type = 'hidden';
+            htmlInput.name = 'html';
+            htmlInput.value = cleanHtmlCode;
+
+            form.appendChild(htmlInput);
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+
+            this.showNotification('已在新窗口打开全屏预览', 'success');
+
+        } catch (error) {
+            console.error('全屏预览错误:', error);
+
+            // 备用方法: 使用fetch API和新窗口
+            this.fallbackFullscreenPreview(cleanHtmlCode);
+        }
+    }
+
+    async fallbackFullscreenPreview(htmlCode) {
+        try {
+            // 使用fetch发送HTML内容到后端
+            const response = await fetch('/preview', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    html: htmlCode
+                })
+            });
+
+            if (response.ok) {
+                const htmlContent = await response.text();
+
+                // 创建新窗口并写入HTML内容
+                const newWindow = window.open('', '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+                if (newWindow) {
+                    newWindow.document.open();
+                    newWindow.document.write(htmlContent);
+                    newWindow.document.close();
+                    this.showNotification('已在新窗口打开全屏预览', 'success');
+                } else {
+                    this.showNotification('无法打开新窗口，请检查浏览器弹窗设置', 'error');
+                }
+            } else {
+                throw new Error('后端预览服务响应错误');
+            }
+        } catch (error) {
+            console.error('备用全屏预览错误:', error);
+            this.showNotification('全屏预览失败，请稍后重试', 'error');
         }
     }
 
@@ -899,7 +1311,21 @@ class AIAssistant {
 
         // 添加用户消息到界面
         this.addMessage(userInput, 'user');
-        this.currentConversation.push({ role: 'user', content: fullPrompt });
+
+        // 将消息添加到当前活动会话
+        const activeSession = this.getActiveSession();
+        if (activeSession) {
+            activeSession.messages.push({ role: 'user', content: fullPrompt });
+
+            // 如果这是会话的第一条用户消息，自动生成标题
+            if (activeSession.messages.length === 1) {
+                const newTitle = this.generateSessionTitle(userInput);
+                this.updateSessionTitle(activeSession.id, newTitle);
+            }
+
+            activeSession.updatedAt = new Date().toISOString();
+            this.saveSessions();
+        }
 
         // 发送到AI
         this.getAIResponse(fullPrompt);

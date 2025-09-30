@@ -29,71 +29,122 @@
 </head>
 <body class="bg-gray-900 text-white">
     <!-- 主容器 -->
-    <div id="app" class="flex flex-col h-screen">
-        <!-- 顶部标题栏 -->
-        <header class="bg-gray-800 p-4 border-b border-gray-700">
-            <div class="flex justify-between items-center">
-                <h1 class="text-xl font-bold">🤖 AI助手</h1>
-                <div class="flex space-x-2">
-                    <button id="settingsBtn" class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm">
-                        ⚙️ 设置
-                    </button>
-                    <button id="clearBtn" class="px-3 py-1 bg-red-600 rounded hover:bg-red-500 text-sm">
-                        🗑️ 清空
+    <div id="app" class="flex h-screen">
+        <!-- 左侧会话抽屉 -->
+        <div id="sessionDrawer" class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col transition-all duration-300">
+            <!-- 抽屉头部 -->
+            <div class="p-4 border-b border-gray-700">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-lg font-bold">💬 会话</h2>
+                    <button id="newSessionBtn" class="px-2 py-1 bg-blue-600 rounded hover:bg-blue-500 text-sm">
+                        ➕ 新建
                     </button>
                 </div>
-            </div>
-        </header>
-
-        <!-- 聊天区域 -->
-        <main class="flex-1 overflow-y-auto p-4 chat-container" id="chatContainer">
-            <div id="messages" class="space-y-4">
-                <!-- 欢迎消息 -->
-                <div class="message-bubble ai-message">
-                    <div class="mb-2">
-                        <span class="text-green-400 font-semibold">🤖 AI助手</span>
-                        <span class="text-gray-400 text-sm ml-2">刚刚</span>
-                    </div>
-                    <div class="message-content">
-                        <p>你好！我是你的AI助手。你可以：</p>
-                        <ul class="list-disc list-inside mt-2 space-y-1">
-                            <li>向我提出任何问题</li>
-                            <li>选中我的回答中的任意文字，会弹出快捷操作菜单</li>
-                            <li>点击代码块右上角的按钮复制代码</li>
-                        </ul>
-                        <p class="mt-2">现在就开始对话吧！</p>
+                <!-- 搜索框 -->
+                <div class="relative">
+                    <input
+                        type="search"
+                        id="searchInput"
+                        placeholder="搜索历史记录..."
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    <div class="absolute right-2 top-2">
+                        <span class="text-gray-400 text-sm">🔍</span>
                     </div>
                 </div>
             </div>
-        </main>
 
-        <!-- 输入区域 -->
-        <footer class="bg-gray-800 border-t border-gray-700 p-4">
-            <!-- 快捷提示区域 -->
-            <div id="inputShortcuts" class="hidden mb-3">
-                <div class="text-xs text-gray-400 mb-2">💡 快捷指令:</div>
-                <div class="flex flex-wrap gap-2" id="shortcutButtons">
-                    <!-- 快捷按钮将动态生成 -->
+            <!-- 会话列表容器 -->
+            <div class="flex-1 overflow-y-auto">
+                <!-- 会话列表 -->
+                <ul id="sessionList" class="p-2 space-y-2">
+                    <!-- 会话项将动态生成 -->
+                </ul>
+
+                <!-- 搜索结果容器 -->
+                <div id="searchResultsContainer" class="hidden p-2">
+                    <div class="text-sm text-gray-400 mb-2">搜索结果</div>
+                    <div id="searchResults" class="space-y-2">
+                        <!-- 搜索结果将动态生成 -->
+                    </div>
                 </div>
             </div>
+        </div>
 
-            <form id="chatForm" class="flex space-x-2">
-                <input
-                    type="text"
-                    id="messageInput"
-                    placeholder="输入你的问题..."
-                    class="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    autocomplete="off"
-                >
-                <button
-                    type="submit"
-                    id="sendBtn"
-                    class="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    发送
-                </button>
-            </form>
-        </footer>
+        <!-- 主聊天区域 -->
+        <div class="flex-1 flex flex-col">
+            <!-- 顶部标题栏 -->
+            <header class="bg-gray-800 p-4 border-b border-gray-700">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center space-x-3">
+                        <button id="toggleDrawerBtn" class="md:hidden px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm">
+                            ☰
+                        </button>
+                        <h1 class="text-xl font-bold">🤖 AI助手</h1>
+                        <span id="currentSessionTitle" class="text-sm text-gray-400"></span>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button id="settingsBtn" class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm">
+                            ⚙️ 设置
+                        </button>
+                        <button id="clearBtn" class="px-3 py-1 bg-red-600 rounded hover:bg-red-500 text-sm">
+                            🗑️ 新建会话
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- 聊天区域 -->
+            <main class="flex-1 overflow-y-auto p-4 chat-container" id="chatContainer">
+                <div id="messages" class="space-y-4">
+                    <!-- 欢迎消息 -->
+                    <div class="message-bubble ai-message">
+                        <div class="mb-2">
+                            <span class="text-green-400 font-semibold">🤖 AI助手</span>
+                            <span class="text-gray-400 text-sm ml-2">刚刚</span>
+                        </div>
+                        <div class="message-content">
+                            <p>你好！我是你的AI助手。你可以：</p>
+                            <ul class="list-disc list-inside mt-2 space-y-1">
+                                <li>向我提出任何问题</li>
+                                <li>选中我的回答中的任意文字，会弹出快捷操作菜单</li>
+                                <li>点击代码块右上角的按钮复制代码</li>
+                                <li>在左侧查看和搜索历史会话</li>
+                            </ul>
+                            <p class="mt-2">现在就开始对话吧！</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- 输入区域 -->
+            <footer class="bg-gray-800 border-t border-gray-700 p-4">
+                <!-- 快捷提示区域 -->
+                <div id="inputShortcuts" class="hidden mb-3">
+                    <div class="text-xs text-gray-400 mb-2">💡 快捷指令:</div>
+                    <div class="flex flex-wrap gap-2" id="shortcutButtons">
+                        <!-- 快捷按钮将动态生成 -->
+                    </div>
+                </div>
+
+                <form id="chatForm" class="flex space-x-2">
+                    <input
+                        type="text"
+                        id="messageInput"
+                        placeholder="输入你的问题..."
+                        class="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        autocomplete="off"
+                    >
+                    <button
+                        type="submit"
+                        id="sendBtn"
+                        class="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        发送
+                    </button>
+                </form>
+            </footer>
+        </div>
     </div>
 
     <!-- 设置模态框 -->
