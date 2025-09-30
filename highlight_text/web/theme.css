@@ -1,0 +1,470 @@
+/* ============================================
+   Theme System - CSS Custom Properties
+   ============================================ */
+
+/* 暗色主题（默认）*/
+:root {
+    /* 背景色 */
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-tertiary: #334155;
+    --bg-gradient-start: rgba(15, 23, 42, 0.4);
+    --bg-gradient-end: rgba(15, 23, 42, 0.2);
+    --bg-page: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+
+    /* 文本颜色 */
+    --text-primary: rgba(255, 255, 255, 0.95);
+    --text-secondary: rgba(255, 255, 255, 0.7);
+    --text-tertiary: rgba(156, 163, 175, 1);
+    --text-muted: rgba(107, 114, 128, 1);
+
+    /* 品牌色 */
+    --color-brand-blue: #3b82f6;
+    --color-brand-green: #10b981;
+    --color-brand-orange: #f97316;
+    --color-brand-purple: #8b5cf6;
+
+    /* 消息气泡 */
+    --bubble-bg: rgba(55, 65, 81, 0.3);
+    --bubble-bg-gradient-start: rgba(31, 41, 55, 0.8);
+    --bubble-bg-gradient-end: rgba(55, 65, 81, 0.6);
+    --bubble-border: rgba(75, 85, 99, 0.3);
+    --bubble-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    --bubble-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.25);
+
+    /* AI消息特定颜色 */
+    --ai-bubble-gradient-start: rgba(31, 41, 55, 0.8);
+    --ai-bubble-gradient-end: rgba(55, 65, 81, 0.6);
+    --ai-bubble-border: rgba(75, 85, 99, 0.3);
+    --ai-text-color: rgba(255, 255, 255, 0.95);
+    --ai-accent-color: #10b981;
+
+    /* 用户消息特定颜色 */
+    --user-bubble-gradient-start: rgba(37, 99, 235, 0.15);
+    --user-bubble-gradient-end: rgba(59, 130, 246, 0.08);
+    --user-bubble-border: rgba(96, 165, 250, 0.3);
+    --user-text-color: rgba(219, 234, 254, 0.95);
+    --user-accent-color: #3b82f6;
+
+    /* 容器背景（毛玻璃效果）*/
+    --container-bg: rgba(30, 41, 59, 0.85);
+    --container-border: rgba(71, 85, 105, 0.5);
+    --container-shadow: 0 4px 24px rgba(0, 0, 0, 0.2), 0 1px 4px rgba(0, 0, 0, 0.1);
+
+    /* 输入框 */
+    --input-bg: rgba(55, 65, 81, 0.6);
+    --input-border: rgba(75, 85, 99, 0.6);
+    --input-border-focus: rgba(59, 130, 246, 0.5);
+    --input-text: #ffffff;
+    --input-placeholder: #9ca3af;
+
+    /* 按钮 */
+    --button-bg: rgba(51, 65, 85, 0.8);
+    --button-bg-hover: rgba(51, 65, 85, 1);
+    --button-border: rgba(71, 85, 105, 0.5);
+    --button-text: rgba(255, 255, 255, 0.95);
+
+    /* 代码块 */
+    --code-bg: #0d1117;
+    --code-header-bg-start: rgba(55, 65, 81, 0.9);
+    --code-header-bg-end: rgba(31, 41, 55, 0.8);
+    --code-border: rgba(75, 85, 99, 0.4);
+    --code-text: #e6edf3;
+
+    /* 会话列表 */
+    --session-item-bg-hover: rgba(55, 65, 81, 0.7);
+    --session-item-border-hover: rgba(75, 85, 99, 0.5);
+    --session-item-bg-active: #2563eb;
+    --session-item-text: rgba(255, 255, 255, 0.9);
+
+    /* 节点轴 */
+    --node-line-color: #6b7280;
+    --node-user-fill: #3b82f6;
+    --node-ai-fill: #1f2937;
+    --node-ai-stroke: #10b981;
+    --node-branch-fill: #1f2937;
+    --node-branch-stroke: #f59e0b;
+
+    /* 滚动条 */
+    --scrollbar-track: #374151;
+    --scrollbar-thumb: #6b7280;
+    --scrollbar-thumb-hover: #9ca3af;
+
+    /* 边框分割线 */
+    --divider-color: rgba(255, 255, 255, 0.05);
+}
+
+/* 亮色主题（Liquid Glass）*/
+.light-theme {
+    /* 背景色 - 使用柔和的灰白色，避免刺眼 */
+    --bg-primary: #f9fafb;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f3f4f6;
+    --bg-gradient-start: rgba(249, 250, 251, 0.8);
+    --bg-gradient-end: rgba(243, 244, 246, 0.6);
+    --bg-page: linear-gradient(135deg, #fafbfc 0%, #f3f4f6 50%, #e5e7eb 100%);
+
+    /* 文本颜色 */
+    --text-primary: #334155;
+    --text-secondary: #475569;
+    --text-tertiary: #64748b;
+    --text-muted: #94a3b8;
+
+    /* 品牌色保持不变 */
+    --color-brand-blue: #2563eb;
+    --color-brand-green: #059669;
+    --color-brand-orange: #f97316;
+    --color-brand-purple: #7c3aed;
+
+    /* 消息气泡 */
+    --bubble-bg: rgba(255, 255, 255, 0.7);
+    --bubble-bg-gradient-start: rgba(255, 255, 255, 0.8);
+    --bubble-bg-gradient-end: rgba(248, 250, 252, 0.6);
+    --bubble-border: rgba(209, 213, 219, 0.3);
+    --bubble-shadow: 0 4px 16px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.02);
+    --bubble-shadow-hover: 0 6px 20px rgba(0, 0, 0, 0.06), 0 3px 10px rgba(0, 0, 0, 0.03);
+
+    /* AI消息特定颜色 */
+    --ai-bubble-gradient-start: rgba(241, 245, 249, 0.8);
+    --ai-bubble-gradient-end: rgba(248, 250, 252, 0.6);
+    --ai-bubble-border: rgba(203, 213, 225, 0.4);
+    --ai-text-color: #334155;
+    --ai-accent-color: #059669;
+
+    /* 用户消息特定颜色 */
+    --user-bubble-gradient-start: rgba(219, 234, 254, 0.7);
+    --user-bubble-gradient-end: rgba(191, 219, 254, 0.5);
+    --user-bubble-border: rgba(147, 197, 253, 0.4);
+    --user-text-color: #1e40af;
+    --user-accent-color: #2563eb;
+
+    /* 容器背景（毛玻璃效果）- 增强层次感 */
+    --container-bg: rgba(255, 255, 255, 0.85);
+    --container-border: rgba(229, 231, 235, 0.6);
+    --container-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
+
+    /* 输入框 */
+    --input-bg: rgba(255, 255, 255, 0.6);
+    --input-border: rgba(209, 213, 219, 0.6);
+    --input-border-focus: rgba(59, 130, 246, 0.5);
+    --input-text: #1e293b;
+    --input-placeholder: #94a3b8;
+
+    /* 按钮 */
+    --button-bg: rgba(255, 255, 255, 0.7);
+    --button-bg-hover: rgba(255, 255, 255, 0.9);
+    --button-border: rgba(209, 213, 219, 0.4);
+    --button-text: #475569;
+
+    /* 代码块 */
+    --code-bg: #fafafa;
+    --code-header-bg-start: rgba(248, 250, 252, 0.95);
+    --code-header-bg-end: rgba(241, 245, 249, 0.9);
+    --code-border: rgba(209, 213, 219, 0.4);
+    --code-text: #1e293b;
+
+    /* 会话列表 */
+    --session-item-bg-hover: rgba(241, 245, 249, 0.7);
+    --session-item-border-hover: rgba(203, 213, 225, 0.5);
+    --session-item-bg-active: rgba(59, 130, 246, 0.9);
+    --session-item-text: #475569;
+
+    /* 节点轴 */
+    --node-line-color: #cbd5e1;
+    --node-user-fill: #3b82f6;
+    --node-ai-fill: #ffffff;
+    --node-ai-stroke: #10b981;
+    --node-branch-fill: #ffffff;
+    --node-branch-stroke: #f59e0b;
+
+    /* 滚动条 */
+    --scrollbar-track: rgba(241, 245, 249, 0.5);
+    --scrollbar-thumb: rgba(203, 213, 225, 0.7);
+    --scrollbar-thumb-hover: rgba(148, 163, 184, 0.9);
+
+    /* 边框分割线 */
+    --divider-color: rgba(148, 163, 184, 0.15);
+}
+
+/* 全局应用主题变量 */
+body {
+    background: var(--bg-page);
+    color: var(--text-primary);
+    min-height: 100vh;
+}
+
+/* 主容器样式 - 应用毛玻璃效果 */
+#sessionDrawer {
+    background: var(--container-bg);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-right: 1px solid var(--container-border);
+    box-shadow: var(--container-shadow);
+}
+
+header {
+    background: var(--container-bg);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid var(--container-border);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+footer {
+    background: var(--container-bg);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-top: 1px solid var(--container-border);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.04);
+}
+
+/* 输入框样式 */
+input,
+select,
+textarea {
+    background: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--input-text);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: var(--input-placeholder);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    border-color: var(--input-border-focus);
+    background: var(--input-bg);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* 按钮基础样式 */
+button {
+    transition: all 0.2s ease;
+    color: var(--button-text);
+}
+
+/* 特定按钮样式 */
+#newSessionBtn,
+#sendBtn {
+    background: var(--color-brand-blue) !important;
+    color: white !important;
+    border: none;
+}
+
+#newSessionBtn:hover,
+#sendBtn:hover {
+    opacity: 0.9;
+}
+
+#clearBtn {
+    background: var(--color-brand-green) !important;
+    color: white !important;
+    border: none;
+}
+
+#clearBtn:hover {
+    opacity: 0.9;
+}
+
+#settingsBtn,
+#themeToggleBtn,
+#toggleDrawerBtn {
+    background: var(--button-bg) !important;
+    border: 1px solid var(--button-border);
+}
+
+#settingsBtn:hover,
+#themeToggleBtn:hover,
+#toggleDrawerBtn:hover {
+    background: var(--button-bg-hover) !important;
+}
+
+/* 会话列表项 */
+.session-item {
+    color: var(--session-item-text);
+    transition: all 0.2s ease;
+    background: transparent;
+}
+
+.session-item:hover {
+    background: var(--session-item-bg-hover) !important;
+    border-color: var(--session-item-border-hover);
+}
+
+.session-item.active {
+    background: var(--session-item-bg-active) !important;
+    color: white !important;
+}
+
+.session-item .session-title {
+    color: var(--text-primary);
+}
+
+.session-item.active .session-title {
+    color: white !important;
+}
+
+.session-item .session-info {
+    color: var(--text-tertiary);
+}
+
+.session-item.active .session-info {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* 节点轴颜色 */
+.node-axis-line {
+    stroke: var(--node-line-color);
+}
+
+.node-axis-circle.user {
+    fill: var(--node-user-fill);
+    stroke: var(--node-user-fill);
+}
+
+.node-axis-circle.ai {
+    fill: var(--node-ai-fill);
+    stroke: var(--node-ai-stroke);
+}
+
+.node-axis-circle.branch {
+    fill: var(--node-branch-fill);
+    stroke: var(--node-branch-stroke);
+}
+
+/* 选择文本样式 */
+::selection {
+    background-color: rgba(59, 130, 246, 0.3);
+    color: var(--text-primary);
+}
+
+::-moz-selection {
+    background-color: rgba(59, 130, 246, 0.3);
+    color: var(--text-primary);
+}
+
+/* 模态框样式 */
+.modal .bg-gray-800,
+#settingsModal .bg-gray-800,
+.followup-modal .bg-gray-800 {
+    background: var(--container-bg);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid var(--container-border);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    color: var(--text-primary);
+}
+
+/* 抽屉头部和底部 */
+.drawer-header,
+.drawer-footer {
+    border-color: var(--container-border);
+}
+
+.drawer-title {
+    color: var(--text-primary);
+}
+
+/* 抽屉按钮 */
+#toggleDrawerCollapseBtn,
+#expandDrawerBtn,
+#newSessionCollapsedBtn {
+    background: transparent;
+    color: var(--text-tertiary);
+}
+
+#toggleDrawerCollapseBtn:hover,
+#expandDrawerBtn:hover,
+#newSessionCollapsedBtn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+/* 通知样式 */
+.bg-green-600 {
+    background: rgba(16, 185, 129, 0.95) !important;
+    backdrop-filter: blur(8px);
+}
+
+.bg-red-600 {
+    background: rgba(239, 68, 68, 0.95) !important;
+    backdrop-filter: blur(8px);
+}
+
+.bg-blue-600 {
+    background: rgba(59, 130, 246, 0.95) !important;
+    backdrop-filter: blur(8px);
+}
+
+/* 搜索结果 */
+.search-result-item {
+    border-left-color: var(--color-brand-blue);
+    transition: all 0.2s ease;
+}
+
+.search-result-item:hover {
+    background: var(--session-item-bg-hover);
+}
+
+/* 覆盖Tailwind硬编码类 - 确保所有元素都响应主题 */
+.bg-gray-900 {
+    background: var(--bg-primary) !important;
+}
+
+.bg-gray-800 {
+    background: var(--bg-secondary) !important;
+}
+
+.bg-gray-700 {
+    background: var(--bg-tertiary) !important;
+}
+
+.border-gray-700 {
+    border-color: var(--container-border) !important;
+}
+
+.border-gray-600 {
+    border-color: var(--input-border) !important;
+}
+
+.text-white {
+    color: var(--text-primary) !important;
+}
+
+.text-gray-400 {
+    color: var(--text-tertiary) !important;
+}
+
+.text-gray-300 {
+    color: var(--text-secondary) !important;
+}
+
+.placeholder-gray-400::placeholder {
+    color: var(--input-placeholder) !important;
+}
+
+/* 悬浮状态覆盖 */
+.hover\:bg-gray-700:hover,
+.hover\:bg-gray-600:hover {
+    background: var(--bg-tertiary) !important;
+    opacity: 0.9;
+}
+
+.hover\:text-white:hover {
+    color: var(--text-primary) !important;
+}
+
+/* 按钮覆盖 */
+.bg-gray-600 {
+    background: var(--button-bg) !important;
+}
+
+.hover\:bg-gray-500:hover {
+    background: var(--button-bg-hover) !important;
+}

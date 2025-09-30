@@ -1,4 +1,6 @@
-/* 自定义样式 */
+/* ============================================
+   Main Styles - Using CSS Variables from theme.css
+   ============================================ */
 
 /* 字体设置 */
 body {
@@ -12,27 +14,29 @@ code, pre, .code-block {
 /* 消息气泡样式 */
 .message-bubble {
     @apply rounded-xl p-5 border;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    background: var(--bubble-bg);
+    border-color: var(--bubble-border);
+    box-shadow: var(--bubble-shadow);
     transition: all 0.3s ease;
     margin-bottom: 0.75rem;
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(16px) saturate(180%);
 }
 
 .message-bubble:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--bubble-shadow-hover);
     transform: translateY(-2px);
 }
 
 .user-message {
-    @apply border-blue-600/30;
-    background: linear-gradient(135deg, rgba(37, 99, 235, 0.15) 0%, rgba(59, 130, 246, 0.08) 100%);
+    background: linear-gradient(135deg, var(--user-bubble-gradient-start) 0%, var(--user-bubble-gradient-end) 100%);
+    border-color: var(--user-bubble-border);
     margin-left: 2rem;
     margin-right: 0.5rem;
 }
 
 .ai-message {
-    @apply border-gray-600/30;
-    background: linear-gradient(135deg, rgba(55, 65, 81, 0.3) 0%, rgba(31, 41, 55, 0.2) 100%);
+    background: linear-gradient(135deg, var(--ai-bubble-gradient-start) 0%, var(--ai-bubble-gradient-end) 100%);
+    border-color: var(--ai-bubble-border);
     margin-left: 0.5rem;
     margin-right: 2rem;
 }
@@ -45,30 +49,32 @@ code, pre, .code-block {
 /* 消息内容区域优化 */
 .message-content {
     line-height: 1.7;
-    color: rgba(255, 255, 255, 0.95);
+    color: var(--ai-text-color);
 }
 
 .user-message .message-content {
-    color: rgba(219, 234, 254, 0.95);
+    color: var(--user-text-color);
 }
 
 /* 消息头部样式 */
 .message-bubble > div:first-child {
     padding-bottom: 0.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--divider-color);
     margin-bottom: 0.75rem;
 }
 
 /* 代码块样式优化 */
 .code-block {
     @apply my-4;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     border-radius: 0.5rem;
     overflow: hidden;
 }
 
 .code-block pre {
-    @apply bg-gray-900;
+    background: var(--code-bg);
     margin: 0;
     padding: 1rem;
 }
@@ -77,6 +83,7 @@ code, pre, .code-block {
     font-family: 'JetBrains Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 0.875rem;
     line-height: 1.7;
+    color: var(--code-text);
     background: transparent !important;
 }
 
@@ -90,13 +97,14 @@ code, pre, .code-block {
 
 /* 代码块头部优化 */
 .code-block > div:first-child {
-    background: linear-gradient(135deg, rgba(55, 65, 81, 0.9) 0%, rgba(31, 41, 55, 0.8) 100%);
+    background: linear-gradient(135deg, var(--code-header-bg-start) 0%, var(--code-header-bg-end) 100%);
     backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--code-border);
 }
 
 /* 聊天容器背景 */
 .chat-container {
-    background: linear-gradient(180deg, rgba(17, 24, 39, 0.3) 0%, rgba(17, 24, 39, 0.1) 100%);
+    background: transparent;
 }
 
 /* 滚动条样式 */
@@ -105,16 +113,16 @@ code, pre, .code-block {
 }
 
 .chat-container::-webkit-scrollbar-track {
-    background: #374151;
+    background: var(--scrollbar-track);
 }
 
 .chat-container::-webkit-scrollbar-thumb {
-    background: #6B7280;
+    background: var(--scrollbar-thumb);
     border-radius: 3px;
 }
 
 .chat-container::-webkit-scrollbar-thumb:hover {
-    background: #9CA3AF;
+    background: var(--scrollbar-thumb-hover);
 }
 
 /* 打字机效果 */
@@ -361,27 +369,29 @@ code, pre, .code-block {
 .session-item {
     transition: all 0.2s ease;
     border: 1px solid transparent;
+    border-radius: 8px;
+    margin-bottom: 4px;
 }
 
 .session-item:hover {
-    border-color: #4B5563;
     transform: translateX(2px);
 }
 
-.session-item.active {
-    background-color: #2563EB !important;
-    border-color: #3B82F6;
+.session-item.active .session-title,
+.session-item.active .session-info,
+.session-item.active .session-info i {
+    color: white !important;
 }
 
 /* 搜索结果样式 */
 .search-result-item {
     transition: all 0.2s ease;
-    border-left: 3px solid #3B82F6;
+    border-left: 3px solid var(--color-brand-blue);
+    border-radius: 4px;
+    margin-bottom: 4px;
 }
 
 .search-result-item:hover {
-    background-color: #374151;
-    border-left-color: #60A5FA;
     transform: translateX(2px);
 }
 
@@ -414,16 +424,16 @@ code, pre, .code-block {
 }
 
 #sessionDrawer .overflow-y-auto::-webkit-scrollbar-track {
-    background: #374151;
+    background: var(--scrollbar-track);
 }
 
 #sessionDrawer .overflow-y-auto::-webkit-scrollbar-thumb {
-    background: #6B7280;
+    background: var(--scrollbar-thumb);
     border-radius: 2px;
 }
 
 #sessionDrawer .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-    background: #9CA3AF;
+    background: var(--scrollbar-thumb-hover);
 }
 
 /* 搜索输入框样式 */
@@ -545,8 +555,8 @@ code, pre, .code-block {
 .collapsed-session-item {
     width: 44px;
     height: 44px;
-    border-radius: 8px;
-    background: #374151;
+    border-radius: 12px;
+    background: var(--bg-tertiary);
     border: 2px solid transparent;
     display: flex;
     align-items: center;
@@ -554,17 +564,18 @@ code, pre, .code-block {
     cursor: pointer;
     transition: all 0.2s ease;
     position: relative;
-    margin: 0 auto;
+    margin: 0 auto 8px;
 }
 
 .collapsed-session-item:hover {
-    background: #4B5563;
-    border-color: #6B7280;
+    background: var(--session-item-bg-hover);
+    border-color: var(--session-item-border-hover);
+    transform: scale(1.05);
 }
 
 .collapsed-session-item.active {
-    background: #2563EB;
-    border-color: #3B82F6;
+    background: var(--session-item-bg-active);
+    border-color: var(--color-brand-blue);
 }
 
 /* 折叠状态下的会话图标内容 */
@@ -605,17 +616,19 @@ code, pre, .code-block {
     left: 65px;
     top: 50%;
     transform: translateY(-50%);
-    background: #1F2937;
-    color: white;
+    background: var(--container-bg);
+    backdrop-filter: blur(12px);
+    color: var(--text-primary);
     padding: 8px 12px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 12px;
     white-space: nowrap;
     z-index: 1000;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
-    border: 1px solid #374151;
+    border: 1px solid var(--container-border);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .collapsed-session-item:hover .tooltip-collapsed {
@@ -630,7 +643,7 @@ code, pre, .code-block {
     top: 50%;
     transform: translateY(-50%);
     border: 5px solid transparent;
-    border-right-color: #1F2937;
+    border-right-color: var(--container-bg);
 }
 
 /* Token指示器样式 */
@@ -719,6 +732,7 @@ code, pre, .code-block {
 /* 节点轴样式 */
 #nodeAxisContainer {
     transition: all 0.3s ease;
+    border-top: 1px solid var(--container-border);
 }
 
 #nodeAxisContent {
@@ -730,21 +744,20 @@ code, pre, .code-block {
 }
 
 #nodeAxisContent::-webkit-scrollbar-track {
-    background: #374151;
+    background: var(--scrollbar-track);
 }
 
 #nodeAxisContent::-webkit-scrollbar-thumb {
-    background: #6B7280;
+    background: var(--scrollbar-thumb);
     border-radius: 2px;
 }
 
 #nodeAxisContent::-webkit-scrollbar-thumb:hover {
-    background: #9CA3AF;
+    background: var(--scrollbar-thumb-hover);
 }
 
 /* 节点轴SVG样式 */
 .node-axis-line {
-    stroke: #6B7280;
     stroke-width: 2px;
     stroke-linecap: round;
 }
@@ -757,8 +770,6 @@ code, pre, .code-block {
 
 /* 用户消息节点 - 实心蓝色圆 */
 .node-axis-circle.user {
-    fill: #3B82F6;
-    stroke: #3B82F6;
     stroke-width: 2px;
 }
 
@@ -770,13 +781,11 @@ code, pre, .code-block {
 
 /* AI消息节点 - 空心绿色圆，稍小 */
 .node-axis-circle.ai {
-    fill: #1F2937;
-    stroke: #10B981;
     stroke-width: 2px;
 }
 
 .node-axis-circle.ai:hover {
-    fill: #10B981;
+    fill: var(--node-ai-stroke);
     stroke: #34D399;
     stroke-width: 3px;
 }
@@ -787,23 +796,21 @@ code, pre, .code-block {
 }
 
 .node-axis-circle.user.has-followup {
-    fill: #3B82F6;
+    fill: var(--node-user-fill);
 }
 
 .node-axis-circle.ai.has-followup {
-    fill: #10B981;
+    fill: var(--node-ai-stroke);
 }
 
 /* 分支节点 - 橙色小圆 */
 .node-axis-circle.branch {
-    stroke: #F59E0B;
-    fill: #1F2937;
     stroke-width: 2px;
 }
 
 .node-axis-circle.branch:hover {
     stroke: #FBBF24;
-    fill: #F59E0B;
+    fill: var(--node-branch-stroke);
     stroke-width: 3px;
 }
 
@@ -926,3 +933,5 @@ code, pre, .code-block {
         opacity: 0.8;
     }
 }
+
+/* ============================================

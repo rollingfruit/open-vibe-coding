@@ -17,11 +17,13 @@
 
     <!-- Highlight.js with Atom One Dark theme -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
 
     <!-- Marked.js for Markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
+    <!-- Theme System -->
+    <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="style.css">
     <style>
         .chat-container {
@@ -169,6 +171,11 @@
                                 <span>压缩</span>
                             </button>
                         </div>
+                        <!-- 主题切换按钮 -->
+                        <button id="themeToggleBtn" class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm flex items-center gap-1 transition-colors" title="切换主题">
+                            <i data-lucide="sun" id="sunIcon" class="w-4 h-4 hidden"></i>
+                            <i data-lucide="moon" id="moonIcon" class="w-4 h-4"></i>
+                        </button>
                         <button id="settingsBtn" class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm flex items-center gap-1">
                             <i data-lucide="settings" class="w-4 h-4"></i>
                             <span>设置</span>

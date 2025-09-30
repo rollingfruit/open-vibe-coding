@@ -11,6 +11,16 @@ class AIAssistant {
         this.isNodeAxisCollapsed = false; // 节点轴是否折叠
         this.uploadedImageFile = null; // 待上传的图片文件
         this.uploadedImageBase64 = null; // 压缩后的Base64字符串
+        this.themeToggleBtn = null; // 主题切换按钮
+        this.currentTheme = 'light'; // 当前主题，默认为白天模式
+
+        // 初始化代码存储
+        if (!window.codeStorage) {
+            window.codeStorage = new Map();
+        }
+
+        // 配置 marked.js
+        this.configureMarked();
 
         this.init();
     }
@@ -18,6 +28,7 @@ class AIAssistant {
     async init() {
         await this.loadConfig();
         this.bindEvents();
+        this.loadThemePreference();
         this.checkUrlParams();
         this.loadSessions();
     }
@@ -376,7 +387,18 @@ class AIAssistant {
 
         this.sessions.forEach(session => {
             session.messages.forEach((message, messageIndex) => {
-                const content = message.content.toLowerCase();
+                // 提取消息文本内容
+                let textContent = '';
+                if (typeof message.content === 'string') {
+                    textContent = message.content;
+                } else if (message.content && typeof message.content === 'object') {
+                    // 处理多模态内容（content可能是对象，包含text字段）
+                    textContent = message.content.text || '';
+                }
+
+                if (!textContent) return; // 跳过空消息
+
+                const content = textContent.toLowerCase();
                 let matchCount = 0;
                 let highlights = [];
 
@@ -399,7 +421,7 @@ class AIAssistant {
                         sessionId: session.id,
                         sessionTitle: session.title,
                         messageIndex: messageIndex,
-                        messageContent: message.content,
+                        messageContent: textContent, // 使用提取的文本内容
                         messageRole: message.role,
                         highlights: highlights,
                         score: matchCount / searchTerms.length // 简单的相关性评分
@@ -780,6 +802,14 @@ class AIAssistant {
         if (nodeAxisSvg) {
             nodeAxisSvg.addEventListener('click', (e) => {
                 this.handleNodeClick(e);
+            });
+        }
+
+        // 主题切换按钮事件
+        this.themeToggleBtn = document.getElementById('themeToggleBtn');
+        if (this.themeToggleBtn) {
+            this.themeToggleBtn.addEventListener('click', () => {
+                this.toggleTheme();
             });
         }
 
@@ -1232,32 +1262,19 @@ class AIAssistant {
         // 1. 先处理可能存在的Unicode转义字符
         let processedContent = this.unescapeUnicodeChars(content);
 
-        // 2. 初始化代码存储
-        if (!window.codeStorage) {
-            window.codeStorage = new Map();
-        }
-
-        // 3. 分割内容为普通文本和代码块
-        const parts = this.splitContentIntoParts(processedContent);
-
-        // 4. 处理每个部分
-        let formattedContent = '';
-        for (let i = 0; i < parts.length; i++) {
-            const part = parts[i];
-
-            if (part.type === 'text') {
-                // 处理普通文本
-                formattedContent += this.formatTextContent(part.content);
-            } else if (part.type === 'code') {
-                // 处理完整代码块
-                formattedContent += this.formatCompleteCodeBlock(part.language, part.content);
-            } else if (part.type === 'incomplete_code') {
-                // 处理不完整的代码块（流式传输中）
-                formattedContent += this.formatIncompleteCodeBlock(part.language, part.content);
+        // 2. 使用 marked.js 解析 Markdown
+        if (typeof marked !== 'undefined') {
+            try {
+                return marked.parse(processedContent);
+            } catch (error) {
+                console.error('Markdown parsing error:', error);
+                // 如果解析失败，降级使用基础格式化
+                return this.escapeHtml(processedContent).replace(/\n/g, '<br>');
             }
         }
 
-        return formattedContent;
+        // 降级方案：如果 marked.js 未加载，使用基础格式化
+        return this.escapeHtml(processedContent).replace(/\n/g, '<br>');
     }
 
     splitContentIntoParts(content) {
@@ -2372,6 +2389,126 @@ class AIAssistant {
         }
 
         document.body.appendChild(modal);
+    }
+
+    // 主题管理方法
+    loadThemePreference() {
+        const savedTheme = localStorage.getItem('theme') || 'light'; // 默认为白天模式
+        this.setTheme(savedTheme);
+    }
+
+    toggleTheme() {
+        const newTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
+        this.setTheme(newTheme);
+    }
+
+    setTheme(theme) {
+        this.currentTheme = theme;
+
+        // 更新 body 类
+        if (theme === 'light') {
+            document.body.classList.add('light-theme');
+        } else {
+            document.body.classList.remove('light-theme');
+        }
+
+        // 更新按钮图标
+        const sunIcon = document.getElementById('sunIcon');
+        const moonIcon = document.getElementById('moonIcon');
+
+        if (sunIcon && moonIcon) {
+            if (theme === 'light') {
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+            } else {
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+            }
+        }
+
+        // 切换代码高亮主题
+        const hljsTheme = document.getElementById('hljs-theme');
+        if (hljsTheme) {
+            if (theme === 'light') {
+                hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css';
+            } else {
+                hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css';
+            }
+        }
+
+        // 重新应用代码高亮
+        setTimeout(() => {
+            if (typeof hljs !== 'undefined') {
+                document.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }
+        }, 100);
+
+        // 持久化存储
+        localStorage.setItem('theme', theme);
+    }
+
+    // 配置 marked.js
+    configureMarked() {
+        if (typeof marked === 'undefined') return;
+
+        const self = this;
+
+        // 自定义渲染器
+        const renderer = new marked.Renderer();
+
+        // 自定义代码块渲染
+        renderer.code = function(token) {
+            // token 是一个对象，包含 text 和 lang 属性
+            const code = token.text || token || '';
+            const language = token.lang || token.language || 'text';
+
+            const cleanCode = typeof code === 'string' ? code.trim() : String(code).trim();
+            const lang = language || 'text';
+            const escapedCode = self.escapeHtml(cleanCode);
+
+            // 生成唯一ID来存储代码
+            const codeId = 'code_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            window.codeStorage.set(codeId, cleanCode);
+
+            return `
+                <div class="code-block relative bg-gray-800 rounded-lg mt-2 mb-2">
+                    <div class="flex justify-between items-center px-4 py-2 bg-gray-700 rounded-t-lg">
+                        <span class="text-sm text-gray-300 font-medium">${lang}</span>
+                        <div class="flex space-x-2">
+                            ${lang.toLowerCase() === 'html' ? `
+                                <button class="render-html-btn text-gray-400 hover:text-white text-sm flex items-center gap-1" data-code-id="${codeId}">
+                                    <i data-lucide="palette" class="w-4 h-4"></i>
+                                    <span>渲染</span>
+                                </button>
+                                <button class="fullscreen-html-btn text-gray-400 hover:text-white text-sm flex items-center gap-1" data-code-id="${codeId}">
+                                    <i data-lucide="maximize" class="w-4 h-4"></i>
+                                    <span>全屏</span>
+                                </button>
+                            ` : ''}
+                            <button class="copy-code-btn text-gray-400 hover:text-white text-sm flex items-center gap-1" data-code-id="${codeId}">
+                                <i data-lucide="copy" class="w-4 h-4"></i>
+                                <span>复制</span>
+                            </button>
+                        </div>
+                    </div>
+                    <pre class="p-4 overflow-x-auto"><code class="language-${lang}">${escapedCode}</code></pre>
+                </div>
+            `;
+        };
+
+        // 配置 marked 选项
+        marked.setOptions({
+            renderer: renderer,
+            breaks: true, // 支持GFM换行
+            gfm: true, // 启用GitHub风格的Markdown
+            tables: true, // 支持表格
+            pedantic: false,
+            sanitize: false, // 我们会手动处理HTML转义
+            smartLists: true,
+            smartypants: false
+        });
     }
 }
 
