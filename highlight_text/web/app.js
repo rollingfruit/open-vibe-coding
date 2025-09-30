@@ -9,6 +9,8 @@ class AIAssistant {
         this.searchIndex = null; // 搜索索引（可选）
         this.isDrawerCollapsed = false; // 抽屉是否折叠
         this.isNodeAxisCollapsed = false; // 节点轴是否折叠
+        this.uploadedImageFile = null; // 待上传的图片文件
+        this.uploadedImageBase64 = null; // 压缩后的Base64字符串
 
         this.init();
     }
@@ -649,7 +651,19 @@ class AIAssistant {
 
         activeSession.messages.forEach((msg, index) => {
             if (msg.role === 'user') {
-                const messageEl = this.addMessage(msg.content, 'user', false);
+                // 处理消息内容，可能是字符串或多模态数组
+                let textContent = '';
+                if (typeof msg.content === 'string') {
+                    textContent = msg.content;
+                } else if (Array.isArray(msg.content)) {
+                    // 从数组中提取文本内容
+                    const textPart = msg.content.find(part => part.type === 'text');
+                    textContent = textPart?.text || '';
+                } else if (msg.content?.text) {
+                    textContent = msg.content.text;
+                }
+
+                const messageEl = this.addMessage(textContent, 'user', false, msg.imageUrl);
                 messageEl.setAttribute('data-message-index', index);
             } else if (msg.role === 'assistant') {
                 const messageEl = this.addMessage(msg.content, 'ai', false);
@@ -761,6 +775,68 @@ class AIAssistant {
             }, 200);
         });
 
+        // 图片上传相关事件
+        document.getElementById('uploadImageBtn').addEventListener('click', () => {
+            document.getElementById('imageUploadInput').click();
+        });
+
+        document.getElementById('imageUploadInput').addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                this.handleImageSelection(e.target.files[0]);
+            }
+        });
+
+        document.getElementById('removeImageBtn').addEventListener('click', () => {
+            this.removeImage();
+        });
+
+        // 粘贴图片事件
+        messageInput.addEventListener('paste', (e) => {
+            const items = e.clipboardData?.items;
+            if (items) {
+                for (let item of items) {
+                    if (item.type.indexOf('image') !== -1) {
+                        e.preventDefault();
+                        const file = item.getAsFile();
+                        if (file) {
+                            this.handleImageSelection(file);
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+
+        // 拖拽上传事件
+        const inputContainer = document.getElementById('inputContainer');
+        const chatForm = document.getElementById('chatForm');
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            chatForm.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                inputContainer.classList.add('drag-over');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            chatForm.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                inputContainer.classList.remove('drag-over');
+            });
+        });
+
+        chatForm.addEventListener('drop', (e) => {
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
+                const file = files[0];
+                if (file.type.startsWith('image/')) {
+                    this.handleImageSelection(file);
+                }
+            }
+        });
+
         // 全局划词事件 - 使用延迟以确保选择完成
         document.addEventListener('mouseup', (e) => {
             setTimeout(() => {
@@ -850,7 +926,9 @@ class AIAssistant {
         const input = document.getElementById('messageInput');
         const message = input.value.trim();
 
-        if (!message || this.isStreaming) return;
+        // 检查是否有消息或图片
+        if (!message && !this.uploadedImageBase64) return;
+        if (this.isStreaming) return;
 
         if (!this.settings.apiKey) {
             this.showNotification('请先在设置中配置API密钥', 'error');
@@ -860,23 +938,63 @@ class AIAssistant {
 
         input.value = '';
         this.hideInputShortcuts();
-        this.addMessage(message, 'user');
+
+        // 构建消息内容
+        let imageUrl = null;
+        let contentParts = [];
+
+        // 如果有图片，先上传到服务器
+        if (this.uploadedImageFile) {
+            try {
+                imageUrl = await this.uploadImageToServer(this.uploadedImageFile);
+            } catch (error) {
+                this.showNotification('图片上传失败', 'error');
+                return;
+            }
+        }
+
+        // 构建多模态消息内容
+        if (message) {
+            contentParts.push({
+                type: 'text',
+                text: message
+            });
+        }
+
+        if (this.uploadedImageBase64) {
+            contentParts.push({
+                type: 'image_url',
+                image_url: {
+                    url: this.uploadedImageBase64
+                }
+            });
+        }
+
+        // 显示用户消息（包括图片）
+        this.addMessage(message, 'user', false, imageUrl);
 
         // 将消息添加到当前活动会话
         const activeSession = this.getActiveSession();
         if (activeSession) {
-            // 为消息添加唯一ID和追问数组
             const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            activeSession.messages.push({
+
+            // 保存消息，包含图片URL
+            const userMessage = {
                 role: 'user',
-                content: message,
+                content: contentParts.length === 1 ? contentParts[0].text || contentParts[0] : contentParts,
                 messageId: messageId,
                 followups: []
-            });
+            };
+
+            if (imageUrl) {
+                userMessage.imageUrl = imageUrl;
+            }
+
+            activeSession.messages.push(userMessage);
 
             // 如果这是会话的第一条用户消息，自动生成标题
             if (activeSession.messages.length === 1) {
-                const newTitle = this.generateSessionTitle(message);
+                const newTitle = this.generateSessionTitle(message || '图片消息');
                 this.updateSessionTitle(activeSession.id, newTitle);
             }
 
@@ -884,10 +1002,13 @@ class AIAssistant {
             this.saveSessions();
         }
 
+        // 清理图片状态
+        this.removeImage();
+
         // 更新Token用量
         this.updateTokenUsage();
 
-        await this.getAIResponse(message);
+        await this.getAIResponse(contentParts);
     }
 
     async getAIResponse(userMessage) {
@@ -915,6 +1036,18 @@ class AIAssistant {
             } else {
                 // 未压缩，使用完整的消息历史
                 messagesToSend = activeSession?.messages || [];
+            }
+
+            // 处理最后一条消息的内容（可能是多模态的）
+            if (messagesToSend.length > 0) {
+                const lastMessage = messagesToSend[messagesToSend.length - 1];
+                if (Array.isArray(lastMessage.content)) {
+                    // 如果content是数组（多模态），保持不变
+                    // API应该已经支持这种格式
+                } else if (typeof lastMessage.content === 'object' && lastMessage.content.type) {
+                    // 如果是单个对象，转换为数组
+                    lastMessage.content = [lastMessage.content];
+                }
             }
 
             const response = await fetch(this.settings.endpoint, {
@@ -999,7 +1132,7 @@ class AIAssistant {
         }
     }
 
-    addMessage(content, type, isStreaming = false) {
+    addMessage(content, type, isStreaming = false, imageUrl = null) {
         const messagesContainer = document.getElementById('messages');
         const timestamp = new Date().toLocaleTimeString();
 
@@ -1007,13 +1140,18 @@ class AIAssistant {
         messageElement.className = `message-bubble ${type}-message`;
 
         if (type === 'user') {
+            let imageHtml = '';
+            if (imageUrl) {
+                imageHtml = `<img src="${imageUrl}" class="message-image" onclick="window.open('${imageUrl}', '_blank')">`;
+            }
             messageElement.innerHTML = `
                 <div class="mb-2">
                     <span class="text-blue-400 font-semibold">👤 你</span>
                     <span class="text-gray-400 text-sm ml-2">${timestamp}</span>
                 </div>
                 <div class="message-content">
-                    <p>${this.escapeHtml(content)}</p>
+                    ${content ? `<p>${this.escapeHtml(content)}</p>` : ''}
+                    ${imageHtml}
                 </div>
             `;
         } else {
@@ -1632,8 +1770,24 @@ class AIAssistant {
 
     async logInteraction(userInput, aiResponse, type, messagesToSend = null) {
         try {
+            // 处理userInput，可能是字符串或数组（多模态）
+            let userInputText = userInput;
+            if (Array.isArray(userInput)) {
+                // 提取文本内容
+                const textParts = userInput
+                    .filter(part => part.type === 'text')
+                    .map(part => part.text);
+                userInputText = textParts.join('\n');
+
+                // 如果包含图片，添加标记
+                const hasImage = userInput.some(part => part.type === 'image_url');
+                if (hasImage) {
+                    userInputText += '\n[包含图片]';
+                }
+            }
+
             const logData = {
-                user_input: userInput,
+                user_input: userInputText || '[空消息]',
                 ai_response: aiResponse,
                 type: type
             };
@@ -1787,6 +1941,121 @@ class AIAssistant {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // 图片处理方法
+    async handleImageSelection(file) {
+        if (!file || !file.type.startsWith('image/')) {
+            this.showNotification('请选择图片文件', 'error');
+            return;
+        }
+
+        try {
+            await this.compressAndPreviewImage(file);
+        } catch (error) {
+            console.error('图片处理失败:', error);
+            this.showNotification('图片处理失败: ' + error.message, 'error');
+        }
+    }
+
+    async compressAndPreviewImage(file) {
+        try {
+            const preview = document.getElementById('imagePreview');
+            const container = document.getElementById('imagePreviewContainer');
+
+            // 1. 先显示原图预览
+            const tempReader = new FileReader();
+            tempReader.onload = (e) => {
+                preview.src = e.target.result;
+                container.classList.remove('hidden');
+
+                // 添加压缩状态
+                preview.classList.add('compressing');
+
+                // 添加加载动画
+                const spinner = document.createElement('div');
+                spinner.className = 'image-loading-spinner';
+                spinner.id = 'imageLoadingSpinner';
+                container.appendChild(spinner);
+            };
+            tempReader.readAsDataURL(file);
+
+            // 2. 开始压缩（有延迟效果）
+            await new Promise(resolve => setTimeout(resolve, 100)); // 让UI先更新
+
+            const options = {
+                maxSizeMB: 0.1, // 压缩到100KB以下
+                maxWidthOrHeight: 1920,
+                useWebWorker: true
+            };
+
+            const compressedFile = await imageCompression(file, options);
+
+            // 3. 压缩完成，转换为Base64
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                this.uploadedImageBase64 = e.target.result;
+                this.uploadedImageFile = compressedFile;
+
+                // 更新为压缩后的预览
+                preview.src = e.target.result;
+
+                // 移除加载状态
+                preview.classList.remove('compressing');
+                const spinner = document.getElementById('imageLoadingSpinner');
+                if (spinner) {
+                    spinner.remove();
+                }
+
+                this.showNotification(`图片已压缩 (${(compressedFile.size / 1024).toFixed(1)}KB)`, 'success');
+            };
+            reader.readAsDataURL(compressedFile);
+
+        } catch (error) {
+            // 清理加载状态
+            const preview = document.getElementById('imagePreview');
+            preview.classList.remove('compressing');
+            const spinner = document.getElementById('imageLoadingSpinner');
+            if (spinner) {
+                spinner.remove();
+            }
+            throw new Error('压缩失败: ' + error.message);
+        }
+    }
+
+    removeImage() {
+        this.uploadedImageFile = null;
+        this.uploadedImageBase64 = null;
+
+        const preview = document.getElementById('imagePreview');
+        const container = document.getElementById('imagePreviewContainer');
+        const input = document.getElementById('imageUploadInput');
+
+        preview.src = '';
+        container.classList.add('hidden');
+        input.value = '';
+    }
+
+    async uploadImageToServer(file) {
+        try {
+            const formData = new FormData();
+            formData.append('image', file);
+
+            const response = await fetch('/upload-image', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error('上传失败');
+            }
+
+            const data = await response.json();
+            return data.filePath;
+        } catch (error) {
+            console.error('图片上传失败:', error);
+            throw error;
+        }
     }
 
     // 渲染节点轴

@@ -23,20 +23,33 @@ type InteractionLog struct {
 var logMutex sync.Mutex
 
 func main() {
-	// 设置静态文件服务器，指向web目录
-	fs := http.FileServer(http.Dir("./web"))
-	http.Handle("/", fs)
-
+	// API端点必须在静态文件服务器之前注册
 	// API端点：记录交互日志
 	http.HandleFunc("/log", handleLog)
 
 	// API端点：HTML预览
 	http.HandleFunc("/preview", handlePreview)
 
+	// API端点：图片上传
+	http.HandleFunc("/upload-image", handleImageUpload)
+
+	// 静态文件服务：提供uploads目录的访问
+	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
+
+	// 设置静态文件服务器，指向web目录（必须放在最后）
+	fs := http.FileServer(http.Dir("./web"))
+	http.Handle("/", fs)
+
+	// 确保uploads目录存在
+	if err := os.MkdirAll("./uploads", 0755); err != nil {
+		log.Printf("创建uploads目录失败: %v", err)
+	}
+
 	fmt.Println("🚀 AI助手Web服务启动成功!")
 	fmt.Println("📱 请访问: http://localhost:8080")
 	fmt.Println("📝 交互日志将保存至: interactions.log.json")
 	fmt.Println("🔍 HTML预览: http://localhost:8080/preview")
+	fmt.Println("📷 图片上传: http://localhost:8080/upload-image")
 	fmt.Println("⏹️  按 Ctrl+C 停止服务")
 
 	// 启动HTTP服务器
@@ -261,4 +274,81 @@ func handlePreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+}
+
+func handleImageUpload(w http.ResponseWriter, r *http.Request) {
+	// 设置CORS头
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 解析multipart表单，限制最大内存为10MB
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	// 获取上传的文件
+	file, handler, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "Failed to get file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// 验证文件类型
+	contentType := handler.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		http.Error(w, "File must be an image", http.StatusBadRequest)
+		return
+	}
+
+	// 生成唯一的文件名
+	ext := filepath.Ext(handler.Filename)
+	filename := fmt.Sprintf("%d_%s%s", time.Now().Unix(), generateRandomString(8), ext)
+	filePath := filepath.Join("./uploads", filename)
+
+	// 创建目标文件
+	dst, err := os.Create(filePath)
+	if err != nil {
+		log.Printf("Failed to create file: %v", err)
+		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	// 将上传的文件内容复制到目标文件
+	if _, err := dst.ReadFrom(file); err != nil {
+		log.Printf("Failed to write file: %v", err)
+		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+		return
+	}
+
+	// 返回文件路径
+	response := map[string]interface{}{
+		"success":  true,
+		"filePath": fmt.Sprintf("/uploads/%s", filename),
+		"filename": filename,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func generateRandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	result := make([]byte, length)
+	for i := range result {
+		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+	}
+	return string(result)
 }

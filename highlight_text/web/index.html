@@ -210,13 +210,32 @@
                 </div>
 
                 <form id="chatForm" class="flex space-x-2">
-                    <input
-                        type="text"
-                        id="messageInput"
-                        placeholder="输入你的问题..."
-                        class="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        autocomplete="off"
-                    >
+                    <div id="inputContainer" class="flex items-center flex-1 space-x-2">
+                        <!-- 图片预览区域 -->
+                        <div id="imagePreviewContainer" class="hidden relative">
+                            <img id="imagePreview" class="w-12 h-12 object-cover rounded border border-gray-600">
+                            <button type="button" id="removeImageBtn" class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-xs flex items-center justify-center hover:bg-red-600">✕</button>
+                        </div>
+                        <!-- 文本输入框 -->
+                        <input
+                            type="text"
+                            id="messageInput"
+                            placeholder="输入你的问题..."
+                            class="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            autocomplete="off"
+                        >
+                        <!-- 隐藏的文件选择器 -->
+                        <input type="file" id="imageUploadInput" accept="image/*" style="display: none;">
+                        <!-- 图片上传按钮 -->
+                        <button
+                            type="button"
+                            id="uploadImageBtn"
+                            class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+                            title="上传图片"
+                        >
+                            📷
+                        </button>
+                    </div>
                     <button
                         type="submit"
                         id="sendBtn"
@@ -315,6 +334,8 @@
         </div>
     </template>
 
+    <!-- 图片压缩库 -->
+    <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
