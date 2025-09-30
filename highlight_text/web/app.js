@@ -8,6 +8,7 @@ class AIAssistant {
         this.isSearchActive = false; // 是否正在搜索模式
         this.searchIndex = null; // 搜索索引（可选）
         this.isDrawerCollapsed = false; // 抽屉是否折叠
+        this.isNodeAxisCollapsed = false; // 节点轴是否折叠
 
         this.init();
     }
@@ -68,6 +69,9 @@ class AIAssistant {
 
         // 更新Token用量
         this.updateTokenUsage();
+
+        // 渲染节点轴
+        this.renderNodeAxis();
     }
 
     saveSessions() {
@@ -101,6 +105,9 @@ class AIAssistant {
             this.hideSummary();
             this.updateTokenUsage();
 
+            // 刷新节点轴
+            this.renderNodeAxis();
+
             this.showNotification('已创建新会话', 'success');
         }
 
@@ -126,6 +133,9 @@ class AIAssistant {
 
         // 更新Token用量
         this.updateTokenUsage();
+
+        // 刷新节点轴
+        this.renderNodeAxis();
     }
 
     getActiveSession() {
@@ -716,6 +726,22 @@ class AIAssistant {
             }, 300);
         });
 
+        // 节点轴折叠/展开按钮
+        const nodeAxisHeader = document.getElementById('nodeAxisHeader');
+        if (nodeAxisHeader) {
+            nodeAxisHeader.addEventListener('click', () => {
+                this.toggleNodeAxis();
+            });
+        }
+
+        // 节点轴点击事件
+        const nodeAxisSvg = document.getElementById('nodeAxisSvg');
+        if (nodeAxisSvg) {
+            nodeAxisSvg.addEventListener('click', (e) => {
+                this.handleNodeClick(e);
+            });
+        }
+
         // 输入框事件
         const messageInput = document.getElementById('messageInput');
         messageInput.addEventListener('input', (e) => {
@@ -839,7 +865,14 @@ class AIAssistant {
         // 将消息添加到当前活动会话
         const activeSession = this.getActiveSession();
         if (activeSession) {
-            activeSession.messages.push({ role: 'user', content: message });
+            // 为消息添加唯一ID和追问数组
+            const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            activeSession.messages.push({
+                role: 'user',
+                content: message,
+                messageId: messageId,
+                followups: []
+            });
 
             // 如果这是会话的第一条用户消息，自动生成标题
             if (activeSession.messages.length === 1) {
@@ -937,11 +970,20 @@ class AIAssistant {
 
             // 将AI响应添加到当前活动会话
             if (activeSession) {
-                activeSession.messages.push({ role: 'assistant', content: fullResponse });
+                const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                activeSession.messages.push({
+                    role: 'assistant',
+                    content: fullResponse,
+                    messageId: messageId,
+                    followups: []
+                });
                 activeSession.updatedAt = new Date().toISOString();
                 this.saveSessions();
                 this.renderSessionList(); // 更新会话列表中的消息计数
             }
+
+            // 刷新节点轴
+            this.renderNodeAxis();
 
             // 记录交互，包含完整的发送给LLM的消息
             this.logInteraction(userMessage, fullResponse, 'main', messagesToSend);
@@ -1535,6 +1577,35 @@ class AIAssistant {
                 }
             }
 
+            // 保存追问记录到消息数据
+            const activeSession = this.getActiveSession();
+            if (activeSession) {
+                // 找到原始消息的索引
+                const messageIndex = parseInt(originalMessage.getAttribute('data-message-index'));
+                if (!isNaN(messageIndex) && activeSession.messages[messageIndex]) {
+                    const message = activeSession.messages[messageIndex];
+
+                    // 初始化followups数组（如果不存在）
+                    if (!message.followups) {
+                        message.followups = [];
+                    }
+
+                    // 添加追问记录（只保存用户友好的问题和答案，不包含原始对话内容）
+                    const userFriendlyQuestion = `${command.label}: ${selectedText}`;
+                    message.followups.push({
+                        question: userFriendlyQuestion,
+                        answer: fullResponse,
+                        timestamp: new Date().toISOString()
+                    });
+
+                    // 保存到localStorage
+                    this.saveSessions();
+
+                    // 刷新节点轴
+                    this.renderNodeAxis();
+                }
+            }
+
             this.logInteraction(followupPrompt, fullResponse, 'followup');
 
         } catch (error) {
@@ -1670,7 +1741,13 @@ class AIAssistant {
         // 将消息添加到当前活动会话
         const activeSession = this.getActiveSession();
         if (activeSession) {
-            activeSession.messages.push({ role: 'user', content: fullPrompt });
+            const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            activeSession.messages.push({
+                role: 'user',
+                content: fullPrompt,
+                messageId: messageId,
+                followups: []
+            });
 
             // 如果这是会话的第一条用户消息，自动生成标题
             if (activeSession.messages.length === 1) {
@@ -1710,6 +1787,181 @@ class AIAssistant {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // 渲染节点轴
+    renderNodeAxis() {
+        const activeSession = this.getActiveSession();
+        const svg = document.getElementById('nodeAxisSvg');
+
+        if (!svg) return;
+
+        // 如果没有会话或消息，清空SVG
+        if (!activeSession || !activeSession.messages || activeSession.messages.length === 0) {
+            svg.innerHTML = '';
+            svg.setAttribute('height', '0');
+            return;
+        }
+
+        const messages = activeSession.messages;
+        const nodeSpacing = 40; // 节点间距
+        const nodeRadius = 6; // 节点半径
+        const lineWidth = 3; // 线条宽度
+        const startX = 30; // 起始X位置
+        const startY = 20; // 起始Y位置
+        const branchLength = 20; // 分叉长度
+
+        // 计算SVG高度
+        const svgHeight = startY + (messages.length * nodeSpacing) + 20;
+        svg.setAttribute('height', svgHeight);
+
+        // 清空SVG内容
+        svg.innerHTML = '';
+
+        // 绘制节点和连线
+        messages.forEach((message, index) => {
+            const y = startY + (index * nodeSpacing);
+
+            // 绘制连线（除了第一个节点）
+            if (index > 0) {
+                const prevY = startY + ((index - 1) * nodeSpacing);
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', startX);
+                line.setAttribute('y1', prevY);
+                line.setAttribute('x2', startX);
+                line.setAttribute('y2', y);
+                line.setAttribute('class', 'node-axis-line');
+                svg.appendChild(line);
+            }
+
+            // 判断是否有追问
+            const hasFollowups = message.followups && message.followups.length > 0;
+
+            // 绘制主节点
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', startX);
+            circle.setAttribute('cy', y);
+            circle.setAttribute('r', nodeRadius);
+            circle.setAttribute('class', hasFollowups ? 'node-axis-circle solid' : 'node-axis-circle');
+            circle.setAttribute('data-message-index', index);
+            circle.setAttribute('data-message-id', message.messageId || '');
+            svg.appendChild(circle);
+
+            // 如果有追问，绘制分叉
+            if (hasFollowups) {
+                // 绘制分叉横线
+                const branchLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                branchLine.setAttribute('x1', startX + nodeRadius);
+                branchLine.setAttribute('y1', y);
+                branchLine.setAttribute('x2', startX + nodeRadius + branchLength);
+                branchLine.setAttribute('y2', y);
+                branchLine.setAttribute('class', 'node-axis-line');
+                svg.appendChild(branchLine);
+
+                // 绘制分叉节点
+                const branchCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                branchCircle.setAttribute('cx', startX + nodeRadius + branchLength);
+                branchCircle.setAttribute('cy', y);
+                branchCircle.setAttribute('r', nodeRadius * 0.7);
+                branchCircle.setAttribute('class', 'node-axis-circle branch');
+                branchCircle.setAttribute('data-message-index', index);
+                branchCircle.setAttribute('data-message-id', message.messageId || '');
+                branchCircle.setAttribute('data-is-branch', 'true');
+                svg.appendChild(branchCircle);
+            }
+        });
+    }
+
+    // 切换节点轴折叠状态
+    toggleNodeAxis() {
+        this.isNodeAxisCollapsed = !this.isNodeAxisCollapsed;
+        const content = document.getElementById('nodeAxisContent');
+        const icon = document.getElementById('nodeAxisToggleIcon');
+
+        if (this.isNodeAxisCollapsed) {
+            content.style.display = 'none';
+            icon.style.transform = 'rotate(-90deg)';
+        } else {
+            content.style.display = 'block';
+            icon.style.transform = 'rotate(0deg)';
+        }
+    }
+
+    // 处理节点点击事件
+    handleNodeClick(e) {
+        const target = e.target;
+
+        // 只处理圆形节点的点击
+        if (target.tagName !== 'circle') return;
+
+        const messageIndex = parseInt(target.getAttribute('data-message-index'));
+        const isBranch = target.getAttribute('data-is-branch') === 'true';
+
+        if (isNaN(messageIndex)) return;
+
+        // 如果点击的是分叉节点，显示追问内容
+        if (isBranch) {
+            const activeSession = this.getActiveSession();
+            if (activeSession && activeSession.messages[messageIndex]) {
+                const message = activeSession.messages[messageIndex];
+                if (message.followups && message.followups.length > 0) {
+                    this.showFollowupsModal(message.followups);
+                }
+            }
+        }
+
+        // 滚动到对应的消息位置（主节点和分叉节点都执行）
+        const messagesContainer = document.getElementById('messages');
+        const messageElements = messagesContainer.querySelectorAll('[data-message-index]');
+
+        // 找到对应索引的消息元素
+        let targetMessageElement = null;
+        messageElements.forEach(el => {
+            if (parseInt(el.getAttribute('data-message-index')) === messageIndex) {
+                targetMessageElement = el;
+            }
+        });
+
+        if (targetMessageElement) {
+            targetMessageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // 添加临时高亮效果
+            targetMessageElement.classList.add('highlight-search-result');
+            setTimeout(() => {
+                targetMessageElement.classList.remove('highlight-search-result');
+            }, 3000);
+        } else {
+            console.log('未找到对应的消息元素，messageIndex:', messageIndex);
+        }
+    }
+
+    // 显示追问内容的模态框
+    showFollowupsModal(followups) {
+        const modal = this.createFollowupModal();
+        const contentElement = modal.querySelector('.followup-content');
+
+        let html = '<div class="space-y-4">';
+        followups.forEach((followup, index) => {
+            html += `
+                <div class="border border-gray-600 rounded-lg p-4">
+                    <div class="mb-2">
+                        <span class="text-blue-400 font-semibold">💬 追问 ${index + 1}</span>
+                    </div>
+                    <div class="mb-3 text-sm text-gray-300 bg-gray-900 p-2 rounded">
+                        <strong>问:</strong> ${this.escapeHtml(followup.question)}
+                    </div>
+                    <div class="text-sm">
+                        <strong class="text-green-400">答:</strong>
+                        <div class="mt-2">${this.formatMessage(followup.answer)}</div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+
+        contentElement.innerHTML = html;
+        this.addCopyButtons();
+        document.body.appendChild(modal);
     }
 }
 

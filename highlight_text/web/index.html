@@ -88,6 +88,23 @@
                 </div>
             </div>
 
+            <!-- 节点轴容器 -->
+            <div id="nodeAxisContainer" class="border-t border-gray-700">
+                <!-- 节点轴的折叠/展开标题栏 -->
+                <div id="nodeAxisHeader" class="p-2 cursor-pointer flex justify-between items-center hover:bg-gray-700 transition-colors">
+                    <h3 class="text-xs font-bold text-gray-400">会话节点轴</h3>
+                    <!-- 用于显示折叠状态的图标 -->
+                    <svg id="nodeAxisToggleIcon" class="w-3 h-3 text-gray-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </div>
+                <!-- 节点轴的渲染区域 -->
+                <div id="nodeAxisContent" class="p-2 overflow-y-auto" style="max-height: 300px;">
+                    <!-- 节点树将使用SVG动态渲染在此处 -->
+                    <svg id="nodeAxisSvg" width="100%" height="0"></svg>
+                </div>
+            </div>
+
             <!-- 抽屉底部 - 新建会话按钮 -->
             <div class="drawer-footer p-3 border-t border-gray-700">
                 <button id="newSessionBtn" class="w-full py-2 bg-blue-600 rounded hover:bg-blue-500 text-sm font-medium transition-colors">

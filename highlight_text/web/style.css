@@ -629,3 +629,78 @@
 #summaryContent::-webkit-scrollbar-thumb:hover {
     background: rgba(139, 92, 246, 0.7);
 }
+
+/* 节点轴样式 */
+#nodeAxisContainer {
+    transition: all 0.3s ease;
+}
+
+#nodeAxisContent {
+    transition: max-height 0.3s ease;
+}
+
+#nodeAxisContent::-webkit-scrollbar {
+    width: 4px;
+}
+
+#nodeAxisContent::-webkit-scrollbar-track {
+    background: #374151;
+}
+
+#nodeAxisContent::-webkit-scrollbar-thumb {
+    background: #6B7280;
+    border-radius: 2px;
+}
+
+#nodeAxisContent::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF;
+}
+
+/* 节点轴SVG样式 */
+.node-axis-line {
+    stroke: #6B7280;
+    stroke-width: 3px;
+    stroke-linecap: round;
+}
+
+.node-axis-circle {
+    stroke: #6B7280;
+    stroke-width: 3px;
+    fill: #1F2937;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.node-axis-circle:hover {
+    stroke: #3B82F6;
+    stroke-width: 4px;
+}
+
+.node-axis-circle.solid {
+    fill: #6B7280;
+}
+
+.node-axis-circle.solid:hover {
+    fill: #3B82F6;
+    stroke: #3B82F6;
+}
+
+.node-axis-circle.branch {
+    stroke: #F59E0B;
+    fill: #1F2937;
+}
+
+.node-axis-circle.branch:hover {
+    stroke: #FBBF24;
+    fill: #F59E0B;
+}
+
+/* 节点轴折叠图标动画 */
+#nodeAxisToggleIcon {
+    transition: transform 0.3s ease;
+}
+
+/* 折叠状态下隐藏节点轴 */
+#sessionDrawer.collapsed #nodeAxisContainer {
+    display: none;
+}
