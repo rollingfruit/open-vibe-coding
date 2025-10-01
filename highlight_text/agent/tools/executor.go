@@ -1,10 +1,40 @@
 package tools
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 )
+
+// 最大Token数限制（用于防止上下文溢出）
+const maxOutputTokens = 2000
+
+// truncateByTokens 根据Token估算截断内容，防止上下文溢出
+// 使用 4 characters ≈ 1 token 的经验估算
+func truncateByTokens(content string, maxTokens int) string {
+	if maxTokens <= 0 {
+		maxTokens = maxOutputTokens
+	}
+
+	maxChars := maxTokens * 4
+	contentLen := len(content)
+
+	if contentLen <= maxChars {
+		return content
+	}
+
+	// 截断内容
+	truncated := content[:maxChars]
+	omittedChars := contentLen - maxChars
+	omittedTokens := omittedChars / 4
+
+	// 添加截断提示信息
+	truncateMsg := fmt.Sprintf("\n\n[... content truncated ... 后续约 %d tokens 的内容已被省略，以保护上下文空间。如需查看特定部分，请使用 start_line/end_line 参数。]", omittedTokens)
+
+	return truncated + truncateMsg
+}
 
 // ToolDefinition 定义一个工具
 type ToolDefinition struct {
@@ -32,13 +62,29 @@ func GetAvailableTools() []ToolDefinition {
 		},
 		{
 			Name:        "read_file",
-			Description: "读取文件内容",
+			Description: "从文件中读取内容。提供多种灵活的读取模式。如果未提供任何可选参数，则会尝试读取整个文件（但会受Token限制自动截断）。",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"path": map[string]interface{}{
 						"type":        "string",
-						"description": "文件路径",
+						"description": "文件路径（必需）",
+					},
+					"head": map[string]interface{}{
+						"type":        "integer",
+						"description": "读取文件开头的N行（可选）",
+					},
+					"tail": map[string]interface{}{
+						"type":        "integer",
+						"description": "读取文件末尾的N行（可选）",
+					},
+					"start_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "读取的起始行号，从1开始（可选，需与end_line配合使用）",
+					},
+					"end_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "读取的结束行号，包含此行（可选，需与start_line配合使用）",
 					},
 				},
 				"required": []string{"path"},
@@ -96,21 +142,54 @@ func GetAvailableTools() []ToolDefinition {
 	}
 }
 
-// ExecuteTool 执行工具调用，返回对应的shell命令
-func ExecuteTool(toolName string, args map[string]interface{}) (string, error) {
+// ToolResult 工具执行结果
+type ToolResult struct {
+	Output      string // 输出内容
+	IsCommand   bool   // 是否是需要在终端执行的命令
+	Command     string // 如果IsCommand为true，这里是命令字符串
+	DirectResult bool  // 是否是直接结果（不需要终端）
+}
+
+// ExecuteTool 执行工具调用，返回工具结果
+func ExecuteTool(toolName string, args map[string]interface{}) (*ToolResult, error) {
 	switch toolName {
 	case "path_switch":
-		return executePathSwitch(args)
+		cmd, err := executePathSwitch(args)
+		if err != nil {
+			return nil, err
+		}
+		return &ToolResult{Command: cmd, IsCommand: true}, nil
+
 	case "read_file":
-		return executeReadFile(args)
+		output, err := executeReadFile(args)
+		if err != nil {
+			return nil, err
+		}
+		return &ToolResult{Output: output, DirectResult: true}, nil
+
 	case "write_file":
-		return executeWriteFile(args)
+		output, err := executeWriteFileDirect(args)
+		if err != nil {
+			return nil, err
+		}
+		return &ToolResult{Output: output, DirectResult: true}, nil
+
 	case "grep":
-		return executeGrep(args)
+		cmd, err := executeGrep(args)
+		if err != nil {
+			return nil, err
+		}
+		return &ToolResult{Command: cmd, IsCommand: true}, nil
+
 	case "list_files":
-		return executeListFiles(args)
+		cmd, err := executeListFiles(args)
+		if err != nil {
+			return nil, err
+		}
+		return &ToolResult{Command: cmd, IsCommand: true}, nil
+
 	default:
-		return "", fmt.Errorf("unknown tool: %s", toolName)
+		return nil, fmt.Errorf("unknown tool: %s", toolName)
 	}
 }
 
@@ -125,39 +204,100 @@ func executePathSwitch(args map[string]interface{}) (string, error) {
 	return fmt.Sprintf("cd \"%s\"", path), nil
 }
 
+// executeReadFile 统一的文件读取函数，支持多种模式
 func executeReadFile(args map[string]interface{}) (string, error) {
-	// 兼容多种路径参数名：path, file_path, filename
-	path, ok := args["path"].(string)
-	if !ok {
-		path, ok = args["file_path"].(string)
-		if !ok {
-			path, ok = args["filename"].(string)
-			if !ok {
-				return "", fmt.Errorf("missing or invalid path parameter (tried: 'path', 'file_path', 'filename')")
-			}
+	path := extractPath(args)
+	if path == "" {
+		return "", fmt.Errorf("missing or invalid path parameter")
+	}
+
+	// 优先级1: 检查 head 参数
+	if head, ok := extractInt(args, "head"); ok && head > 0 {
+		result, err := readFileLines(path, 1, head)
+		if err != nil {
+			return "", err
 		}
+		return truncateByTokens(result, maxOutputTokens), nil
 	}
 
-	// 转义特殊字符
-	path = strings.ReplaceAll(path, "\"", "\\\"")
-
-	if runtime.GOOS == "windows" {
-		return fmt.Sprintf("type \"%s\"", path), nil
+	// 优先级2: 检查 tail 参数
+	if tail, ok := extractInt(args, "tail"); ok && tail > 0 {
+		result, err := readFileTail(path, tail)
+		if err != nil {
+			return "", err
+		}
+		return truncateByTokens(result, maxOutputTokens), nil
 	}
-	return fmt.Sprintf("cat \"%s\"", path), nil
+
+	// 优先级3: 检查 start_line / end_line 参数
+	if startLine, okStart := extractInt(args, "start_line"); okStart {
+		if endLine, okEnd := extractInt(args, "end_line"); okEnd {
+			if startLine < 1 {
+				return "", fmt.Errorf("start_line must be >= 1")
+			}
+			if endLine < startLine {
+				return "", fmt.Errorf("end_line must be >= start_line")
+			}
+			result, err := readFileLines(path, startLine, endLine-startLine+1)
+			if err != nil {
+				return "", err
+			}
+			return truncateByTokens(result, maxOutputTokens), nil
+		}
+		return "", fmt.Errorf("start_line requires end_line parameter")
+	}
+
+	// 默认行为: 读取整个文件
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file: %v", err)
+	}
+
+	return truncateByTokens(string(content), maxOutputTokens), nil
 }
 
-func executeWriteFile(args map[string]interface{}) (string, error) {
-	// 兼容多种路径参数名：path, file_path, filename
-	path, ok := args["path"].(string)
-	if !ok {
-		path, ok = args["file_path"].(string)
-		if !ok {
-			path, ok = args["filename"].(string)
-			if !ok {
-				return "", fmt.Errorf("missing or invalid path parameter (tried: 'path', 'file_path', 'filename')")
-			}
+// readFileLines 读取文件指定行
+func readFileLines(path string, startLine, count int) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	var result strings.Builder
+	currentLine := 1
+	linesRead := 0
+
+	for scanner.Scan() {
+		if currentLine >= startLine && linesRead < count {
+			result.WriteString(scanner.Text())
+			result.WriteString("\n")
+			linesRead++
 		}
+		currentLine++
+
+		if linesRead >= count {
+			break
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("error reading file: %v", err)
+	}
+
+	if linesRead == 0 {
+		return "", fmt.Errorf("no lines found in specified range")
+	}
+
+	return fmt.Sprintf("[Lines %d-%d of %s]\n%s", startLine, startLine+linesRead-1, path, result.String()), nil
+}
+
+// executeWriteFileDirect 直接写入文件
+func executeWriteFileDirect(args map[string]interface{}) (string, error) {
+	path := extractPath(args)
+	if path == "" {
+		return "", fmt.Errorf("missing or invalid path parameter")
 	}
 
 	content, ok := args["content"].(string)
@@ -165,17 +305,85 @@ func executeWriteFile(args map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("missing or invalid 'content' parameter")
 	}
 
-	// 转义特殊字符
-	path = strings.ReplaceAll(path, "\"", "\\\"")
-	content = strings.ReplaceAll(content, "\"", "\\\"")
-	content = strings.ReplaceAll(content, "\n", "\\n")
-
-	if runtime.GOOS == "windows" {
-		// Windows 使用 echo 写入文件
-		return fmt.Sprintf("echo %s > \"%s\"", content, path), nil
+	err := os.WriteFile(path, []byte(content), 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to write file: %v", err)
 	}
-	// Unix 系统使用 echo 写入文件
-	return fmt.Sprintf("echo \"%s\" > \"%s\"", content, path), nil
+
+	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), path), nil
+}
+
+// extractPath 从参数中提取路径，兼容多种参数名
+func extractPath(args map[string]interface{}) string {
+	if path, ok := args["path"].(string); ok {
+		return path
+	}
+	if path, ok := args["file_path"].(string); ok {
+		return path
+	}
+	if path, ok := args["filename"].(string); ok {
+		return path
+	}
+	return ""
+}
+
+// extractInt 从参数中提取整数值，兼容float64和int类型
+func extractInt(args map[string]interface{}, key string) (int, bool) {
+	if val, ok := args[key].(float64); ok {
+		return int(val), true
+	}
+	if val, ok := args[key].(int); ok {
+		return val, true
+	}
+	return 0, false
+}
+
+// readFileTail 读取文件末尾N行
+func readFileTail(path string, lines int) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	// 使用两遍扫描：第一遍统计总行数，第二遍读取末尾行
+	scanner := bufio.NewScanner(file)
+	totalLines := 0
+	for scanner.Scan() {
+		totalLines++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("error reading file: %v", err)
+	}
+
+	// 计算起始行
+	startLine := totalLines - lines + 1
+	if startLine < 1 {
+		startLine = 1
+	}
+
+	// 重新打开文件读取指定行
+	file.Seek(0, 0)
+	scanner = bufio.NewScanner(file)
+	var result strings.Builder
+	currentLine := 1
+
+	for scanner.Scan() {
+		if currentLine >= startLine {
+			result.WriteString(scanner.Text())
+			result.WriteString("\n")
+		}
+		currentLine++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("error reading file: %v", err)
+	}
+
+	actualStart := startLine
+	actualEnd := totalLines
+	return fmt.Sprintf("[Lines %d-%d of %s (last %d lines)]\n%s", actualStart, actualEnd, path, lines, result.String()), nil
 }
 
 func executeGrep(args map[string]interface{}) (string, error) {

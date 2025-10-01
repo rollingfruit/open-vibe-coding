@@ -336,6 +336,35 @@ ${toolsDescription}
 2. 所有文件路径都是相对于当前工作目录的相对路径
 3. 不要使用绝对路径，除非用户明确指定
 
+**read_file工具的灵活使用**：
+read_file 工具已经整合了多种读取模式，通过不同的可选参数组合实现：
+
+1. **完整读取**（默认）：只提供 path 参数
+   - 适用于小文件（如配置文件、小代码文件）
+   - 会自动应用Token限制保护（约2000 tokens）
+   - 如果文件过大被截断，系统会提示你使用更精确的参数
+
+2. **预览文件头部**：使用 head 参数
+   - 例：{"path": "large.log", "head": 50} 读取前50行
+   - 适用于快速预览大文件结构
+   - 优先级最高
+
+3. **查看文件尾部**：使用 tail 参数
+   - 例：{"path": "app.log", "tail": 100} 读取最后100行
+   - 适用于查看日志文件的最新内容
+   - 优先级次于head
+
+4. **精确范围读取**：使用 start_line 和 end_line 参数
+   - 例：{"path": "code.js", "start_line": 100, "end_line": 150}
+   - 适用于查看特定代码段或错误位置
+   - 必须同时提供两个参数
+
+**策略建议**：
+- 未知大小文件：先用 head 快速预览判断结构
+- 日志文件：使用 tail 查看最新内容
+- 定位特定内容：结合 grep 找到行号后用 start_line/end_line 精确读取
+- 所有读取结果都受Token保护，不会溢出上下文
+
 请使用ReAct（Reasoning and Acting）模式来思考和行动：
 1. Thought: 分析当前情况，决定下一步要做什么
 2. Action: 选择一个工具并提供参数（必须使用正确的参数名）
@@ -392,7 +421,12 @@ ${toolsDescription}
             }
 
             const data = await response.json();
-            return data.choices[0].message.content;
+
+            // 返回内容和token使用信息
+            return {
+                content: data.choices[0].message.content,
+                usage: data.usage || null
+            };
         } catch (error) {
             console.error('LLM调用失败:', error);
             throw error;
@@ -468,14 +502,23 @@ ${toolsDescription}
                     activeSession.messages.push({
                         role: 'system',
                         content: `[Agent迭代 ${iteration}]`,
+                        type: 'agent_iteration',
                         isAgentMarker: true,
-                        iteration: iteration
+                        iteration: iteration,
+                        timestamp: new Date().toISOString()
                     });
                 }
 
                 // 调用LLM
-                const llmResponse = await this.callLLM(currentMessage);
+                const llmResult = await this.callLLM(currentMessage);
+                const llmResponse = llmResult.content;
                 this.addLogEntry('llm_response', 'LLM响应', { response: llmResponse });
+
+                // 累计token消耗
+                if (llmResult.usage) {
+                    const totalTokens = (llmResult.usage.prompt_tokens || 0) + (llmResult.usage.completion_tokens || 0);
+                    this.mainApp.addTokensToCurrentSession(totalTokens);
+                }
 
                 // 解析响应
                 const parsed = this.parseLLMResponse(llmResponse);
@@ -483,6 +526,16 @@ ${toolsDescription}
                 // 显示思考过程
                 if (parsed.thought) {
                     this.addTraceStep('thought', parsed.thought);
+                    // 保存思考步骤到会话
+                    if (activeSession) {
+                        activeSession.messages.push({
+                            role: 'assistant',
+                            content: parsed.thought,
+                            type: 'agent_thought',
+                            iteration: iteration,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
                 }
 
                 // 检查是否有最终答案
@@ -493,6 +546,17 @@ ${toolsDescription}
                     // 在主聊天窗口显示最终答案
                     this.mainApp.addMessage(parsed.final_answer, 'ai');
 
+                    // 保存最终答案到会话
+                    if (activeSession) {
+                        activeSession.messages.push({
+                            role: 'assistant',
+                            content: parsed.final_answer,
+                            type: 'agent_final_answer',
+                            iteration: iteration,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+
                     break;
                 }
 
@@ -500,6 +564,19 @@ ${toolsDescription}
                 if (parsed.action && parsed.action_input) {
                     this.addTraceStep('action', `执行工具: ${parsed.action}`, parsed.action_input);
                     this.addLogEntry('action', `执行工具: ${parsed.action}`, { tool: parsed.action, args: parsed.action_input });
+
+                    // 保存工具调用到会话
+                    if (activeSession) {
+                        activeSession.messages.push({
+                            role: 'assistant',
+                            content: `执行工具: ${parsed.action}`,
+                            type: 'agent_action',
+                            tool: parsed.action,
+                            args: parsed.action_input,
+                            iteration: iteration,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
 
                     let result = await this.executeToolOnBackend(parsed.action, parsed.action_input);
 
@@ -527,6 +604,18 @@ ${toolsDescription}
                         this.addTraceStep('observation', result.output);
                         this.addLogEntry('observation', result.output, { cwd: result.cwd });
 
+                        // 保存观察结果到会话
+                        if (activeSession) {
+                            activeSession.messages.push({
+                                role: 'system',
+                                content: result.output,
+                                type: 'agent_observation',
+                                cwd: result.cwd,
+                                iteration: iteration,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
+
                         // 将结果添加到对话历史
                         this.conversationHistory.push({
                             role: 'assistant',
@@ -542,6 +631,17 @@ ${toolsDescription}
                         this.addTraceStep('error', result.error || '工具执行失败');
                         this.addLogEntry('error', result.error || '工具执行失败');
 
+                        // 保存错误到会话
+                        if (activeSession) {
+                            activeSession.messages.push({
+                                role: 'system',
+                                content: result.error || '工具执行失败',
+                                type: 'agent_error',
+                                iteration: iteration,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
+
                         // 将错误添加到对话历史
                         currentMessage = `工具执行失败: ${result.error}，请尝试其他方法`;
                     }
@@ -549,6 +649,18 @@ ${toolsDescription}
                     // 如果没有工具调用也没有最终答案，说明格式有问题
                     this.addTraceStep('error', '无法理解LLM的响应格式');
                     this.addLogEntry('error', '无法理解LLM的响应格式', { llm_response: llmResponse });
+
+                    // 保存错误到会话
+                    if (activeSession) {
+                        activeSession.messages.push({
+                            role: 'system',
+                            content: '无法理解LLM的响应格式',
+                            type: 'agent_error',
+                            iteration: iteration,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+
                     break;
                 }
             }
@@ -563,11 +675,12 @@ ${toolsDescription}
             this.addTraceStep('error', `执行出错: ${error.message}`);
             this.mainApp.addMessage(`Agent执行出错: ${error.message}`, 'ai');
         } finally {
-            // 保存会话并更新节点轴
+            // 保存会话并更新节点轴和Token用量
             const activeSession = this.mainApp.getActiveSession();
             if (activeSession) {
                 this.mainApp.saveSessions();
                 this.mainApp.renderNodeAxis();
+                this.mainApp.updateTokenUsage();
             }
 
             // 关闭会话

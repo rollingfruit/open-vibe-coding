@@ -507,7 +507,7 @@ func handleAgentExecute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 执行工具
-	command, err := tools.ExecuteTool(req.Tool, req.Args)
+	result, err := tools.ExecuteTool(req.Tool, req.Args)
 	if err != nil {
 		log.Printf("Failed to execute tool: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -520,19 +520,27 @@ func handleAgentExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 在终端中执行命令
-	output, err := term.Execute(command)
-	if err != nil {
-		log.Printf("Failed to execute command: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(AgentResponse{
-			Success:          false,
-			Error:            fmt.Sprintf("Failed to execute command: %v", err),
-			Output:           output,
-			Cwd:              term.GetCwd(),
-			InitialDirectory: initialDir,
-		})
-		return
+	var output string
+
+	// 如果是直接结果，直接使用输出
+	if result.DirectResult {
+		output = result.Output
+	} else if result.IsCommand {
+		// 如果是命令，在终端中执行
+		cmdOutput, err := term.Execute(result.Command)
+		if err != nil {
+			log.Printf("Failed to execute command: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(AgentResponse{
+				Success:          false,
+				Error:            fmt.Sprintf("Failed to execute command: %v", err),
+				Output:           cmdOutput,
+				Cwd:              term.GetCwd(),
+				InitialDirectory: initialDir,
+			})
+			return
+		}
+		output = cmdOutput
 	}
 
 	// 返回成功响应

@@ -102,7 +102,8 @@ class AIAssistant {
             title: title || '新对话',
             messages: [],
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            totalTokens: 0  // 用于Agent模式的精确token统计
         };
 
         this.sessions.push(newSession);
@@ -177,6 +178,22 @@ class AIAssistant {
         }
     }
 
+    /**
+     * 添加token到当前会话
+     */
+    addTokensToCurrentSession(tokenCount) {
+        const activeSession = this.getActiveSession();
+        if (activeSession) {
+            // 初始化totalTokens字段（兼容旧数据）
+            if (typeof activeSession.totalTokens !== 'number') {
+                activeSession.totalTokens = 0;
+            }
+            activeSession.totalTokens += tokenCount;
+            activeSession.updatedAt = new Date().toISOString();
+            // 不在这里调用saveSessions，由调用方决定何时保存
+        }
+    }
+
     updateTokenUsage() {
         const activeSession = this.getActiveSession();
         if (!activeSession || !this.config || !this.config.apiSettings) {
@@ -187,8 +204,13 @@ class AIAssistant {
         const maxTokens = this.config.apiSettings.maxContextTokens || 20000;
         let currentTokens = 0;
 
-        // 计算当前Token用量
-        if (activeSession.summary) {
+        // 检查是否是Agent模式（会话中有agent_开头的消息类型）
+        const hasAgentMessages = activeSession.messages.some(msg => msg.type && msg.type.startsWith('agent_'));
+
+        if (hasAgentMessages && typeof activeSession.totalTokens === 'number') {
+            // Agent模式：使用精确的token统计
+            currentTokens = activeSession.totalTokens;
+        } else if (activeSession.summary) {
             // 如果已压缩，只计算摘要的长度
             currentTokens = activeSession.summary.length;
             // 加上压缩点之后的新消息
@@ -701,8 +723,43 @@ class AIAssistant {
             return;
         }
 
+        // 用于追踪Agent消息气泡
+        let currentAgentBubble = null;
+        let currentAgentContainer = null;
+
         activeSession.messages.forEach((msg, index) => {
-            if (msg.role === 'user') {
+            // 检查是否是Agent相关消息
+            if (msg.type && msg.type.startsWith('agent_')) {
+                // 如果还没有Agent气泡，创建一个
+                if (!currentAgentBubble) {
+                    currentAgentBubble = document.createElement('div');
+                    currentAgentBubble.className = 'message-bubble ai-message animate__animated animate__fadeInUp agent-message-bubble';
+                    currentAgentBubble.setAttribute('data-message-index', index);
+                    currentAgentBubble.innerHTML = `
+                        <div class="mb-2 flex items-center gap-2">
+                            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 8V4H8'/%3E%3Crect width='16' height='12' x='4' y='8' rx='2'/%3E%3Cpath d='M2 14h2'/%3E%3Cpath d='M20 14h2'/%3E%3Cpath d='M15 13v2'/%3E%3Cpath d='M9 13v2'/%3E%3C/svg%3E" class="w-6 h-6" alt="AI">
+                            <span class="text-green-400 font-semibold">Agent执行过程</span>
+                            <span class="text-gray-400 text-sm ml-2">历史记录</span>
+                        </div>
+                        <div class="message-content agent-trace-content"></div>
+                    `;
+                    messagesContainer.appendChild(currentAgentBubble);
+                    currentAgentContainer = currentAgentBubble.querySelector('.agent-trace-content');
+                }
+
+                // 根据不同的Agent消息类型渲染
+                this.renderAgentMessage(msg, currentAgentContainer, index);
+
+                // 如果是最终答案，结束当前Agent气泡
+                if (msg.type === 'agent_final_answer') {
+                    currentAgentBubble = null;
+                    currentAgentContainer = null;
+                }
+            } else if (msg.role === 'user') {
+                // 结束当前Agent气泡（如果有）
+                currentAgentBubble = null;
+                currentAgentContainer = null;
+
                 // 处理消息内容，可能是字符串或多模态数组
                 let textContent = '';
                 if (typeof msg.content === 'string') {
@@ -718,10 +775,19 @@ class AIAssistant {
                 const messageEl = this.addMessage(textContent, 'user', false, msg.imageUrl);
                 messageEl.setAttribute('data-message-index', index);
             } else if (msg.role === 'assistant') {
+                // 结束当前Agent气泡（如果有）
+                currentAgentBubble = null;
+                currentAgentContainer = null;
+
                 const messageEl = this.addMessage(msg.content, 'ai', false);
                 messageEl.setAttribute('data-message-index', index);
             }
         });
+
+        // 重新初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
     }
 
     bindEvents() {
@@ -2084,6 +2150,81 @@ class AIAssistant {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * 渲染Agent消息
+     */
+    renderAgentMessage(msg, container, index) {
+        const stepDiv = document.createElement('div');
+        stepDiv.className = 'agent-trace-step border rounded-lg p-3 mb-2';
+        stepDiv.setAttribute('data-message-index', index);
+
+        let iconName = 'circle';
+        let titleColor = 'text-gray-400';
+        let title = msg.type;
+
+        switch (msg.type) {
+            case 'agent_iteration':
+                // 迭代标记，显示为分隔线
+                stepDiv.className = 'text-xs text-gray-500 my-2 text-center';
+                stepDiv.innerHTML = `<div class="border-t border-gray-600 pt-2">${this.escapeHtml(msg.content)}</div>`;
+                container.appendChild(stepDiv);
+                return;
+
+            case 'agent_thought':
+                iconName = 'brain';
+                titleColor = 'text-blue-400';
+                title = '思考';
+                stepDiv.classList.add('bg-blue-900', 'bg-opacity-20', 'border-blue-500');
+                break;
+
+            case 'agent_action':
+                iconName = 'zap';
+                titleColor = 'text-yellow-400';
+                title = '执行工具';
+                stepDiv.classList.add('bg-yellow-900', 'bg-opacity-20', 'border-yellow-500');
+                break;
+
+            case 'agent_observation':
+                iconName = 'eye';
+                titleColor = 'text-green-400';
+                title = '观察结果';
+                stepDiv.classList.add('bg-green-900', 'bg-opacity-20', 'border-green-500');
+                break;
+
+            case 'agent_error':
+                iconName = 'alert-circle';
+                titleColor = 'text-red-400';
+                title = '错误';
+                stepDiv.classList.add('bg-red-900', 'bg-opacity-20', 'border-red-500');
+                break;
+
+            case 'agent_final_answer':
+                iconName = 'check-circle';
+                titleColor = 'text-purple-400';
+                title = '最终答案';
+                stepDiv.classList.add('bg-purple-900', 'bg-opacity-20', 'border-purple-500');
+                break;
+        }
+
+        // 构建内容
+        let contentHtml = `<div class="text-sm text-gray-200 whitespace-pre-wrap">${this.escapeHtml(msg.content)}</div>`;
+
+        // 如果有额外数据（如工具参数），显示
+        if (msg.args) {
+            contentHtml += `<div class="mt-2 text-xs text-gray-400">${this.escapeHtml(JSON.stringify(msg.args, null, 2))}</div>`;
+        }
+
+        stepDiv.innerHTML = `
+            <div class="flex items-center gap-2 mb-2">
+                <i data-lucide="${iconName}" class="w-4 h-4 ${titleColor}"></i>
+                <span class="font-bold ${titleColor}">${title}</span>
+            </div>
+            ${contentHtml}
+        `;
+
+        container.appendChild(stepDiv);
     }
 
     // 图片处理方法
