@@ -16,6 +16,13 @@ class AIAssistant {
         this.isAgentMode = false; // 是否处于Agent模式
         this.agentHandler = null; // Agent处理器
 
+        // 知识库相关
+        this.viewMode = 'chat'; // 'chat' or 'editor'
+        this.notes = []; // 笔记列表
+        this.activeNoteId = null; // 当前编辑的笔记ID
+        this.editorInstance = null; // 编辑器实例
+        this.knowledgeAgentHandler = null; // 知识库Copilot处理器
+
         // 初始化代码存储
         if (!window.codeStorage) {
             window.codeStorage = new Map();
@@ -30,10 +37,12 @@ class AIAssistant {
     async init() {
         await this.loadConfig();
         this.agentHandler = new AgentHandler(this); // 初始化Agent处理器
+        this.knowledgeAgentHandler = new KnowledgeAgentHandler(this); // 初始化知识库Agent
         this.bindEvents();
         this.loadThemePreference();
         this.checkUrlParams();
         this.loadSessions();
+        this.loadNotes(); // 加载笔记列表
     }
 
     async loadConfig() {
@@ -986,6 +995,78 @@ class AIAssistant {
         document.getElementById('chatContainer').addEventListener('scroll', () => {
             this.hideTooltip();
         });
+
+        // ====== 知识库相关事件 ======
+
+        // 返回聊天按钮
+        const backToChatBtn = document.getElementById('backToChatBtn');
+        if (backToChatBtn) {
+            backToChatBtn.addEventListener('click', () => {
+                this.switchToChatMode();
+            });
+        }
+
+        // 保存笔记按钮
+        const saveNoteBtn = document.getElementById('saveNoteBtn');
+        if (saveNoteBtn) {
+            saveNoteBtn.addEventListener('click', () => {
+                this.saveActiveNote();
+            });
+        }
+
+        // 新建笔记按钮
+        const newNoteBtn = document.getElementById('newNoteBtn');
+        if (newNoteBtn) {
+            newNoteBtn.addEventListener('click', () => {
+                // TODO: 实现新建笔记
+                this.showNotification('新建笔记功能待实现', 'info');
+            });
+        }
+
+        // 知识库抽屉折叠/展开按钮
+        const toggleKnowledgeDrawerBtn = document.getElementById('toggleKnowledgeDrawerBtn');
+        if (toggleKnowledgeDrawerBtn) {
+            toggleKnowledgeDrawerBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // 阻止事件冒泡
+                this.toggleKnowledgeDrawer();
+            });
+        }
+
+        const expandKnowledgeDrawerBtn = document.getElementById('expandKnowledgeDrawerBtn');
+        if (expandKnowledgeDrawerBtn) {
+            expandKnowledgeDrawerBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // 阻止事件冒泡
+                this.toggleKnowledgeDrawer();
+            });
+        }
+
+        // Copilot输入框事件
+        const copilotInput = document.getElementById('copilotInput');
+        const copilotSendBtn = document.getElementById('copilotSendBtn');
+
+        if (copilotSendBtn) {
+            copilotSendBtn.addEventListener('click', () => {
+                this.sendCopilotMessage();
+            });
+        }
+
+        if (copilotInput) {
+            copilotInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.sendCopilotMessage();
+                }
+            });
+        }
+
+        // 笔记搜索
+        const noteSearch = document.getElementById('noteSearch');
+        if (noteSearch) {
+            noteSearch.addEventListener('input', (e) => {
+                // TODO: 实现笔记搜索
+                console.log('搜索笔记:', e.target.value);
+            });
+        }
     }
 
     checkUrlParams() {
@@ -1062,6 +1143,27 @@ class AIAssistant {
         // 检查是否有消息或图片
         if (!message && !this.uploadedImageBase64) return;
         if (this.isStreaming) return;
+
+        // 检查是否在编辑模式（知识库Copilot模式）
+        if (this.viewMode === 'editor') {
+            input.value = '';
+            this.hideInputShortcuts();
+
+            // 在聊天窗口显示用户消息
+            this.addMessage(message, 'user');
+
+            // 获取编辑器上下文
+            const editorContext = {
+                noteId: this.activeNoteId,
+                fullText: this.editorInstance?.value || '',
+                selectedText: '' // 暂不支持选中文本
+            };
+
+            // 调用知识库Agent
+            await this.knowledgeAgentHandler.startReActLoop(message, editorContext);
+
+            return;
+        }
 
         // 检查是否为Agent模式
         if (this.isAgentMode || message.startsWith('Agent:')) {
@@ -2634,6 +2736,259 @@ class AIAssistant {
 
         // 持久化存储
         localStorage.setItem('theme', theme);
+    }
+
+    // ============ 知识库相关方法 ============
+
+    /**
+     * 加载笔记列表
+     */
+    async loadNotes() {
+        try {
+            const response = await fetch('http://localhost:8080/api/notes');
+            if (!response.ok) {
+                console.warn('加载笔记列表失败');
+                return;
+            }
+            const text = await response.text();
+
+            // 尝试解析JSON
+            try {
+                // 后端返回的是包含笔记列表的文本
+                const match = text.match(/知识库中共有 \d+ 篇笔记:\n([\s\S]+)/);
+                if (match) {
+                    this.notes = JSON.parse(match[1]);
+                } else {
+                    this.notes = [];
+                }
+            } catch (e) {
+                console.warn('解析笔记列表时出错:', e);
+                this.notes = [];
+            }
+
+            this.renderNoteList();
+        } catch (error) {
+            console.error('加载笔记失败:', error);
+        }
+    }
+
+    /**
+     * 渲染笔记列表
+     */
+    renderNoteList() {
+        const notesList = document.getElementById('notesList');
+        if (!notesList) return;
+
+        notesList.innerHTML = '';
+
+        if (this.notes.length === 0) {
+            notesList.innerHTML = '<li class="text-gray-400 text-sm p-3 text-center">知识库为空<br><small>点击下方"新建笔记"开始</small></li>';
+            return;
+        }
+
+        this.notes.forEach(note => {
+            const noteItem = document.createElement('li');
+            noteItem.className = 'note-item p-3 rounded cursor-pointer transition-colors hover:bg-gray-700 border-b border-gray-700';
+            if (note.id === this.activeNoteId) {
+                noteItem.classList.add('bg-purple-900', 'bg-opacity-30');
+            }
+
+            noteItem.innerHTML = `
+                <div class="flex items-center gap-2 mb-1">
+                    <i data-lucide="file-text" class="w-4 h-4 text-purple-400"></i>
+                    <span class="font-medium text-sm">${this.escapeHtml(note.title || note.id)}</span>
+                </div>
+                ${note.created_at ? `<div class="text-xs text-gray-400">${new Date(note.created_at).toLocaleDateString()}</div>` : ''}
+            `;
+
+            noteItem.addEventListener('click', () => {
+                this.switchToEditorMode(note.id);
+            });
+
+            notesList.appendChild(noteItem);
+        });
+
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    /**
+     * 切换到编辑模式
+     */
+    async switchToEditorMode(noteId) {
+        this.viewMode = 'editor';
+        this.activeNoteId = noteId;
+
+        // 切换body类
+        document.body.classList.remove('view-mode-chat');
+        document.body.classList.add('view-mode-editor');
+
+        // 确保右侧知识库显示（如果之前被折叠）
+        const rightSidebar = document.getElementById('right-sidebar');
+        if (rightSidebar) {
+            rightSidebar.classList.remove('hidden', 'collapsed');
+        }
+
+        // 隐藏聊天区域主体
+        const chatContainer = document.getElementById('chatContainer');
+        const editorContainer = document.getElementById('editor-container');
+
+        if (chatContainer) chatContainer.classList.add('hidden');
+        if (editorContainer) editorContainer.classList.remove('hidden');
+
+        // 清空Copilot面板（准备显示新对话）
+        const copilotMessages = document.getElementById('copilotMessages');
+        if (copilotMessages) {
+            copilotMessages.innerHTML = '<div class="text-gray-400 text-sm">在编辑器中提问，Copilot将帮助你写作和组织知识...</div>';
+        }
+
+        // 加载笔记内容
+        try {
+            const response = await fetch(`http://localhost:8080/api/notes/${noteId}`);
+            const content = await response.text();
+
+            // 初始化编辑器
+            this.initEditor(content, noteId);
+        } catch (error) {
+            console.error('加载笔记内容失败:', error);
+            this.showNotification('加载笔记失败: ' + error.message, 'error');
+        }
+
+        // 更新笔记列表高亮
+        this.renderNoteList();
+
+        // 初始化lucide图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    /**
+     * 初始化编辑器
+     */
+    initEditor(content, noteId) {
+        const editorTextarea = document.getElementById('noteEditor');
+        const noteTitleEl = document.getElementById('noteTitle');
+
+        if (editorTextarea) {
+            editorTextarea.value = content;
+            this.editorInstance = editorTextarea;
+        }
+
+        if (noteTitleEl) {
+            const note = this.notes.find(n => n.id === noteId);
+            noteTitleEl.textContent = note ? note.title : noteId;
+        }
+
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    /**
+     * 切换回聊天模式
+     */
+    switchToChatMode() {
+        this.viewMode = 'chat';
+        this.activeNoteId = null;
+        this.editorInstance = null;
+
+        // 切换body类
+        document.body.classList.remove('view-mode-editor');
+        document.body.classList.add('view-mode-chat');
+
+        // 右侧知识库保持可用，不隐藏（用户可以通过折叠按钮控制）
+
+        // 显示聊天容器，隐藏编辑器
+        const chatContainer = document.getElementById('chatContainer');
+        const editorContainer = document.getElementById('editor-container');
+
+        if (chatContainer) chatContainer.classList.remove('hidden');
+        if (editorContainer) editorContainer.classList.add('hidden');
+
+        // 清空消息输入框
+        const messageInput = document.getElementById('messageInput');
+        if (messageInput) {
+            messageInput.value = '';
+        }
+    }
+
+    /**
+     * 折叠/展开知识库抽屉
+     */
+    toggleKnowledgeDrawer() {
+        const rightSidebar = document.getElementById('right-sidebar');
+        const expandBtn = document.getElementById('expandKnowledgeDrawerBtn');
+
+        if (!rightSidebar) return;
+
+        if (rightSidebar.classList.contains('collapsed')) {
+            // 展开
+            rightSidebar.classList.remove('collapsed');
+            if (expandBtn) expandBtn.classList.add('hidden');
+        } else {
+            // 折叠
+            rightSidebar.classList.add('collapsed');
+            if (expandBtn) expandBtn.classList.remove('hidden');
+        }
+
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    /**
+     * 发送Copilot消息（编辑模式专用）
+     */
+    async sendCopilotMessage() {
+        const copilotInput = document.getElementById('copilotInput');
+        const message = copilotInput?.value.trim();
+
+        if (!message || this.viewMode !== 'editor') return;
+
+        // 清空输入框
+        copilotInput.value = '';
+
+        // 获取编辑器上下文
+        const editorContext = {
+            noteId: this.activeNoteId,
+            fullText: this.editorInstance?.value || '',
+            selectedText: '' // 暂不支持选中文本
+        };
+
+        // 调用知识库Agent
+        await this.knowledgeAgentHandler.startReActLoop(message, editorContext);
+    }
+
+    /**
+     * 保存当前笔记
+     */
+    async saveActiveNote() {
+        if (!this.activeNoteId || !this.editorInstance) {
+            this.showNotification('没有活动的笔记', 'error');
+            return;
+        }
+
+        try {
+            const content = this.editorInstance.value;
+            const response = await fetch(`http://localhost:8080/api/notes/${this.activeNoteId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content })
+            });
+
+            if (!response.ok) {
+                throw new Error('保存失败');
+            }
+
+            this.showNotification('笔记已保存', 'success');
+        } catch (error) {
+            console.error('保存笔记失败:', error);
+            this.showNotification('保存失败: ' + error.message, 'error');
+        }
     }
 
     // 配置 marked.js

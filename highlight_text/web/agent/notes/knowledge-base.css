@@ -1,0 +1,208 @@
+/**
+ * 知识库样式
+ * 支持三栏布局和视图切换
+ */
+
+/* 右侧知识库抽屉 - 始终可用，可展开/折叠 */
+#right-sidebar {
+    display: flex !important;
+    flex-direction: column !important;
+    transition: all 0.3s ease;
+}
+
+#right-sidebar.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    border: none !important;
+}
+
+/* 编辑模式 - 显示编辑器,隐藏聊天容器 */
+body.view-mode-editor #editor-container {
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+body.view-mode-editor #chatContainer {
+    display: none !important;
+}
+
+/* 聊天模式 - 隐藏编辑器 */
+body.view-mode-chat #editor-container {
+    display: none !important;
+}
+
+/* 编辑模式 - 左侧显示Copilot对话，折叠会话列表 */
+body.view-mode-editor #sessionDrawer .drawer-header,
+body.view-mode-editor #sessionDrawer .drawer-content,
+body.view-mode-editor #sessionDrawer #newSessionBtn {
+    display: none !important;
+}
+
+body.view-mode-editor #sessionDrawer {
+    width: 350px !important;
+}
+
+body.view-mode-editor #copilotPanel {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100%;
+}
+
+/* 编辑模式 - 隐藏底部的主输入框 */
+body.view-mode-editor footer {
+    display: none !important;
+}
+
+/* 聊天模式 - 隐藏Copilot面板 */
+body.view-mode-chat #copilotPanel {
+    display: none !important;
+}
+
+/* 覆盖 Tailwind 的 hidden 类 */
+#right-sidebar.hidden {
+    display: flex !important;
+}
+
+#editor-container.hidden {
+    display: none !important;
+}
+
+body.view-mode-editor #editor-container.hidden {
+    display: flex !important;
+}
+
+/* 右侧边栏样式 */
+#right-sidebar {
+    width: 320px;
+    min-width: 280px;
+    max-width: 400px;
+    background: var(--sidebar-bg, #1f2937);
+    border-left: 1px solid var(--border-color, #374151);
+    flex-shrink: 0;
+}
+
+/* 笔记列表样式 */
+.notes-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.note-item {
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.note-item:hover {
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.note-item.active {
+    background: rgba(147, 51, 234, 0.3) !important;
+    border-left: 3px solid #9333ea;
+}
+
+/* 编辑器容器 */
+#editor-container {
+    background: var(--bg-color, #111827);
+}
+
+#noteEditor {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    line-height: 1.6;
+    tab-size: 2;
+}
+
+#noteEditor:focus {
+    outline: none;
+    border-color: #9333ea;
+    box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1);
+}
+
+/* Copilot消息样式 */
+.copilot-message {
+    background: rgba(147, 51, 234, 0.1);
+    border-left: 3px solid #9333ea;
+}
+
+.copilot-trace-content {
+    margin-top: 8px;
+}
+
+/* Copilot追踪步骤样式（紧凑版） */
+body.view-mode-editor .agent-trace-step {
+    padding: 8px;
+    margin-bottom: 8px;
+    font-size: 0.8rem;
+}
+
+body.view-mode-editor .agent-trace-step .text-sm {
+    font-size: 0.75rem;
+}
+
+/* 按钮hover效果 */
+#saveNoteBtn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+#backToChatBtn:hover {
+    background: #4b5563;
+}
+
+#newNoteBtn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(147, 51, 234, 0.3);
+}
+
+/* 响应式设计 */
+@media (max-width: 1024px) {
+    #right-sidebar {
+        width: 280px;
+    }
+}
+
+@media (max-width: 768px) {
+    body.view-mode-editor #sessionDrawer {
+        width: 0;
+        overflow: hidden;
+    }
+
+    body.view-mode-editor #right-sidebar {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 100;
+        box-shadow: -4px 0 12px rgba(0, 0, 0, 0.5);
+    }
+}
+
+/* 加载动画 */
+@keyframes copilotThink {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+.copilot-thinking {
+    animation: copilotThink 1.5s ease-in-out infinite;
+}
+
+/* 滚动条样式（知识库侧边栏） */
+.notes-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.notes-list::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.notes-list::-webkit-scrollbar-thumb {
+    background: rgba(147, 51, 234, 0.5);
+    border-radius: 3px;
+}
+
+.notes-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(147, 51, 234, 0.7);
+}

@@ -14,6 +14,7 @@ import (
 
 	"highlight_text/agent/terminal"
 	"highlight_text/agent/tools"
+	"highlight_text/agent/tools/notes"
 )
 
 type InteractionLog struct {
@@ -31,6 +32,7 @@ type AgentRequest struct {
 	Action           string                 `json:"action"` // "execute" or "close"
 	UserConfirmed    bool                   `json:"user_confirmed"`
 	InitialDirectory string                 `json:"initial_directory"` // 初始工作目录
+	AgentType        string                 `json:"agent_type,omitempty"` // "terminal" or "knowledge"
 }
 
 // AgentResponse Agent响应结构
@@ -67,6 +69,12 @@ func main() {
 	// API端点：保存Agent日志
 	http.HandleFunc("/agent/save-log", handleAgentSaveLog)
 
+	// 知识库API端点
+	http.HandleFunc("/api/notes", handleNotes)
+	http.HandleFunc("/api/notes/", handleNoteByID)
+	http.HandleFunc("/api/search", handleSearchNotes)
+	http.HandleFunc("/agent/knowledge/tools", handleKnowledgeAgentTools)
+
 	// 静态文件服务：提供uploads目录的访问
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
 
@@ -84,11 +92,17 @@ func main() {
 		log.Printf("创建logs目录失败: %v", err)
 	}
 
+	// 确保知识库目录存在
+	if err := os.MkdirAll("./KnowledgeBase", 0755); err != nil {
+		log.Printf("创建知识库目录失败: %v", err)
+	}
+
 	fmt.Println("🚀 AI助手Web服务启动成功!")
 	fmt.Println("📱 请访问: http://localhost:8080")
 	fmt.Println("📝 交互日志将保存至: interactions.log.json")
 	fmt.Println("🔍 HTML预览: http://localhost:8080/preview")
 	fmt.Println("📷 图片上传: http://localhost:8080/upload-image")
+	fmt.Println("📚 知识库路径: ./KnowledgeBase")
 	fmt.Println("⏹️  按 Ctrl+C 停止服务")
 
 	// 启动HTTP服务器
@@ -506,8 +520,37 @@ func handleAgentExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 执行工具
-	result, err := tools.ExecuteTool(req.Tool, req.Args)
+	// 根据Agent类型执行不同的工具
+	var result *tools.ToolResult
+	var output string
+
+	if req.AgentType == "knowledge" {
+		// 执行知识库工具
+		knowledgeOutput, err := notes.ExecuteKnowledgeTool(req.Tool, req.Args, "./KnowledgeBase")
+		if err != nil {
+			log.Printf("Failed to execute knowledge tool: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(AgentResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Failed to execute knowledge tool: %v", err),
+				Cwd:     "./KnowledgeBase",
+			})
+			return
+		}
+		output = knowledgeOutput
+
+		// 返回成功响应
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(AgentResponse{
+			Success: true,
+			Output:  output,
+			Cwd:     "./KnowledgeBase",
+		})
+		return
+	}
+
+	// 执行终端工具
+	result, err = tools.ExecuteTool(req.Tool, req.Args)
 	if err != nil {
 		log.Printf("Failed to execute tool: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -519,8 +562,6 @@ func handleAgentExecute(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	var output string
 
 	// 如果是直接结果，直接使用输出
 	if result.DirectResult {
@@ -659,4 +700,160 @@ func handleAgentSaveLog(w http.ResponseWriter, r *http.Request) {
 		"success":  true,
 		"filename": logFileName,
 	})
+}
+
+// handleKnowledgeAgentTools 返回知识库专用工具列表
+func handleKnowledgeAgentTools(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	knowledgeTools := notes.GetKnowledgeTools()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"tools": knowledgeTools,
+	})
+}
+
+// handleNotes 处理笔记列表请求
+func handleNotes(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	result, err := notes.ExecuteKnowledgeTool("list_notes", map[string]interface{}{}, "./KnowledgeBase")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(result))
+}
+
+// handleNoteByID 处理单个笔记的GET/PUT/DELETE
+func handleNoteByID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	// 提取note_id
+	noteID := strings.TrimPrefix(r.URL.Path, "/api/notes/")
+
+	switch r.Method {
+	case "GET":
+		result, err := notes.ExecuteKnowledgeTool("read_note", map[string]interface{}{
+			"note_id": noteID,
+		}, "./KnowledgeBase")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte(result))
+
+	case "PUT":
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
+
+		var req struct {
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		result, err := notes.ExecuteKnowledgeTool("update_note", map[string]interface{}{
+			"note_id": noteID,
+			"content": req.Content,
+		}, "./KnowledgeBase")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": result,
+		})
+
+	case "DELETE":
+		// 删除笔记
+		notePath := filepath.Join("./KnowledgeBase", noteID+".md")
+		if err := os.Remove(notePath); err != nil {
+			http.Error(w, "Failed to delete note", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Note deleted successfully",
+		})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleSearchNotes 处理笔记搜索
+func handleSearchNotes(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "Missing query parameter 'q'", http.StatusBadRequest)
+		return
+	}
+
+	result, err := notes.ExecuteKnowledgeTool("search_notes", map[string]interface{}{
+		"query": query,
+	}, "./KnowledgeBase")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(result))
 }

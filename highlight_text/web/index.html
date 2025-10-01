@@ -26,6 +26,7 @@
     <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="agent/agent.css">
+    <link rel="stylesheet" href="agent/notes/knowledge-base.css">
     <style>
         .chat-container {
             height: calc(100vh - 140px);
@@ -45,9 +46,9 @@
         }
     </style>
 </head>
-<body class="bg-gray-900 text-white">
+<body class="bg-gray-900 text-white view-mode-chat">
     <!-- 主容器 -->
-    <div id="app" class="flex h-screen">
+    <div id="app" class="flex h-screen view-mode-chat">
         <!-- 左侧会话抽屉 -->
         <div id="sessionDrawer" class="w-80 bg-gray-800 border-r border-gray-700 flex flex-col transition-all duration-300">
             <!-- 抽屉头部 -->
@@ -105,6 +106,38 @@
                 </div>
             </div>
 
+            <!-- Copilot面板（编辑模式显示） -->
+            <div id="copilotPanel" class="hidden flex-1 flex flex-col">
+                <!-- Copilot头部 -->
+                <div class="p-4 border-b border-gray-700">
+                    <h2 class="text-lg font-bold flex items-center gap-2">
+                        <i data-lucide="sparkles" class="w-5 h-5 text-purple-400"></i>
+                        <span>Copilot</span>
+                    </h2>
+                    <p class="text-xs text-gray-400 mt-1">编辑助手 - 帮助你写作和组织知识</p>
+                </div>
+
+                <!-- Copilot对话区域 -->
+                <div id="copilotMessages" class="flex-1 overflow-y-auto p-4 space-y-3">
+                    <!-- Copilot消息将在这里显示 -->
+                </div>
+
+                <!-- Copilot输入区域 -->
+                <div id="copilotInputArea" class="p-3 border-t border-gray-700">
+                    <div class="flex items-center gap-2">
+                        <input
+                            type="text"
+                            id="copilotInput"
+                            placeholder="询问Copilot..."
+                            class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                        <button id="copilotSendBtn" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm font-medium transition-colors">
+                            发送
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- 节点轴容器 -->
             <div id="nodeAxisContainer" class="border-t border-gray-700">
                 <!-- 节点轴的折叠/展开标题栏 -->
@@ -155,6 +188,11 @@
                         <span id="currentSessionTitle" class="text-sm text-gray-400"></span>
                     </div>
                     <div class="flex items-center space-x-2">
+                        <!-- 展开知识库按钮（当知识库折叠时显示） -->
+                        <button id="expandKnowledgeDrawerBtn" class="hidden px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded flex items-center gap-2" title="打开知识库">
+                            <i data-lucide="book-open" class="w-4 h-4"></i>
+                            <span class="text-sm">知识库</span>
+                        </button>
                         <!-- Token用量指示器 -->
                         <div id="tokenIndicator" class="flex items-center space-x-2">
                             <div class="relative w-10 h-10">
@@ -296,6 +334,58 @@
                     </button>
                 </form>
             </footer>
+
+            <!-- 编辑器容器（编辑模式时显示） -->
+            <div id="editor-container" class="hidden flex-1 flex flex-col p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <div class="flex items-center gap-3">
+                        <button id="backToChatBtn" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-2">
+                            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                            <span>返回聊天</span>
+                        </button>
+                        <h2 id="noteTitle" class="text-lg font-bold"></h2>
+                    </div>
+                    <button id="saveNoteBtn" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded flex items-center gap-2">
+                        <i data-lucide="save" class="w-4 h-4"></i>
+                        <span>保存</span>
+                    </button>
+                </div>
+                <textarea
+                    id="noteEditor"
+                    class="flex-1 p-4 bg-gray-800 border border-gray-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    placeholder="开始编写笔记..."
+                ></textarea>
+            </div>
+        </div>
+
+        <!-- 右侧边栏：知识库浏览器（可折叠抽屉） -->
+        <div id="right-sidebar" class="hidden w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
+            <div class="kb-header p-4 border-b border-gray-700">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-lg font-bold flex items-center gap-2">
+                        <i data-lucide="book-open" class="w-5 h-5"></i>
+                        <span>知识库</span>
+                    </h3>
+                    <button id="toggleKnowledgeDrawerBtn" class="p-2 rounded hover:bg-gray-700 transition-colors" title="折叠知识库">
+                        <i data-lucide="chevrons-right" class="w-4 h-4 text-gray-400 hover:text-white"></i>
+                    </button>
+                </div>
+                <input
+                    type="search"
+                    id="noteSearch"
+                    placeholder="搜索笔记..."
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+            </div>
+            <ul id="notesList" class="notes-list flex-1 overflow-y-auto p-2">
+                <!-- 笔记列表将在这里渲染 -->
+            </ul>
+            <div class="p-3 border-t border-gray-700">
+                <button id="newNoteBtn" class="w-full py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm font-medium flex items-center justify-center gap-2">
+                    <i data-lucide="file-plus" class="w-4 h-4"></i>
+                    <span>新建笔记</span>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -398,6 +488,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <script src="agent/agent.js"></script>
+    <script src="agent/notes/handler.js"></script>
     <script src="app.js"></script>
 
     <!-- Initialize Lucide Icons -->
