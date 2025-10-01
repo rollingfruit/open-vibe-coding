@@ -1,0 +1,143 @@
+/**
+ * Agent模式样式
+ */
+
+/* Agent消息气泡 */
+.agent-message-bubble {
+    background: linear-gradient(135deg, rgba(30, 30, 60, 0.6), rgba(20, 20, 40, 0.7));
+    border: 2px solid rgba(100, 100, 200, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.agent-trace-content {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+/* Agent追踪步骤 */
+.agent-trace-step {
+    animation: fadeInUp 0.3s ease-out;
+    transition: all 0.3s ease;
+}
+
+.agent-trace-step:hover {
+    transform: translateX(4px);
+    box-shadow: 0 2px 10px rgba(100, 100, 255, 0.2);
+}
+
+/* Agent按钮样式 */
+#agentModeBtn {
+    padding: 0.5rem 0.75rem;
+    background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+    border: none;
+    border-radius: 8px;
+    color: #a0aec0;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+#agentModeBtn:hover {
+    transform: translateY(-2px);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #060606;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+#agentModeBtn:active {
+    transform: translateY(0);
+}
+
+#agentModeBtn.active {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+    color: #e34848;
+    animation: excitedPulse 0.8s infinite, shake 0.5s ease-in-out;
+    box-shadow: 0 0 30px rgba(255, 107, 107, 0.6), 0 0 60px rgba(238, 90, 36, 0.4);
+    transform: scale(1.05);
+}
+
+@keyframes excitedPulse {
+    0%, 100% {
+        box-shadow: 0 0 30px rgba(255, 107, 107, 0.6), 0 0 60px rgba(238, 90, 36, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 40px rgba(255, 107, 107, 0.8), 0 0 80px rgba(238, 90, 36, 0.6);
+    }
+}
+
+@keyframes shake {
+    0%, 100% { transform: scale(1.05) translateX(0); }
+    25% { transform: scale(1.05) translateX(-1px); }
+    75% { transform: scale(1.05) translateX(1px); }
+}
+
+/* Agent模式输入框提示 */
+.agent-mode-active #messageInput {
+    border: 2px solid #667eea;
+    box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
+}
+
+/* 滚动条样式 */
+#agentTraceContainer::-webkit-scrollbar {
+    width: 8px;
+}
+
+#agentTraceContainer::-webkit-scrollbar-track {
+    background: rgba(100, 100, 100, 0.1);
+    border-radius: 4px;
+}
+
+#agentTraceContainer::-webkit-scrollbar-thumb {
+    background: rgba(100, 100, 200, 0.5);
+    border-radius: 4px;
+}
+
+#agentTraceContainer::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 100, 200, 0.7);
+}
+
+/* 动画 */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
+
+/* 工具信息显示 */
+.tool-info {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    #agentTraceContainer {
+        max-height: 300px;
+    }
+
+    #agentModeBtn span {
+        display: none;
+    }
+}

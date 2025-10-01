@@ -25,6 +25,7 @@
     <!-- Theme System -->
     <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="agent/agent.css">
     <style>
         .chat-container {
             height: calc(100vh - 140px);
@@ -190,6 +191,11 @@
 
             <!-- 聊天区域 -->
             <main class="flex-1 overflow-y-auto p-4 chat-container" id="chatContainer">
+                <!-- Agent追踪容器 -->
+                <div id="agentTraceContainer" class="hidden">
+                    <!-- Agent思考过程将在这里显示 -->
+                </div>
+
                 <!-- 上下文摘要区域 -->
                 <div id="summaryContainer" class="hidden mb-6">
                     <div class="bg-gradient-to-r from-purple-900 to-indigo-900 border border-purple-500 rounded-lg p-4">
@@ -270,6 +276,15 @@
                             title="上传图片"
                         >
                             <i data-lucide="image" class="w-5 h-5"></i>
+                        </button>
+                        <!-- Agent模式按钮 -->
+                        <button
+                            type="button"
+                            id="agentModeBtn"
+                            class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+                            title="切换到Agent模式"
+                        >
+                            <i data-lucide="gpu" class="w-5 h-5"></i>
                         </button>
                     </div>
                     <button
@@ -382,6 +397,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
+    <script src="agent/agent.js"></script>
     <script src="app.js"></script>
 
     <!-- Initialize Lucide Icons -->

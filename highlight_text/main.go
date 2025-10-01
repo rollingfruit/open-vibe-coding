@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"highlight_text/agent/terminal"
+	"highlight_text/agent/tools"
 )
 
 type InteractionLog struct {
@@ -20,7 +23,29 @@ type InteractionLog struct {
 	Type string `json:"type"` // "main" or "followup"
 }
 
+// AgentRequest Agent请求结构
+type AgentRequest struct {
+	SessionID        string                 `json:"session_id"`
+	Tool             string                 `json:"tool"`
+	Args             map[string]interface{} `json:"args"`
+	Action           string                 `json:"action"` // "execute" or "close"
+	UserConfirmed    bool                   `json:"user_confirmed"`
+	InitialDirectory string                 `json:"initial_directory"` // 初始工作目录
+}
+
+// AgentResponse Agent响应结构
+type AgentResponse struct {
+	Success           bool   `json:"success"`
+	Output            string `json:"output"`
+	Error             string `json:"error,omitempty"`
+	Cwd               string `json:"cwd"`
+	RequiresConfirm   bool   `json:"requires_confirm"`
+	ConfirmMessage    string `json:"confirm_message,omitempty"`
+	InitialDirectory  string `json:"initial_directory,omitempty"`
+}
+
 var logMutex sync.Mutex
+var terminals sync.Map // 存储所有活动的终端会话
 
 func main() {
 	// API端点必须在静态文件服务器之前注册
@@ -33,6 +58,15 @@ func main() {
 	// API端点：图片上传
 	http.HandleFunc("/upload-image", handleImageUpload)
 
+	// API端点：Agent执行
+	http.HandleFunc("/agent/execute", handleAgentExecute)
+
+	// API端点：获取可用工具
+	http.HandleFunc("/agent/tools", handleAgentTools)
+
+	// API端点：保存Agent日志
+	http.HandleFunc("/agent/save-log", handleAgentSaveLog)
+
 	// 静态文件服务：提供uploads目录的访问
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
 
@@ -43,6 +77,11 @@ func main() {
 	// 确保uploads目录存在
 	if err := os.MkdirAll("./uploads", 0755); err != nil {
 		log.Printf("创建uploads目录失败: %v", err)
+	}
+
+	// 确保logs目录存在
+	if err := os.MkdirAll("./logs", 0755); err != nil {
+		log.Printf("创建logs目录失败: %v", err)
 	}
 
 	fmt.Println("🚀 AI助手Web服务启动成功!")
@@ -351,4 +390,265 @@ func generateRandomString(length int) string {
 		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
 	}
 	return string(result)
+}
+
+// handleAgentTools 返回可用的工具列表
+func handleAgentTools(w http.ResponseWriter, r *http.Request) {
+	// 设置CORS头
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	availableTools := tools.GetAvailableTools()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"tools": availableTools,
+	})
+}
+
+// handleAgentExecute 处理Agent命令执行请求
+func handleAgentExecute(w http.ResponseWriter, r *http.Request) {
+	// 设置CORS头
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 读取请求体
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var req AgentRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 如果是关闭请求
+	if req.Action == "close" {
+		if term, ok := terminals.Load(req.SessionID); ok {
+			if t, ok := term.(terminal.Terminal); ok {
+				t.Close()
+			}
+			terminals.Delete(req.SessionID)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(AgentResponse{
+			Success: true,
+			Output:  "Terminal session closed",
+		})
+		return
+	}
+
+	// 获取或创建终端实例
+	var term terminal.Terminal
+	var initialDir string
+
+	if t, ok := terminals.Load(req.SessionID); ok {
+		term = t.(terminal.Terminal)
+	} else {
+		newTerm, err := terminal.New()
+		if err != nil {
+			log.Printf("Failed to create terminal: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(AgentResponse{
+				Success: false,
+				Error:   fmt.Sprintf("Failed to create terminal: %v", err),
+			})
+			return
+		}
+		term = newTerm
+		terminals.Store(req.SessionID, term)
+		initialDir = term.GetCwd()
+	}
+
+	// 如果是第一次请求，记录初始目录
+	if req.InitialDirectory == "" {
+		initialDir = term.GetCwd()
+	} else {
+		initialDir = req.InitialDirectory
+	}
+
+	// 检查是否需要用户确认
+	needsConfirm, confirmMsg := checkIfNeedsConfirmation(req.Tool, req.Args, initialDir, term.GetCwd())
+
+	if needsConfirm && !req.UserConfirmed {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(AgentResponse{
+			Success:          false,
+			RequiresConfirm:  true,
+			ConfirmMessage:   confirmMsg,
+			Cwd:              term.GetCwd(),
+			InitialDirectory: initialDir,
+		})
+		return
+	}
+
+	// 执行工具
+	command, err := tools.ExecuteTool(req.Tool, req.Args)
+	if err != nil {
+		log.Printf("Failed to execute tool: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(AgentResponse{
+			Success:          false,
+			Error:            fmt.Sprintf("Failed to execute tool: %v", err),
+			Cwd:              term.GetCwd(),
+			InitialDirectory: initialDir,
+		})
+		return
+	}
+
+	// 在终端中执行命令
+	output, err := term.Execute(command)
+	if err != nil {
+		log.Printf("Failed to execute command: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(AgentResponse{
+			Success:          false,
+			Error:            fmt.Sprintf("Failed to execute command: %v", err),
+			Output:           output,
+			Cwd:              term.GetCwd(),
+			InitialDirectory: initialDir,
+		})
+		return
+	}
+
+	// 返回成功响应
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(AgentResponse{
+		Success:          true,
+		Output:           output,
+		Cwd:              term.GetCwd(),
+		InitialDirectory: initialDir,
+	})
+}
+
+// checkIfNeedsConfirmation 检查操作是否需要用户确认
+func checkIfNeedsConfirmation(toolName string, args map[string]interface{}, initialDir, currentDir string) (bool, string) {
+	switch toolName {
+	case "path_switch":
+		targetPath, ok := args["path"].(string)
+		if !ok {
+			return false, ""
+		}
+
+		// 如果是绝对路径
+		if filepath.IsAbs(targetPath) {
+			// 检查是否在初始目录或其子目录下
+			absInitialDir, _ := filepath.Abs(initialDir)
+			absTargetPath, _ := filepath.Abs(targetPath)
+
+			rel, err := filepath.Rel(absInitialDir, absTargetPath)
+			if err != nil || strings.HasPrefix(rel, "..") {
+				return true, fmt.Sprintf("切换到初始目录之外的路径: %s", targetPath)
+			}
+		} else {
+			// 相对路径，检查是否会跳出初始目录
+			absCurrentDir, _ := filepath.Abs(currentDir)
+			absTargetPath := filepath.Join(absCurrentDir, targetPath)
+			absInitialDir, _ := filepath.Abs(initialDir)
+
+			rel, err := filepath.Rel(absInitialDir, absTargetPath)
+			if err != nil || strings.HasPrefix(rel, "..") {
+				return true, fmt.Sprintf("切换到初始目录之外的路径: %s (解析为 %s)", targetPath, absTargetPath)
+			}
+		}
+
+	case "write_file":
+		// 兼容多种路径参数名：path, file_path, filename
+		path, ok := args["path"].(string)
+		if !ok {
+			path, ok = args["file_path"].(string)
+			if !ok {
+				path, ok = args["filename"].(string)
+				if !ok {
+					return false, ""
+				}
+			}
+		}
+		return true, fmt.Sprintf("写入文件: %s", path)
+	}
+
+	return false, ""
+}
+
+// handleAgentSaveLog 保存Agent日志到logs目录
+func handleAgentSaveLog(w http.ResponseWriter, r *http.Request) {
+	// 设置CORS头
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 读取请求体
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var logData map[string]interface{}
+	if err := json.Unmarshal(body, &logData); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 生成日志文件名
+	sessionID, _ := logData["session_id"].(string)
+	if sessionID == "" {
+		sessionID = fmt.Sprintf("agent_%d", time.Now().Unix())
+	}
+	logFileName := fmt.Sprintf("logs/%s.json", sessionID)
+
+	// 写入日志文件
+	logBytes, err := json.MarshalIndent(logData, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal log data: %v", err)
+		http.Error(w, "Failed to marshal log data", http.StatusInternalServerError)
+		return
+	}
+
+	if err := ioutil.WriteFile(logFileName, logBytes, 0644); err != nil {
+		log.Printf("Failed to write log file: %v", err)
+		http.Error(w, "Failed to write log file", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Agent日志已保存: %s", logFileName)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"filename": logFileName,
+	})
 }

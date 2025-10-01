@@ -13,6 +13,8 @@ class AIAssistant {
         this.uploadedImageBase64 = null; // 压缩后的Base64字符串
         this.themeToggleBtn = null; // 主题切换按钮
         this.currentTheme = 'light'; // 当前主题，默认为白天模式
+        this.isAgentMode = false; // 是否处于Agent模式
+        this.agentHandler = null; // Agent处理器
 
         // 初始化代码存储
         if (!window.codeStorage) {
@@ -27,6 +29,7 @@ class AIAssistant {
 
     async init() {
         await this.loadConfig();
+        this.agentHandler = new AgentHandler(this); // 初始化Agent处理器
         this.bindEvents();
         this.loadThemePreference();
         this.checkUrlParams();
@@ -847,6 +850,11 @@ class AIAssistant {
             this.removeImage();
         });
 
+        // Agent模式按钮事件
+        document.getElementById('agentModeBtn').addEventListener('click', () => {
+            this.toggleAgentMode();
+        });
+
         // 粘贴图片事件
         messageInput.addEventListener('paste', (e) => {
             const items = e.clipboardData?.items;
@@ -988,6 +996,23 @@ class AIAssistant {
         // 检查是否有消息或图片
         if (!message && !this.uploadedImageBase64) return;
         if (this.isStreaming) return;
+
+        // 检查是否为Agent模式
+        if (this.isAgentMode || message.startsWith('Agent:')) {
+            input.value = '';
+            this.hideInputShortcuts();
+
+            // 去除"Agent:"前缀
+            const actualMessage = message.startsWith('Agent:') ? message.substring(6).trim() : message;
+
+            // 在聊天窗口显示用户消息
+            this.addMessage(actualMessage, 'user');
+
+            // 启动Agent模式
+            await this.agentHandler.startReActLoop(actualMessage);
+
+            return;
+        }
 
         if (!this.settings.apiKey) {
             this.showNotification('请先在设置中配置API密钥', 'error');
@@ -1903,6 +1928,27 @@ class AIAssistant {
     scrollToBottom() {
         const container = document.getElementById('chatContainer');
         container.scrollTop = container.scrollHeight;
+    }
+
+    toggleAgentMode() {
+        this.isAgentMode = !this.isAgentMode;
+        const agentBtn = document.getElementById('agentModeBtn');
+        const messageInput = document.getElementById('messageInput');
+
+        if (this.isAgentMode) {
+            // 创建新会话
+            this.createNewSession();
+
+            agentBtn.classList.add('active');
+            messageInput.placeholder = 'Agent模式：描述你要完成的任务...';
+            messageInput.classList.add('agent-mode-active');
+            this.showNotification('Agent模式已开启，已创建新会话', 'success');
+        } else {
+            agentBtn.classList.remove('active');
+            messageInput.placeholder = '输入你的问题...';
+            messageInput.classList.remove('agent-mode-active');
+            this.showNotification('Agent模式已关闭', 'info');
+        }
     }
 
     showNotification(message, type = 'info') {

@@ -7,3 +7,5 @@ highlight_text/web/digest.txt
 highlight_text/TODO
 highlight_text/digest.txt
 highlight_text/uploads/
+highlight_text/logs/
+.DS_Store
