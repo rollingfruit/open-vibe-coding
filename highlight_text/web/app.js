@@ -22,6 +22,7 @@ class AIAssistant {
         this.activeNoteId = null; // 当前编辑的笔记ID
         this.editorInstance = null; // 编辑器实例
         this.knowledgeAgentHandler = null; // 知识库Copilot处理器
+        this.isEditorPreview = false; // 编辑器预览模式
 
         // 初始化代码存储
         if (!window.codeStorage) {
@@ -1018,8 +1019,15 @@ class AIAssistant {
         const newNoteBtn = document.getElementById('newNoteBtn');
         if (newNoteBtn) {
             newNoteBtn.addEventListener('click', () => {
-                // TODO: 实现新建笔记
-                this.showNotification('新建笔记功能待实现', 'info');
+                this.createNewNote();
+            });
+        }
+
+        // 新建文件夹按钮
+        const newFolderBtn = document.getElementById('newFolderBtn');
+        if (newFolderBtn) {
+            newFolderBtn.addEventListener('click', () => {
+                this.createNewFolder();
             });
         }
 
@@ -1067,6 +1075,49 @@ class AIAssistant {
                 console.log('搜索笔记:', e.target.value);
             });
         }
+
+        // 切换预览按钮
+        const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+        if (togglePreviewBtn) {
+            togglePreviewBtn.addEventListener('click', () => {
+                this.toggleEditorPreview();
+            });
+        }
+
+        // 编辑器输入事件 - 实时更新预览
+        const noteEditor = document.getElementById('noteEditor');
+        if (noteEditor) {
+            noteEditor.addEventListener('input', () => {
+                if (this.isEditorPreview) {
+                    this.updateEditorPreview();
+                }
+            });
+        }
+
+        // Wiki链接和标签点击事件委托
+        document.addEventListener('click', (e) => {
+            // Wiki链接点击
+            const wikiLink = e.target.closest('.internal-link');
+            if (wikiLink) {
+                e.preventDefault();
+                const noteId = wikiLink.getAttribute('data-note-id');
+                if (noteId) {
+                    this.handleWikiLinkClick(noteId);
+                }
+                return;
+            }
+
+            // 标签点击
+            const tagLink = e.target.closest('.tag-link');
+            if (tagLink) {
+                e.preventDefault();
+                const tag = tagLink.getAttribute('data-tag');
+                if (tag) {
+                    this.handleTagClick(tag);
+                }
+                return;
+            }
+        });
     }
 
     checkUrlParams() {
@@ -1458,7 +1509,10 @@ class AIAssistant {
         // 2. 使用 marked.js 解析 Markdown
         if (typeof marked !== 'undefined') {
             try {
-                return marked.parse(processedContent);
+                let html = marked.parse(processedContent);
+                // 3. 后处理：渲染Wiki链接和标签
+                html = this.renderWikiLinksAndTags(html);
+                return html;
             } catch (error) {
                 console.error('Markdown parsing error:', error);
                 // 如果解析失败，降级使用基础格式化
@@ -1468,6 +1522,25 @@ class AIAssistant {
 
         // 降级方案：如果 marked.js 未加载，使用基础格式化
         return this.escapeHtml(processedContent).replace(/\n/g, '<br>');
+    }
+
+    /**
+     * 渲染Wiki链接和标签
+     */
+    renderWikiLinksAndTags(html) {
+        // 处理Wiki链接 [[笔记ID]] 或 [[笔记ID|显示文本]]
+        html = html.replace(/\[\[([^\]|]+)(\|([^\]]+))?\]\]/g, (match, noteId, pipe, displayText) => {
+            const text = displayText || noteId;
+            return `<a href="#" data-note-id="${this.escapeHtml(noteId.trim())}" class="internal-link text-purple-400 hover:text-purple-300 underline">${this.escapeHtml(text.trim())}</a>`;
+        });
+
+        // 处理内联标签 #标签名
+        // 注意：避免匹配代码块内的标签
+        html = html.replace(/(?<!<code[^>]*>.*?)#([a-zA-Z0-9_\u4e00-\u9fa5]+)(?![^<]*<\/code>)/g, (match, tag) => {
+            return `<a href="#" data-tag="${this.escapeHtml(tag)}" class="tag-link text-blue-400 hover:text-blue-300">#${this.escapeHtml(tag)}</a>`;
+        });
+
+        return html;
     }
 
     splitContentIntoParts(content) {
@@ -1789,6 +1862,25 @@ class AIAssistant {
     }
 
     handleTextSelection(e) {
+        // 检查是否是textarea (编辑器)
+        if (e.target.id === 'noteEditor') {
+            const textarea = e.target;
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const selectedText = textarea.value.substring(start, end).trim();
+
+            if (selectedText && selectedText.length > 3) {
+                // 计算textarea中选区的屏幕坐标
+                const coords = this.getTextareaSelectionCoords(textarea, start, end);
+
+                this.showTooltip(coords.x, coords.y, selectedText, textarea);
+            } else {
+                this.hideTooltip();
+            }
+            return;
+        }
+
+        // 原有逻辑：处理普通元素中的选中文本
         const selection = window.getSelection();
         const selectedText = selection.toString().trim();
 
@@ -1823,6 +1915,48 @@ class AIAssistant {
         } else {
             this.hideTooltip();
         }
+    }
+
+    /**
+     * 获取textarea中选区的屏幕坐标
+     */
+    getTextareaSelectionCoords(textarea, start, end) {
+        // 创建一个隐藏的div来模拟textarea的布局
+        const div = document.createElement('div');
+        const computedStyle = window.getComputedStyle(textarea);
+
+        // 复制textarea的样式
+        div.style.position = 'absolute';
+        div.style.visibility = 'hidden';
+        div.style.whiteSpace = 'pre-wrap';
+        div.style.wordWrap = 'break-word';
+        div.style.font = computedStyle.font;
+        div.style.padding = computedStyle.padding;
+        div.style.border = computedStyle.border;
+        div.style.width = textarea.offsetWidth + 'px';
+
+        // 获取光标前的文本
+        const textBeforeCursor = textarea.value.substring(0, start);
+        div.textContent = textBeforeCursor;
+
+        // 添加一个span来标记光标位置
+        const span = document.createElement('span');
+        span.textContent = textarea.value.substring(start, end) || '|';
+        div.appendChild(span);
+
+        document.body.appendChild(div);
+
+        // 获取span的位置
+        const textareaRect = textarea.getBoundingClientRect();
+        const spanRect = span.getBoundingClientRect();
+
+        // 计算相对于textarea的位置
+        const x = textareaRect.left + (spanRect.left - div.getBoundingClientRect().left);
+        const y = textareaRect.top + (spanRect.top - div.getBoundingClientRect().top) - 10;
+
+        document.body.removeChild(div);
+
+        return { x, y };
     }
 
     showTooltip(x, y, selectedText, messageElement) {
@@ -1930,7 +2064,16 @@ class AIAssistant {
     }
 
     async handleFollowup(selectedText, command, originalMessage) {
-        const originalContent = originalMessage.querySelector('.message-content').textContent;
+        // 判断上下文来源：textarea或普通消息
+        let originalContent;
+        if (originalMessage.tagName === 'TEXTAREA') {
+            // 来自编辑器
+            originalContent = originalMessage.value;
+        } else {
+            // 来自聊天消息
+            originalContent = originalMessage.querySelector('.message-content').textContent;
+        }
+
         const followupPrompt = command.prompt + selectedText + '\n\n原始对话内容:\n' + originalContent;
 
         // 创建追问模态框
@@ -2754,12 +2897,19 @@ class AIAssistant {
 
             // 尝试解析JSON
             try {
-                // 后端返回的是包含笔记列表的文本
-                const match = text.match(/知识库中共有 \d+ 篇笔记:\n([\s\S]+)/);
+                // 后端返回的是包含树状结构的文本
+                // 格式: "知识库中共有 N 个项目:\n[...]"
+                const match = text.match(/知识库中共有 \d+ 个项目:\n([\s\S]+)/);
                 if (match) {
                     this.notes = JSON.parse(match[1]);
                 } else {
-                    this.notes = [];
+                    // 兼容旧格式
+                    const oldMatch = text.match(/知识库中共有 \d+ 篇笔记:\n([\s\S]+)/);
+                    if (oldMatch) {
+                        this.notes = JSON.parse(oldMatch[1]);
+                    } else {
+                        this.notes = [];
+                    }
                 }
             } catch (e) {
                 console.warn('解析笔记列表时出错:', e);
@@ -2781,31 +2931,98 @@ class AIAssistant {
 
         notesList.innerHTML = '';
 
-        if (this.notes.length === 0) {
+        if (!this.notes || this.notes.length === 0) {
             notesList.innerHTML = '<li class="text-gray-400 text-sm p-3 text-center">知识库为空<br><small>点击下方"新建笔记"开始</small></li>';
             return;
         }
 
-        this.notes.forEach(note => {
-            const noteItem = document.createElement('li');
-            noteItem.className = 'note-item p-3 rounded cursor-pointer transition-colors hover:bg-gray-700 border-b border-gray-700';
-            if (note.id === this.activeNoteId) {
-                noteItem.classList.add('bg-purple-900', 'bg-opacity-30');
+        // 递归渲染树节点
+        const renderNode = (node, parentElement, depth = 0) => {
+            const nodeItem = document.createElement('li');
+            nodeItem.className = 'note-tree-item';
+            nodeItem.style.paddingLeft = `${depth * 12}px`;
+
+            if (node.type === 'folder') {
+                // 文件夹节点
+                const folderDiv = document.createElement('div');
+                folderDiv.className = 'folder-node p-2 rounded cursor-pointer transition-colors hover:bg-gray-700 border-b border-gray-700 flex items-center gap-2';
+                folderDiv.innerHTML = `
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 folder-chevron transition-transform"></i>
+                    <i data-lucide="folder" class="w-4 h-4 text-yellow-400"></i>
+                    <span class="font-medium text-sm">${this.escapeHtml(node.name)}</span>
+                `;
+
+                // 子节点容器
+                const childrenContainer = document.createElement('ul');
+                childrenContainer.className = 'folder-children hidden';
+
+                // 切换展开/折叠
+                folderDiv.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const chevron = folderDiv.querySelector('.folder-chevron');
+                    if (childrenContainer.classList.contains('hidden')) {
+                        childrenContainer.classList.remove('hidden');
+                        chevron.style.transform = 'rotate(90deg)';
+                    } else {
+                        childrenContainer.classList.add('hidden');
+                        chevron.style.transform = 'rotate(0deg)';
+                    }
+                });
+
+                nodeItem.appendChild(folderDiv);
+
+                // 渲染子节点
+                if (node.children && node.children.length > 0) {
+                    node.children.forEach(child => {
+                        renderNode(child, childrenContainer, depth + 1);
+                    });
+                }
+
+                nodeItem.appendChild(childrenContainer);
+            } else if (node.type === 'file') {
+                // 文件节点
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'file-node p-2 rounded cursor-pointer transition-colors hover:bg-gray-700 border-b border-gray-700';
+
+                // 从path提取noteId（移除.md扩展名）
+                const noteId = node.path.replace(/\.md$/, '');
+
+                if (noteId === this.activeNoteId) {
+                    fileDiv.classList.add('bg-purple-900', 'bg-opacity-30');
+                }
+
+                // 获取标题（优先使用metadata中的title）
+                const title = node.metadata?.title || node.name.replace(/\.md$/, '');
+
+                // 渲染标签
+                let tagsHtml = '';
+                if (node.tags && node.tags.length > 0) {
+                    tagsHtml = `<div class="flex flex-wrap gap-1 mt-1">
+                        ${node.tags.map(tag => `<span class="text-xs px-2 py-0.5 bg-blue-900 bg-opacity-50 text-blue-300 rounded">#${this.escapeHtml(tag)}</span>`).join('')}
+                    </div>`;
+                }
+
+                fileDiv.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="file-text" class="w-4 h-4 text-purple-400"></i>
+                        <span class="font-medium text-sm">${this.escapeHtml(title)}</span>
+                    </div>
+                    ${tagsHtml}
+                `;
+
+                fileDiv.addEventListener('click', () => {
+                    this.switchToEditorMode(noteId);
+                });
+
+                nodeItem.appendChild(fileDiv);
             }
 
-            noteItem.innerHTML = `
-                <div class="flex items-center gap-2 mb-1">
-                    <i data-lucide="file-text" class="w-4 h-4 text-purple-400"></i>
-                    <span class="font-medium text-sm">${this.escapeHtml(note.title || note.id)}</span>
-                </div>
-                ${note.created_at ? `<div class="text-xs text-gray-400">${new Date(note.created_at).toLocaleDateString()}</div>` : ''}
-            `;
+            parentElement.appendChild(nodeItem);
+        };
 
-            noteItem.addEventListener('click', () => {
-                this.switchToEditorMode(note.id);
-            });
-
-            notesList.appendChild(noteItem);
+        // 渲染所有根节点
+        this.notes.forEach(node => {
+            renderNode(node, notesList, 0);
         });
 
         if (window.lucide) {
@@ -2988,6 +3205,199 @@ class AIAssistant {
         } catch (error) {
             console.error('保存笔记失败:', error);
             this.showNotification('保存失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 处理Wiki链接点击
+     */
+    async handleWikiLinkClick(noteId) {
+        console.log('点击Wiki链接:', noteId);
+
+        // 检查笔记是否存在
+        const note = this.notes.find(n => n.id === noteId);
+        if (note) {
+            // 切换到编辑器模式打开该笔记
+            this.switchToEditorMode(noteId);
+        } else {
+            // 笔记不存在，提示用户
+            const confirmed = confirm(`笔记 "${noteId}" 不存在。是否创建新笔记？`);
+            if (confirmed) {
+                // TODO: 创建新笔记
+                this.showNotification('创建新笔记功能待实现', 'info');
+            }
+        }
+    }
+
+    /**
+     * 处理标签点击
+     */
+    async handleTagClick(tag) {
+        console.log('点击标签:', tag);
+
+        // 切换到知识库面板并搜索该标签
+        const rightSidebar = document.getElementById('right-sidebar');
+        if (rightSidebar && rightSidebar.classList.contains('hidden')) {
+            this.toggleKnowledgeDrawer();
+        }
+
+        // 在笔记搜索框中输入 tag:标签名
+        const noteSearch = document.getElementById('noteSearch');
+        if (noteSearch) {
+            noteSearch.value = `tag:${tag}`;
+            // 触发搜索
+            noteSearch.dispatchEvent(new Event('input'));
+        }
+
+        this.showNotification(`搜索标签: ${tag}`, 'info');
+    }
+
+    /**
+     * 切换编辑器预览模式
+     */
+    toggleEditorPreview() {
+        this.isEditorPreview = !this.isEditorPreview;
+
+        const notePreview = document.getElementById('notePreview');
+        const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+
+        if (this.isEditorPreview) {
+            // 显示预览
+            notePreview.classList.remove('hidden');
+            togglePreviewBtn.classList.add('bg-blue-600');
+            togglePreviewBtn.classList.remove('bg-gray-700');
+
+            // 立即更新预览内容
+            this.updateEditorPreview();
+        } else {
+            // 隐藏预览
+            notePreview.classList.add('hidden');
+            togglePreviewBtn.classList.remove('bg-blue-600');
+            togglePreviewBtn.classList.add('bg-gray-700');
+        }
+    }
+
+    /**
+     * 更新编辑器预览
+     */
+    updateEditorPreview() {
+        if (!this.isEditorPreview) return;
+
+        const noteEditor = document.getElementById('noteEditor');
+        const notePreview = document.getElementById('notePreview');
+
+        if (!noteEditor || !notePreview) return;
+
+        const content = noteEditor.value;
+
+        // 使用formatMessage渲染Markdown
+        const html = this.formatMessage(content);
+        notePreview.innerHTML = html;
+
+        // 重新添加复制按钮和代码高亮
+        this.addCopyButtons();
+
+        // 重新初始化代码高亮
+        if (typeof hljs !== 'undefined') {
+            notePreview.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }
+
+        // 重新初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    /**
+     * 创建新笔记
+     */
+    async createNewNote() {
+        const title = prompt('请输入笔记标题:');
+        if (!title || !title.trim()) {
+            return;
+        }
+
+        try {
+            // 生成笔记ID（清理文件名）
+            const noteId = title.replace(/[\/\\:*?"<>|\s]/g, '_');
+
+            // 创建带有YAML Front Matter的初始内容
+            const now = new Date().toISOString();
+            const initialContent = `---
+title: ${title}
+created_at: ${now}
+updated_at: ${now}
+tags: []
+---
+
+# ${title}
+
+开始编写你的笔记...
+`;
+
+            // 调用后端API创建笔记
+            const response = await fetch(`http://localhost:8080/api/notes/${noteId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content: initialContent })
+            });
+
+            if (!response.ok) {
+                throw new Error('创建笔记失败');
+            }
+
+            this.showNotification('笔记创建成功', 'success');
+
+            // 重新加载笔记列表
+            await this.loadNotes();
+
+            // 打开新创建的笔记
+            this.switchToEditorMode(noteId);
+        } catch (error) {
+            console.error('创建笔记失败:', error);
+            this.showNotification('创建失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 创建新文件夹
+     */
+    async createNewFolder() {
+        const folderName = prompt('请输入文件夹名称:');
+        if (!folderName || !folderName.trim()) {
+            return;
+        }
+
+        try {
+            // 清理文件夹名
+            const cleanFolderName = folderName.replace(/[\/\\:*?"<>|]/g, '_');
+
+            // 在文件夹中创建一个.gitkeep文件以确保文件夹被创建
+            const placeholderPath = `${cleanFolderName}/.gitkeep`;
+
+            const response = await fetch(`http://localhost:8080/api/notes/${placeholderPath}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content: '' })
+            });
+
+            if (!response.ok) {
+                throw new Error('创建文件夹失败');
+            }
+
+            this.showNotification('文件夹创建成功', 'success');
+
+            // 重新加载笔记列表
+            await this.loadNotes();
+        } catch (error) {
+            console.error('创建文件夹失败:', error);
+            this.showNotification('创建失败: ' + error.message, 'error');
         }
     }
 

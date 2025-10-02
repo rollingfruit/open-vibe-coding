@@ -773,6 +773,18 @@ func handleNoteByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// 解析JSON并提取原始内容
+		var noteData map[string]interface{}
+		if err := json.Unmarshal([]byte(result), &noteData); err == nil {
+			// 如果是JSON格式，提取content字段
+			if content, ok := noteData["content"].(string); ok {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				w.Write([]byte(content))
+				return
+			}
+		}
+
+		// 如果解析失败，返回原始结果
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Write([]byte(result))
 

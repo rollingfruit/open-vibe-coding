@@ -57,10 +57,17 @@ class KnowledgeAgentHandler {
 ${toolsDescription}
 
 **工作模式**：
-- 优先使用 \`search_notes\` 在知识库中查找相关信息
+- 优先使用 \`search_notes\` 在知识库中查找相关信息（支持 tag:标签名 格式搜索标签）
 - 使用 \`read_note\` 获取完整笔记内容
 - 使用 \`update_note\` 将生成的内容写回笔记
 - 使用 \`create_note\` 创建新的笔记
+
+**知识库特性**：
+- 每篇笔记可能包含YAML Front Matter元数据（位于文件开头，由---包围）
+- 元数据包含：title（标题）、tags（标签数组）、created_at、updated_at等
+- 笔记内容支持 [[笔记ID]] 格式的Wiki链接
+- 支持 #标签 格式的内联标签
+- 在总结和关联笔记时，请充分利用这些元数据和链接信息
 
 **重要提示**：
 - 你的回答应该基于知识库的内容

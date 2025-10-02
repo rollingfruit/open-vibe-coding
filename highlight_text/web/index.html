@@ -345,16 +345,31 @@
                         </button>
                         <h2 id="noteTitle" class="text-lg font-bold"></h2>
                     </div>
-                    <button id="saveNoteBtn" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded flex items-center gap-2">
-                        <i data-lucide="save" class="w-4 h-4"></i>
-                        <span>保存</span>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button id="togglePreviewBtn" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-2" title="切换预览模式">
+                            <i data-lucide="eye" class="w-4 h-4"></i>
+                            <span>预览</span>
+                        </button>
+                        <button id="saveNoteBtn" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded flex items-center gap-2">
+                            <i data-lucide="save" class="w-4 h-4"></i>
+                            <span>保存</span>
+                        </button>
+                    </div>
                 </div>
-                <textarea
-                    id="noteEditor"
-                    class="flex-1 p-4 bg-gray-800 border border-gray-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    placeholder="开始编写笔记..."
-                ></textarea>
+                <!-- 编辑器和预览区域容器 -->
+                <div class="flex-1 flex gap-4 overflow-hidden">
+                    <textarea
+                        id="noteEditor"
+                        class="flex-1 p-4 bg-gray-800 border border-gray-700 rounded-lg text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto"
+                        placeholder="开始编写笔记..."
+                    ></textarea>
+                    <div
+                        id="notePreview"
+                        class="hidden flex-1 p-4 bg-gray-800 border border-gray-700 rounded-lg text-white overflow-y-auto markdown-body"
+                    >
+                        <!-- 预览内容将在这里渲染 -->
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -381,10 +396,15 @@
                 <!-- 笔记列表将在这里渲染 -->
             </ul>
             <div class="p-3 border-t border-gray-700">
-                <button id="newNoteBtn" class="w-full py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm font-medium flex items-center justify-center gap-2">
-                    <i data-lucide="file-plus" class="w-4 h-4"></i>
-                    <span>新建笔记</span>
-                </button>
+                <div class="flex gap-2">
+                    <button id="newNoteBtn" class="flex-1 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm font-medium flex items-center justify-center gap-2">
+                        <i data-lucide="file-plus" class="w-4 h-4"></i>
+                        <span>新建笔记</span>
+                    </button>
+                    <button id="newFolderBtn" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-medium flex items-center justify-center" title="新建文件夹">
+                        <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

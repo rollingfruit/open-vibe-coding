@@ -5,18 +5,39 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
 
 // Note 表示一篇笔记
 type Note struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Content   string    `json:"content"`
-	Path      string    `json:"path"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string                 `json:"id"`
+	Title     string                 `json:"title"`
+	Content   string                 `json:"content"`
+	Path      string                 `json:"path"`
+	CreatedAt time.Time              `json:"created_at"`
+	UpdatedAt time.Time              `json:"updated_at"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Tags      []string               `json:"tags,omitempty"`
+}
+
+// NoteMetadata YAML Front Matter元数据
+type NoteMetadata struct {
+	Title     string   `json:"title,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	CreatedAt string   `json:"created_at,omitempty"`
+	UpdatedAt string   `json:"updated_at,omitempty"`
+}
+
+// FileNode 表示文件树节点
+type FileNode struct {
+	Name     string                 `json:"name"`
+	Path     string                 `json:"path"`
+	Type     string                 `json:"type"` // "file" or "folder"
+	Children []*FileNode            `json:"children,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Tags     []string               `json:"tags,omitempty"`
 }
 
 // ToolDefinition 定义知识库工具
@@ -132,6 +153,15 @@ func searchNotes(args map[string]interface{}, basePath string) (string, error) {
 	query = strings.ToLower(query)
 	var results []map[string]interface{}
 
+	// 检查是否是标签搜索 (tag:xxx 格式)
+	isTagSearch := false
+	tagQuery := ""
+	if strings.HasPrefix(query, "tag:") {
+		isTagSearch = true
+		tagQuery = strings.TrimPrefix(query, "tag:")
+		tagQuery = strings.TrimSpace(tagQuery)
+	}
+
 	err := filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -144,9 +174,40 @@ func searchNotes(args map[string]interface{}, basePath string) (string, error) {
 			}
 
 			contentStr := string(content)
-			if strings.Contains(strings.ToLower(contentStr), query) {
+			metadata, plainContent, tags := parseFrontMatter(contentStr)
+
+			matched := false
+
+			// 标签搜索模式
+			if isTagSearch {
+				for _, tag := range tags {
+					if strings.Contains(strings.ToLower(tag), tagQuery) {
+						matched = true
+						break
+					}
+				}
+			} else {
+				// 全文搜索：搜索内容、标题和标签
+				if strings.Contains(strings.ToLower(contentStr), query) {
+					matched = true
+				} else if title, ok := metadata["title"].(string); ok {
+					if strings.Contains(strings.ToLower(title), query) {
+						matched = true
+					}
+				} else {
+					// 搜索标签
+					for _, tag := range tags {
+						if strings.Contains(strings.ToLower(tag), query) {
+							matched = true
+							break
+						}
+					}
+				}
+			}
+
+			if matched {
 				// 提取匹配片段
-				lines := strings.Split(contentStr, "\n")
+				lines := strings.Split(plainContent, "\n")
 				var snippets []string
 				for _, line := range lines {
 					if strings.Contains(strings.ToLower(line), query) {
@@ -158,14 +219,27 @@ func searchNotes(args map[string]interface{}, basePath string) (string, error) {
 				}
 
 				noteID := strings.TrimSuffix(info.Name(), ".md")
-				title := extractTitle(contentStr)
 
-				results = append(results, map[string]interface{}{
+				// 优先使用元数据中的标题
+				title := ""
+				if metaTitle, ok := metadata["title"].(string); ok && metaTitle != "" {
+					title = metaTitle
+				} else {
+					title = extractTitle(contentStr)
+				}
+
+				result := map[string]interface{}{
 					"id":       noteID,
 					"title":    title,
 					"path":     path,
 					"snippets": snippets,
-				})
+				}
+
+				if len(tags) > 0 {
+					result["tags"] = tags
+				}
+
+				results = append(results, result)
 			}
 		}
 		return nil
@@ -183,23 +257,51 @@ func searchNotes(args map[string]interface{}, basePath string) (string, error) {
 	return fmt.Sprintf("找到 %d 篇匹配的笔记:\n%s", len(results), string(resultJSON)), nil
 }
 
-// readNote 读取笔记内容
+// readNote 读取笔记内容（支持路径）
 func readNote(args map[string]interface{}, basePath string) (string, error) {
 	noteID, ok := args["note_id"].(string)
 	if !ok || noteID == "" {
 		return "", fmt.Errorf("缺少必需参数: note_id")
 	}
 
-	notePath := filepath.Join(basePath, noteID+".md")
+	// 支持路径：如果不包含.md扩展名，则添加
+	if !strings.HasSuffix(noteID, ".md") {
+		noteID += ".md"
+	}
+
+	// 安全路径检查
+	notePath, err := sanitizePath(basePath, noteID)
+	if err != nil {
+		return "", err
+	}
+
 	content, err := os.ReadFile(notePath)
 	if err != nil {
 		return "", fmt.Errorf("读取笔记失败: %v", err)
 	}
 
-	return string(content), nil
+	contentStr := string(content)
+	metadata, plainContent, tags := parseFrontMatter(contentStr)
+
+	// 返回结构化的JSON数据
+	result := map[string]interface{}{
+		"id":      strings.TrimSuffix(noteID, ".md"),
+		"content": plainContent,
+	}
+
+	if len(metadata) > 0 {
+		result["metadata"] = metadata
+	}
+
+	if len(tags) > 0 {
+		result["tags"] = tags
+	}
+
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	return string(resultJSON), nil
 }
 
-// updateNote 更新笔记内容
+// updateNote 更新笔记内容（支持路径）
 func updateNote(args map[string]interface{}, basePath string) (string, error) {
 	noteID, ok := args["note_id"].(string)
 	if !ok || noteID == "" {
@@ -211,16 +313,26 @@ func updateNote(args map[string]interface{}, basePath string) (string, error) {
 		return "", fmt.Errorf("缺少必需参数: content")
 	}
 
-	notePath := filepath.Join(basePath, noteID+".md")
-	err := os.WriteFile(notePath, []byte(content), 0644)
+	// 支持路径：如果不包含.md扩展名，则添加
+	if !strings.HasSuffix(noteID, ".md") {
+		noteID += ".md"
+	}
+
+	// 安全路径检查
+	notePath, err := sanitizePath(basePath, noteID)
+	if err != nil {
+		return "", err
+	}
+
+	err = os.WriteFile(notePath, []byte(content), 0644)
 	if err != nil {
 		return "", fmt.Errorf("更新笔记失败: %v", err)
 	}
 
-	return fmt.Sprintf("笔记 '%s' 已成功更新", noteID), nil
+	return fmt.Sprintf("笔记 '%s' 已成功更新", strings.TrimSuffix(noteID, ".md")), nil
 }
 
-// createNote 创建新笔记
+// createNote 创建新笔记（支持路径，自动创建目录）
 func createNote(args map[string]interface{}, basePath string) (string, error) {
 	title, ok := args["title"].(string)
 	if !ok || title == "" {
@@ -232,61 +344,83 @@ func createNote(args map[string]interface{}, basePath string) (string, error) {
 		return "", fmt.Errorf("缺少必需参数: content")
 	}
 
+	// 支持路径，例如 "folder/note-title"
 	// 生成文件名（基于标题）
 	noteID := sanitizeFileName(title)
-	notePath := filepath.Join(basePath, noteID+".md")
+
+	// 如果不包含.md扩展名，则添加
+	if !strings.HasSuffix(noteID, ".md") {
+		noteID += ".md"
+	}
+
+	// 安全路径检查
+	notePath, err := sanitizePath(basePath, noteID)
+	if err != nil {
+		return "", err
+	}
 
 	// 检查是否已存在
 	if _, err := os.Stat(notePath); err == nil {
-		return "", fmt.Errorf("笔记 '%s' 已存在", noteID)
+		return "", fmt.Errorf("笔记 '%s' 已存在", strings.TrimSuffix(noteID, ".md"))
+	}
+
+	// 确保父目录存在
+	parentDir := filepath.Dir(notePath)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return "", fmt.Errorf("创建目录失败: %v", err)
 	}
 
 	// 创建笔记，添加标题作为第一行
 	fullContent := fmt.Sprintf("# %s\n\n%s", title, content)
-	err := os.WriteFile(notePath, []byte(fullContent), 0644)
+	err = os.WriteFile(notePath, []byte(fullContent), 0644)
 	if err != nil {
 		return "", fmt.Errorf("创建笔记失败: %v", err)
 	}
 
-	return fmt.Sprintf("笔记 '%s' 已成功创建，ID: %s", title, noteID), nil
+	return fmt.Sprintf("笔记 '%s' 已成功创建，ID: %s", title, strings.TrimSuffix(noteID, ".md")), nil
 }
 
-// listNotes 列出所有笔记
+// listNotes 列出所有笔记（返回树状结构）
 func listNotes(basePath string) (string, error) {
-	var notes []map[string]interface{}
-
-	err := filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
-			noteID := strings.TrimSuffix(info.Name(), ".md")
-
-			// 读取内容以提取标题
-			content, err := os.ReadFile(path)
-			if err == nil {
-				title := extractTitle(string(content))
-				notes = append(notes, map[string]interface{}{
-					"id":         noteID,
-					"title":      title,
-					"created_at": info.ModTime(),
-				})
-			}
-		}
-		return nil
-	})
-
+	// 构建文件树
+	tree, err := buildFileTree(basePath, "")
 	if err != nil {
-		return "", fmt.Errorf("列出笔记失败: %v", err)
+		return "", fmt.Errorf("构建文件树失败: %v", err)
 	}
 
-	if len(notes) == 0 {
+	// 如果是根目录节点，返回其子节点
+	var nodes []*FileNode
+	if tree.Type == "folder" && tree.Children != nil {
+		nodes = tree.Children
+	} else {
+		nodes = []*FileNode{tree}
+	}
+
+	if len(nodes) == 0 {
 		return "知识库中暂无笔记", nil
 	}
 
-	resultJSON, _ := json.MarshalIndent(notes, "", "  ")
-	return fmt.Sprintf("知识库中共有 %d 篇笔记:\n%s", len(notes), string(resultJSON)), nil
+	resultJSON, err := json.MarshalIndent(nodes, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("序列化失败: %v", err)
+	}
+
+	// 计算文件总数
+	totalFiles := countFiles(nodes)
+	return fmt.Sprintf("知识库中共有 %d 个项目:\n%s", totalFiles, string(resultJSON)), nil
+}
+
+// countFiles 统计文件数量
+func countFiles(nodes []*FileNode) int {
+	count := 0
+	for _, node := range nodes {
+		if node.Type == "file" {
+			count++
+		} else if node.Type == "folder" && node.Children != nil {
+			count += countFiles(node.Children)
+		}
+	}
+	return count
 }
 
 // extractTitle 从内容中提取标题
@@ -317,4 +451,182 @@ func sanitizeFileName(title string) string {
 		" ", "_",
 	)
 	return replacer.Replace(title)
+}
+
+// parseFrontMatter 解析YAML Front Matter
+func parseFrontMatter(content string) (map[string]interface{}, string, []string) {
+	metadata := make(map[string]interface{})
+	var tags []string
+	plainContent := content
+
+	// 检查是否有YAML Front Matter (以 --- 开头和结尾)
+	yamlRegex := regexp.MustCompile(`^---\s*\n([\s\S]*?)\n---\s*\n`)
+	matches := yamlRegex.FindStringSubmatch(content)
+
+	if len(matches) > 1 {
+		yamlContent := matches[1]
+		plainContent = strings.TrimPrefix(content, matches[0])
+
+		// 简单的YAML解析（仅支持常见字段）
+		lines := strings.Split(yamlContent, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+
+				// 特殊处理tags字段（可能是数组）
+				if key == "tags" {
+					// 处理 [tag1, tag2] 或 - tag1 格式
+					value = strings.Trim(value, "[]")
+					tagParts := strings.Split(value, ",")
+					for _, tag := range tagParts {
+						tag = strings.TrimSpace(tag)
+						tag = strings.Trim(tag, "\"'")
+						if tag != "" {
+							tags = append(tags, tag)
+						}
+					}
+					metadata[key] = tags
+				} else {
+					// 移除引号
+					value = strings.Trim(value, "\"'")
+					metadata[key] = value
+				}
+			}
+		}
+	}
+
+	// 同时在内容中查找 #标签 格式的标签
+	// Go正则表达式使用 \x{4e00}-\x{9fa5} 表示中文范围
+	tagRegex := regexp.MustCompile(`#([a-zA-Z0-9_\p{Han}]+)`)
+	tagMatches := tagRegex.FindAllStringSubmatch(plainContent, -1)
+	for _, match := range tagMatches {
+		if len(match) > 1 {
+			tag := match[1]
+			// 避免重复
+			found := false
+			for _, existing := range tags {
+				if existing == tag {
+					found = true
+					break
+				}
+			}
+			if !found {
+				tags = append(tags, tag)
+			}
+		}
+	}
+
+	return metadata, plainContent, tags
+}
+
+// buildFileTree 构建文件树（递归遍历目录）
+func buildFileTree(basePath string, currentPath string) (*FileNode, error) {
+	fullPath := filepath.Join(basePath, currentPath)
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// 相对路径（用于ID）
+	relPath := strings.TrimPrefix(currentPath, string(filepath.Separator))
+
+	node := &FileNode{
+		Name: info.Name(),
+		Path: relPath,
+	}
+
+	if info.IsDir() {
+		node.Type = "folder"
+		node.Children = []*FileNode{}
+
+		// 读取目录内容
+		entries, err := os.ReadDir(fullPath)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, entry := range entries {
+			// 跳过隐藏文件
+			if strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+
+			childPath := filepath.Join(currentPath, entry.Name())
+			childNode, err := buildFileTree(basePath, childPath)
+			if err != nil {
+				continue // 跳过错误
+			}
+			node.Children = append(node.Children, childNode)
+		}
+	} else if strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
+		node.Type = "file"
+
+		// 读取文件以提取元数据（容错处理）
+		content, err := os.ReadFile(fullPath)
+		if err == nil && len(content) > 0 {
+			contentStr := string(content)
+
+			// 安全地解析元数据，即使出错也不影响文件树构建
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						// 解析失败时静默处理
+						return
+					}
+				}()
+
+				metadata, _, tags := parseFrontMatter(contentStr)
+
+				if len(metadata) > 0 {
+					node.Metadata = metadata
+				}
+				if len(tags) > 0 {
+					node.Tags = tags
+				}
+			}()
+		}
+	} else {
+		// 跳过非Markdown文件
+		return nil, fmt.Errorf("not a markdown file")
+	}
+
+	return node, nil
+}
+
+// sanitizePath 清理路径，防止路径遍历攻击
+func sanitizePath(basePath string, userPath string) (string, error) {
+	// 移除路径中的 ".." 等危险部分
+	cleanPath := filepath.Clean(userPath)
+
+	// 确保不以 / 开头
+	cleanPath = strings.TrimPrefix(cleanPath, "/")
+	cleanPath = strings.TrimPrefix(cleanPath, "\\")
+
+	// 拼接完整路径
+	fullPath := filepath.Join(basePath, cleanPath)
+
+	// 验证路径是否在 basePath 内
+	absBasePath, err := filepath.Abs(basePath)
+	if err != nil {
+		return "", err
+	}
+
+	absFullPath, err := filepath.Abs(fullPath)
+	if err != nil {
+		return "", err
+	}
+
+	// 检查是否在允许的目录内
+	if !strings.HasPrefix(absFullPath, absBasePath) {
+		return "", fmt.Errorf("路径访问被拒绝: 路径在知识库目录之外")
+	}
+
+	return fullPath, nil
 }
