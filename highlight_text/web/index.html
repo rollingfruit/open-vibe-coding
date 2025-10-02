@@ -351,6 +351,15 @@
                             <i data-lucide="eye" class="w-4 h-4"></i>
                             <span>预览</span>
                         </button>
+                        <!-- Diff审查按钮（默认隐藏） -->
+                        <button id="rejectAllChangesBtn" class="hidden px-3 py-2 bg-red-600 hover:bg-red-500 rounded flex items-center gap-2">
+                            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                            <span>全部回退</span>
+                        </button>
+                        <button id="finishDiffReviewBtn" class="hidden px-3 py-2 bg-green-600 hover:bg-green-500 rounded flex items-center gap-2">
+                            <i data-lucide="check" class="w-4 h-4"></i>
+                            <span>完成审查</span>
+                        </button>
                         <button id="saveNoteBtn" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded flex items-center gap-2">
                             <i data-lucide="save" class="w-4 h-4"></i>
                             <span>保存</span>
@@ -369,6 +378,36 @@
                         class="hidden flex-1 p-4 bg-gray-800 border border-gray-700 rounded-lg text-white overflow-y-auto markdown-body"
                     >
                         <!-- 预览内容将在这里渲染 -->
+                    </div>
+                    <!-- Diff视图容器 -->
+                    <div
+                        id="noteDiffViewer"
+                        class="hidden flex-1 flex flex-col bg-gray-800 border border-gray-700 rounded-lg overflow-hidden"
+                    >
+                        <!-- Diff头部 -->
+                        <div class="p-3 border-b border-gray-700 bg-gray-900 flex justify-between items-center">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="git-compare" class="w-5 h-5 text-blue-400"></i>
+                                <span class="font-semibold text-blue-400">文件变更</span>
+                            </div>
+                            <button id="closeDiffViewBtn" class="p-1 rounded hover:bg-gray-700 transition-colors">
+                                <i data-lucide="x" class="w-4 h-4 text-gray-400 hover:text-white"></i>
+                            </button>
+                        </div>
+                        <!-- Diff内容区 -->
+                        <div id="noteDiffContent" class="flex-1 overflow-y-auto p-4 font-mono text-sm">
+                            <!-- Diff内容将在这里动态渲染 -->
+                        </div>
+                        <!-- Diff底部操作栏 -->
+                        <div id="diffActionBar" class="hidden p-3 border-t border-gray-700 bg-gray-900 flex justify-end gap-2">
+                            <button id="cancelDiffBtn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded">
+                                取消
+                            </button>
+                            <button id="confirmSaveBtn" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded flex items-center gap-2">
+                                <i data-lucide="check" class="w-4 h-4"></i>
+                                <span>确认保存</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -573,6 +612,12 @@
 
     <!-- 图片压缩库 -->
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+
+    <!-- jsdiff库 - 用于客户端diff计算 -->
+    <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
+
+    <!-- diff-match-patch - 用于行内diff -->
+    <script src="https://cdn.jsdelivr.net/npm/diff-match-patch@1.0.5/index.js"></script>
 
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>

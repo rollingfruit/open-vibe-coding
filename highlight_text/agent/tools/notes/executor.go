@@ -324,10 +324,24 @@ func updateNote(args map[string]interface{}, basePath string) (string, error) {
 		return "", err
 	}
 
+	// 读取原文件内容（用于计算diff）
+	var originalContent string
+	var originalPlainContent string
+	if existingContent, err := os.ReadFile(notePath); err == nil {
+		originalContent = string(existingContent)
+		// 提取纯文本内容（去除Front Matter）
+		_, plainContent, _ := parseFrontMatter(originalContent)
+		originalPlainContent = plainContent
+	} else {
+		// 文件不存在，视为空内容
+		originalContent = ""
+		originalPlainContent = ""
+	}
+
 	// 读取原文件以保留元数据
 	var finalContent string
-	if existingContent, err := os.ReadFile(notePath); err == nil {
-		existingStr := string(existingContent)
+	if originalContent != "" {
+		existingStr := originalContent
 
 		// 检查是否有YAML Front Matter
 		if strings.HasPrefix(existingStr, "---\n") {
@@ -382,7 +396,25 @@ func updateNote(args map[string]interface{}, basePath string) (string, error) {
 		return "", fmt.Errorf("更新笔记失败: %v", err)
 	}
 
-	return fmt.Sprintf("笔记 '%s' 已成功更新", strings.TrimSuffix(noteID, ".md")), nil
+	// 计算diff（基于纯文本内容，不包含Front Matter）
+	diffData := computeDiff(originalPlainContent, content)
+
+	// 构造返回结果
+	result := DiffResult{
+		Success:         true,
+		NoteID:          strings.TrimSuffix(noteID, ".md"),
+		Message:         fmt.Sprintf("笔记 '%s' 已成功更新", strings.TrimSuffix(noteID, ".md")),
+		DiffData:        diffData,
+		OriginalContent: originalPlainContent,
+		NewContent:      content,
+	}
+
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("序列化结果失败: %v", err)
+	}
+
+	return string(resultJSON), nil
 }
 
 // createNote 创建新笔记（支持路径，自动创建目录）
@@ -430,7 +462,25 @@ func createNote(args map[string]interface{}, basePath string) (string, error) {
 		return "", fmt.Errorf("创建笔记失败: %v", err)
 	}
 
-	return fmt.Sprintf("笔记 '%s' 已成功创建，ID: %s", title, strings.TrimSuffix(noteID, ".md")), nil
+	// 计算diff（与空内容对比）
+	diffData := computeDiff("", fullContent)
+
+	// 构造返回结果
+	result := DiffResult{
+		Success:         true,
+		NoteID:          strings.TrimSuffix(noteID, ".md"),
+		Message:         fmt.Sprintf("笔记 '%s' 已成功创建，ID: %s", title, strings.TrimSuffix(noteID, ".md")),
+		DiffData:        diffData,
+		OriginalContent: "",
+		NewContent:      fullContent,
+	}
+
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("序列化结果失败: %v", err)
+	}
+
+	return string(resultJSON), nil
 }
 
 // listNotes 列出所有笔记（返回树状结构）
@@ -651,6 +701,153 @@ func buildFileTree(basePath string, currentPath string) (*FileNode, error) {
 	}
 
 	return node, nil
+}
+
+// DiffLine 表示差异的一行
+type DiffLine struct {
+	Type         string `json:"type"`                   // "added", "removed", "unchanged", "modified"
+	Content      string `json:"content"`                // 行内容
+	OldContent   string `json:"oldContent,omitempty"`   // 修改前的内容（仅modified类型）
+	LineNumber   int    `json:"lineNumber"`             // 行号
+	OldLineNumber int   `json:"oldLineNumber,omitempty"` // 旧行号（仅modified类型）
+}
+
+// DiffResult 表示差异结果
+type DiffResult struct {
+	Success         bool       `json:"success"`
+	NoteID          string     `json:"noteId"`
+	Message         string     `json:"message"`
+	DiffData        []DiffLine `json:"diffData,omitempty"`
+	OriginalContent string     `json:"originalContent,omitempty"`
+	NewContent      string     `json:"newContent,omitempty"`
+}
+
+// computeDiff 计算两个文本的差异（行级别，支持行内diff）
+func computeDiff(original, new string) []DiffLine {
+	originalLines := strings.Split(original, "\n")
+	newLines := strings.Split(new, "\n")
+
+	// 使用简单的逐行比较算法
+	var result []DiffLine
+
+	// 使用最长公共子序列(LCS)算法进行行级diff
+	lcsMatrix := computeLCS(originalLines, newLines)
+
+	// 回溯LCS矩阵生成diff
+	i := len(originalLines)
+	j := len(newLines)
+	newLineNum := len(newLines)
+	oldLineNum := len(originalLines)
+
+	var tempResult []DiffLine
+
+	for i > 0 || j > 0 {
+		if i > 0 && j > 0 && originalLines[i-1] == newLines[j-1] {
+			// 相同行
+			tempResult = append([]DiffLine{{
+				Type:       "unchanged",
+				Content:    newLines[j-1],
+				LineNumber: newLineNum,
+			}}, tempResult...)
+			i--
+			j--
+			newLineNum--
+			oldLineNum--
+		} else if j > 0 && (i == 0 || lcsMatrix[i][j-1] >= lcsMatrix[i-1][j]) {
+			// 添加行
+			tempResult = append([]DiffLine{{
+				Type:       "added",
+				Content:    newLines[j-1],
+				LineNumber: newLineNum,
+			}}, tempResult...)
+			j--
+			newLineNum--
+		} else if i > 0 {
+			// 删除行
+			tempResult = append([]DiffLine{{
+				Type:          "removed",
+				Content:       originalLines[i-1],
+				LineNumber:    0, // 会在后处理中重新计算
+				OldLineNumber: oldLineNum,
+			}}, tempResult...)
+			i--
+			oldLineNum--
+		}
+	}
+
+	// 重新计算行号
+	newLineNum = 1
+	for idx := range tempResult {
+		if tempResult[idx].Type != "removed" {
+			tempResult[idx].LineNumber = newLineNum
+			newLineNum++
+		}
+	}
+
+	result = tempResult
+
+	// 后处理：合并相邻的删除和添加为修改
+	result = mergeModifications(result)
+
+	return result
+}
+
+// computeLCS 计算最长公共子序列矩阵
+func computeLCS(a, b []string) [][]int {
+	m := len(a)
+	n := len(b)
+	lcs := make([][]int, m+1)
+	for i := range lcs {
+		lcs[i] = make([]int, n+1)
+	}
+
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			if a[i-1] == b[j-1] {
+				lcs[i][j] = lcs[i-1][j-1] + 1
+			} else {
+				lcs[i][j] = max(lcs[i-1][j], lcs[i][j-1])
+			}
+		}
+	}
+
+	return lcs
+}
+
+// max 返回两个整数中的较大值
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// mergeModifications 将相邻的删除和添加行合并为修改行
+func mergeModifications(diffs []DiffLine) []DiffLine {
+	var result []DiffLine
+	i := 0
+
+	for i < len(diffs) {
+		current := diffs[i]
+
+		// 检查是否是删除行，且下一行是添加行
+		if current.Type == "removed" && i+1 < len(diffs) && diffs[i+1].Type == "added" {
+			// 合并为修改行
+			result = append(result, DiffLine{
+				Type:          "modified",
+				Content:       diffs[i+1].Content,  // 新内容
+				OldContent:    current.Content,      // 旧内容
+				LineNumber:    diffs[i+1].LineNumber,
+				OldLineNumber: current.OldLineNumber,
+			})
+			i += 2 // 跳过两行
+		} else {
+			result = append(result, current)
+			i++
+		}
+	}
+
+	return result
 }
 
 // sanitizePath 清理路径，防止路径遍历攻击

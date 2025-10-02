@@ -138,6 +138,26 @@ JSON格式：
      * 执行知识库工具
      */
     async executeToolOnBackend(toolName, args) {
+        // 检查是否是修改文件的工具
+        if (toolName === 'update_note' || toolName === 'create_note') {
+            // 提取文件夹路径
+            const noteId = args.note_id || args.title || '';
+            const folderPath = noteId.includes('/') ? noteId.substring(0, noteId.lastIndexOf('/')) : '';
+
+            // 检查是否已授权
+            if (!this.mainApp.approvedFolders.has(folderPath)) {
+                // 请求用户授权
+                const approved = await this.mainApp.requestFolderPermission(folderPath);
+                if (!approved) {
+                    // 用户拒绝，返回取消状态
+                    return {
+                        success: false,
+                        error: '用户拒绝修改文件'
+                    };
+                }
+            }
+        }
+
         try {
             const response = await fetch('http://localhost:8080/agent/execute', {
                 method: 'POST',
@@ -154,6 +174,44 @@ JSON格式：
             });
 
             const result = await response.json();
+
+            // 如果是update_note或create_note，处理diff显示
+            if (result.success && (toolName === 'update_note' || toolName === 'create_note')) {
+                console.log('🔍 工具执行成功，开始处理diff:', toolName);
+                console.log('📦 后端返回结果:', result);
+
+                try {
+                    // 解析返回的JSON结果
+                    const diffResult = JSON.parse(result.output);
+                    console.log('📊 解析后的diff结果:', diffResult);
+
+                    if (diffResult.diffData && diffResult.diffData.length > 0) {
+                        console.log('✅ 找到diff数据，准备显示视图');
+                        console.log('📝 NoteID:', diffResult.noteId);
+                        console.log('📈 Diff行数:', diffResult.diffData.length);
+
+                        // 先刷新笔记列表（如果是新创建的笔记）
+                        if (toolName === 'create_note') {
+                            console.log('🔄 刷新笔记列表（新创建的笔记）');
+                            await this.mainApp.loadNotes();
+                            // 等待笔记列表更新
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        }
+
+                        // 显示diff视图
+                        console.log('🎨 准备调用displayDiff...');
+                        await this.mainApp.displayDiff(diffResult.noteId, diffResult.diffData, false);
+                        console.log('✨ Diff视图显示完成');
+                    } else {
+                        console.warn('⚠️ 没有diff数据或数据为空');
+                    }
+                } catch (parseError) {
+                    console.error('❌ 无法解析diff结果:', parseError);
+                    console.error('原始输出:', result.output);
+                    console.error('错误堆栈:', parseError.stack);
+                }
+            }
+
             return result;
         } catch (error) {
             console.error('执行工具失败:', error);

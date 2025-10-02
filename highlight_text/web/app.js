@@ -25,6 +25,8 @@ class AIAssistant {
         this.isEditorPreview = false; // 编辑器预览模式
         this.autoSaveTimeout = null; // 自动保存定时器
         this.notesWebSocket = null; // WebSocket连接
+        this.approvedFolders = new Set(); // 已授权的文件夹路径集合
+        this.activeNoteOriginalContent = null; // 笔记的原始内容（用于手动编辑diff）
 
         // 初始化代码存储
         if (!window.codeStorage) {
@@ -1018,6 +1020,22 @@ class AIAssistant {
             });
         }
 
+        // 全部回退按钮
+        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
+        if (rejectAllChangesBtn) {
+            rejectAllChangesBtn.addEventListener('click', () => {
+                this.rejectAllChanges();
+            });
+        }
+
+        // 完成审查按钮
+        const finishDiffReviewBtn = document.getElementById('finishDiffReviewBtn');
+        if (finishDiffReviewBtn) {
+            finishDiffReviewBtn.addEventListener('click', () => {
+                this.finishDiffReview();
+            });
+        }
+
         // 新建笔记按钮
         const newNoteBtn = document.getElementById('newNoteBtn');
         if (newNoteBtn) {
@@ -1087,6 +1105,30 @@ class AIAssistant {
             });
         }
 
+        // Diff视图关闭按钮
+        const closeDiffViewBtn = document.getElementById('closeDiffViewBtn');
+        if (closeDiffViewBtn) {
+            closeDiffViewBtn.addEventListener('click', () => {
+                this.closeDiffView();
+            });
+        }
+
+        // Diff视图取消按钮
+        const cancelDiffBtn = document.getElementById('cancelDiffBtn');
+        if (cancelDiffBtn) {
+            cancelDiffBtn.addEventListener('click', () => {
+                this.closeDiffView();
+            });
+        }
+
+        // Diff视图确认保存按钮
+        const confirmSaveBtn = document.getElementById('confirmSaveBtn');
+        if (confirmSaveBtn) {
+            confirmSaveBtn.addEventListener('click', () => {
+                this.confirmDiffSave();
+            });
+        }
+
         // 笔记列表右键菜单事件
         const notesList = document.getElementById('notesList');
         if (notesList) {
@@ -1130,6 +1172,32 @@ class AIAssistant {
                 e.stopPropagation();
                 noteEditor.classList.remove('drag-over');
                 this.handleEditorImageDrop(e);
+            });
+
+            // 编辑器右键划词功能
+            noteEditor.addEventListener('contextmenu', (e) => {
+                console.log('🖱️ noteEditor右键事件触发');
+                console.log('  - 事件目标:', e.target);
+                console.log('  - 事件目标ID:', e.target.id);
+                console.log('  - editorInstance:', this.editorInstance);
+
+                // 对于textarea，使用selectionStart和selectionEnd获取选中文本
+                const textarea = e.target;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const selectedText = textarea.value.substring(start, end).trim();
+
+                console.log('📝 选中文本:', selectedText);
+                console.log('📍 选区位置:', { start, end });
+                console.log('📏 选中文本长度:', selectedText.length);
+
+                if (selectedText && selectedText.length > 0) {
+                    console.log('✅ 检测到选中文本，显示菜单');
+                    e.preventDefault(); // 阻止默认右键菜单
+                    this.handleEditorContextMenu(e, selectedText);
+                } else {
+                    console.log('❌ 未检测到选中文本，允许默认右键菜单');
+                }
             });
         }
 
@@ -2048,22 +2116,239 @@ class AIAssistant {
         }
     }
 
-    handleTextSelection(e) {
-        // 检查是否是textarea (编辑器)
-        if (e.target.id === 'noteEditor') {
-            const textarea = e.target;
-            const start = textarea.selectionStart;
-            const end = textarea.selectionEnd;
-            const selectedText = textarea.value.substring(start, end).trim();
+    /**
+     * 处理编辑器右键菜单
+     */
+    handleEditorContextMenu(e, selectedText) {
+        console.log('🎯 handleEditorContextMenu 被调用');
+        console.log('  - 选中文本:', selectedText);
 
-            if (selectedText && selectedText.length > 3) {
-                // 计算textarea中选区的屏幕坐标
-                const coords = this.getTextareaSelectionCoords(textarea, start, end);
+        const textarea = e.target;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
 
-                this.showTooltip(coords.x, coords.y, selectedText, textarea);
-            } else {
-                this.hideTooltip();
+        console.log('  - 选区:', { start, end });
+
+        // 计算textarea中选区的屏幕坐标
+        const coords = this.getTextareaSelectionCoords(textarea, start, end);
+        console.log('  - 坐标:', coords);
+
+        // 显示简化版tooltip（只显示输入框，不显示快捷按钮）
+        this.showEditorTooltip(coords.x, coords.y, selectedText, textarea, start, end);
+    }
+
+    /**
+     * 显示编辑器专用的tooltip（只包含输入框）
+     */
+    showEditorTooltip(x, y, selectedText, textarea, selectionStart, selectionEnd) {
+        console.log('💬 showEditorTooltip 被调用');
+        console.log('  - 位置:', { x, y });
+        console.log('  - 选中文本:', selectedText);
+
+        // 移除旧的tooltip
+        const oldTooltip = document.getElementById('editorTooltip');
+        if (oldTooltip) {
+            oldTooltip.remove();
+        }
+
+        // 创建新的tooltip
+        const tooltip = document.createElement('div');
+        tooltip.id = 'editorTooltip';
+        tooltip.className = 'fixed z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-xl';
+
+        // 调整位置：默认在选中文本下方，如果空间不够则显示在上方
+        const tooltipHeight = 60; // 预估高度
+        const viewportHeight = window.innerHeight;
+        let finalY = y + 10; // 默认在下方
+
+        if (finalY + tooltipHeight > viewportHeight - 20) {
+            // 空间不够，显示在上方
+            finalY = y - tooltipHeight - 10;
+        }
+
+        // 确保tooltip不超出视口左右边界
+        const tooltipWidth = 400;
+        let finalX = Math.max(10, Math.min(x, window.innerWidth - tooltipWidth - 10));
+
+        tooltip.style.left = `${finalX}px`;
+        tooltip.style.top = `${finalY}px`;
+        console.log('✅ 创建新tooltip元素，位置:', { finalX, finalY });
+
+        // 添加关闭按钮和输入框
+        tooltip.innerHTML = `
+            <div class="flex items-start gap-2 p-3">
+                <input
+                    type="text"
+                    id="editorTooltipInput"
+                    class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="输入指令来修改选中的文本..."
+                    style="min-width: 300px;"
+                />
+                <button
+                    id="editorTooltipSendBtn"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-semibold transition flex items-center gap-1"
+                >
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                    <span>发送</span>
+                </button>
+                <button
+                    id="editorTooltipCloseBtn"
+                    class="p-2 hover:bg-gray-700 rounded transition"
+                    title="关闭"
+                >
+                    <i data-lucide="x" class="w-4 h-4 text-gray-400"></i>
+                </button>
+            </div>
+        `;
+
+        // 添加到body
+        document.body.appendChild(tooltip);
+        console.log('✅ tooltip已添加到DOM');
+
+        // 初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        // 保持textarea的选中状态
+        setTimeout(() => {
+            textarea.focus();
+            textarea.setSelectionRange(selectionStart, selectionEnd);
+            console.log('✅ 恢复文本选中状态');
+
+            // 然后聚焦到输入框（但不清除textarea的选择）
+            const input = document.getElementById('editorTooltipInput');
+            if (input) {
+                input.focus();
+                console.log('✅ 输入框已聚焦');
             }
+        }, 50);
+
+        // 绑定按钮事件
+        const sendBtn = document.getElementById('editorTooltipSendBtn');
+        const closeBtn = document.getElementById('editorTooltipCloseBtn');
+        const input = document.getElementById('editorTooltipInput');
+
+        const closeTooltip = () => {
+            tooltip.remove();
+            // 恢复选中状态
+            textarea.focus();
+            textarea.setSelectionRange(selectionStart, selectionEnd);
+        };
+
+        const handleSend = async () => {
+            const instruction = input.value.trim();
+            if (!instruction) return;
+
+            // 移除tooltip
+            tooltip.remove();
+
+            // 调用LLM处理选中文本
+            await this.processEditorSelectionWithLLM(selectedText, instruction, textarea, selectionStart, selectionEnd);
+        };
+
+        if (sendBtn) {
+            sendBtn.addEventListener('click', handleSend);
+        }
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                closeTooltip();
+            });
+        }
+
+        if (input) {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    handleSend();
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeTooltip();
+                }
+            });
+        }
+
+        // 点击外部关闭tooltip
+        const closeOnClickOutside = (e) => {
+            if (!tooltip.contains(e.target) && e.target !== textarea) {
+                closeTooltip();
+                document.removeEventListener('click', closeOnClickOutside);
+            }
+        };
+        setTimeout(() => {
+            document.addEventListener('click', closeOnClickOutside);
+        }, 200);
+    }
+
+    /**
+     * 使用LLM处理编辑器中的选中文本
+     */
+    async processEditorSelectionWithLLM(selectedText, instruction, textarea, selectionStart, selectionEnd) {
+        try {
+            this.showNotification('正在处理...', 'info');
+
+            // 构造prompt
+            const prompt = `请根据以下指令修改所提供的文本。只返回修改后的文本，不要包含任何解释或额外内容。
+
+指令：${instruction}
+
+原文本：
+${selectedText}`;
+
+            // 调用LLM API
+            const response = await fetch(this.settings.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.settings.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: this.settings.model,
+                    messages: [
+                        { role: 'user', content: prompt }
+                    ],
+                    temperature: 0.7
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`API请求失败: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const modifiedText = data.choices[0].message.content.trim();
+
+            // 生成新的完整内容
+            const originalFullContent = textarea.value;
+            const newFullContent =
+                originalFullContent.substring(0, selectionStart) +
+                modifiedText +
+                originalFullContent.substring(selectionEnd);
+
+            // 计算diff
+            const diffData = this.computeClientDiff(this.activeNoteOriginalContent || originalFullContent, newFullContent);
+
+            // 临时更新编辑器内容（用于diff显示）
+            textarea.value = newFullContent;
+
+            // 显示diff视图
+            await this.displayDiff(this.activeNoteId, diffData, false);
+
+            this.showNotification('修改完成，请审查变更', 'success');
+
+        } catch (error) {
+            console.error('LLM处理失败:', error);
+            this.showNotification('处理失败: ' + error.message, 'error');
+        }
+    }
+
+    handleTextSelection(e) {
+        // 编辑器的划词功能已改为右键触发，这里跳过
+        if (e.target.id === 'noteEditor') {
             return;
         }
 
@@ -2072,11 +2357,11 @@ class AIAssistant {
         const selectedText = selection.toString().trim();
 
         if (selectedText && selectedText.length > 3) {
-            // 检查选择是否在AI消息中
-            let aiMessage = e.target.closest('.ai-message');
+            // 检查选择是否在AI消息中或notePreview中
+            let targetArea = e.target.closest('.ai-message') || e.target.closest('#notePreview');
 
             // 如果没有找到，尝试通过选择范围查找
-            if (!aiMessage && selection.rangeCount > 0) {
+            if (!targetArea && selection.rangeCount > 0) {
                 const range = selection.getRangeAt(0);
                 let container = range.commonAncestorContainer;
 
@@ -2085,10 +2370,10 @@ class AIAssistant {
                     container = container.parentElement;
                 }
 
-                aiMessage = container.closest('.ai-message');
+                targetArea = container.closest('.ai-message') || container.closest('#notePreview');
             }
 
-            if (aiMessage) {
+            if (targetArea) {
                 // 获取选择的边界矩形
                 const range = selection.getRangeAt(0);
                 const rect = range.getBoundingClientRect();
@@ -2097,7 +2382,7 @@ class AIAssistant {
                 const x = rect.left + rect.width / 2;
                 const y = rect.top - 10;
 
-                this.showTooltip(x, y, selectedText, aiMessage);
+                this.showTooltip(x, y, selectedText, targetArea);
             }
         } else {
             this.hideTooltip();
@@ -2159,6 +2444,10 @@ class AIAssistant {
             console.log('Tooltip template not found');
             return;
         }
+
+        // 保存当前选区，用于后续恢复
+        const selection = window.getSelection();
+        const range = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
 
         const tooltip = template.content.cloneNode(true).querySelector('.tooltip');
         const buttonsContainer = tooltip.querySelector('div.flex.flex-wrap');
@@ -2232,8 +2521,17 @@ class AIAssistant {
 
         document.body.appendChild(tooltip);
 
-        // 自动聚焦到输入框
+        // 自动聚焦到输入框，同时恢复文本选中状态
         setTimeout(() => {
+            // 恢复notePreview的文本选中状态
+            if (range) {
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+                console.log('✅ 恢复notePreview文本选中状态');
+            }
+
+            // 聚焦到输入框
             const activeInput = document.querySelector('#activeTooltip .custom-prompt-input');
             if (activeInput) {
                 activeInput.focus();
@@ -2251,11 +2549,14 @@ class AIAssistant {
     }
 
     async handleFollowup(selectedText, command, originalMessage) {
-        // 判断上下文来源：textarea或普通消息
+        // 判断上下文来源：textarea、notePreview或普通消息
         let originalContent;
         if (originalMessage.tagName === 'TEXTAREA') {
             // 来自编辑器
             originalContent = originalMessage.value;
+        } else if (originalMessage.id === 'notePreview') {
+            // 来自笔记预览
+            originalContent = this.editorInstance ? this.editorInstance.value : '';
         } else {
             // 来自聊天消息
             originalContent = originalMessage.querySelector('.message-content').textContent;
@@ -3278,6 +3579,8 @@ class AIAssistant {
         if (editorTextarea) {
             editorTextarea.value = content;
             this.editorInstance = editorTextarea;
+            // 保存原始内容用于diff比较
+            this.activeNoteOriginalContent = content;
         }
 
         if (noteTitleEl) {
@@ -3377,8 +3680,36 @@ class AIAssistant {
             return;
         }
 
+        const currentContent = this.editorInstance.value;
+
+        // 手动编辑时直接保存，不显示diff
+        await this.performActualSave(currentContent);
+    }
+
+    /**
+     * 确认diff后执行实际保存
+     */
+    async confirmDiffSave() {
+        if (!this.pendingSaveContent) {
+            this.showNotification('没有待保存的内容', 'error');
+            return;
+        }
+
+        await this.performActualSave(this.pendingSaveContent);
+        this.pendingSaveContent = null;
+        this.closeDiffView();
+    }
+
+    /**
+     * 执行实际的保存操作
+     */
+    async performActualSave(content) {
+        if (!this.activeNoteId) {
+            this.showNotification('没有活动的笔记', 'error');
+            return;
+        }
+
         try {
-            const content = this.editorInstance.value;
             const response = await fetch(`http://localhost:8080/api/notes/${this.activeNoteId}`, {
                 method: 'PUT',
                 headers: {
@@ -3392,6 +3723,9 @@ class AIAssistant {
             }
 
             this.showNotification('笔记已保存', 'success');
+
+            // 更新原始内容为当前保存的内容
+            this.activeNoteOriginalContent = content;
         } catch (error) {
             console.error('保存笔记失败:', error);
             this.showNotification('保存失败: ' + error.message, 'error');
@@ -3781,6 +4115,765 @@ tags: []
             sanitize: false, // 我们会手动处理HTML转义
             smartLists: true,
             smartypants: false
+        });
+    }
+
+    /**
+     * 显示Diff视图
+     * @param {string} noteId - 笔记ID
+     * @param {Array} diffData - Diff数据数组
+     * @param {boolean} showConfirmButton - 是否显示确认保存按钮（手动编辑时为true）
+     */
+    async displayDiff(noteId, diffData, showConfirmButton = false) {
+        console.log('🎨 displayDiff 被调用 - 原地替换模式');
+        console.log('📝 NoteID:', noteId);
+        console.log('📊 DiffData:', diffData);
+
+        // 确保在编辑器模式
+        if (this.viewMode !== 'editor' || this.activeNoteId !== noteId) {
+            await this.switchToEditorMode(noteId);
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        const noteEditor = document.getElementById('noteEditor');
+        if (!noteEditor) {
+            console.error('❌ 编辑器未找到');
+            return;
+        }
+
+        if (!diffData || diffData.length === 0) {
+            console.warn('⚠️ 没有diff数据');
+            return;
+        }
+
+        // 保存当前diff数据供后续使用
+        this.currentDiffData = diffData;
+        this.currentDiffBlocks = this.groupDiffChanges(diffData);
+
+        // 重新加载后端文件内容（已被Agent修改）
+        await this.reloadNoteContent(noteId);
+
+        // 隐藏textarea编辑器
+        noteEditor.classList.add('hidden');
+
+        // 查找或创建内联diff容器（直接替换noteEditor）
+        let inlineDiffContainer = document.getElementById('inlineDiffContainer');
+        const editorParent = noteEditor.parentElement;
+
+        if (!inlineDiffContainer) {
+            inlineDiffContainer = document.createElement('div');
+            inlineDiffContainer.id = 'inlineDiffContainer';
+            inlineDiffContainer.className = noteEditor.className; // 继承noteEditor的所有class
+            // 插入到noteEditor之后
+            noteEditor.parentNode.insertBefore(inlineDiffContainer, noteEditor.nextSibling);
+        }
+        inlineDiffContainer.classList.remove('hidden');
+        inlineDiffContainer.innerHTML = '';
+
+        // 显示顶部diff审查按钮，隐藏保存按钮
+        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
+        const finishDiffReviewBtn = document.getElementById('finishDiffReviewBtn');
+        const saveNoteBtn = document.getElementById('saveNoteBtn');
+        const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+
+        if (rejectAllChangesBtn) rejectAllChangesBtn.classList.remove('hidden');
+        if (finishDiffReviewBtn) finishDiffReviewBtn.classList.remove('hidden');
+        if (saveNoteBtn) saveNoteBtn.classList.add('hidden');
+        if (togglePreviewBtn) togglePreviewBtn.classList.add('hidden');
+
+        // 初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        // 渲染diff内容（逐行显示）
+        this.currentDiffBlocks.forEach((block, blockIndex) => {
+            block.lines.forEach((line, lineIndex) => {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = 'leading-6 py-1 px-3 transition-all duration-200';
+                lineDiv.dataset.blockIndex = blockIndex;
+                lineDiv.dataset.lineIndex = lineIndex;
+                lineDiv.dataset.lineType = line.type;
+
+                if (line.type === 'removed') {
+                    // 删除的行：红色背景
+                    lineDiv.classList.add('bg-red-900', 'bg-opacity-20', 'border-l-4', 'border-red-500');
+                    lineDiv.innerHTML = `<span class="text-red-300 opacity-80">${this.escapeHtml(line.content)}</span>`;
+
+                    // 在删除行后面添加操作按钮（如果下一行是added/modified）
+                    const nextLine = block.lines[lineIndex + 1];
+                    if (nextLine && (nextLine.type === 'added' || nextLine.type === 'modified')) {
+                        const btnDiv = document.createElement('div');
+                        btnDiv.className = 'flex gap-2 justify-end py-1 px-3 bg-gray-700 bg-opacity-30';
+                        btnDiv.innerHTML = `
+                            <button class="diff-reject-change-btn px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-xs transition" data-block="${blockIndex}" data-line="${lineIndex}">
+                                ↶ 回退修改
+                            </button>
+                        `;
+                        inlineDiffContainer.appendChild(lineDiv);
+                        inlineDiffContainer.appendChild(btnDiv);
+                        return; // 跳过后面的appendChild
+                    }
+                } else if (line.type === 'added') {
+                    // 新增的行：绿色背景
+                    lineDiv.classList.add('bg-green-900', 'bg-opacity-20', 'border-l-4', 'border-green-500');
+                    lineDiv.innerHTML = `<span class="text-green-300">${this.escapeHtml(line.content)}</span>`;
+                } else if (line.type === 'modified') {
+                    // 修改的行：先显示旧内容（红），再显示新内容（绿）
+                    const oldLineDiv = document.createElement('div');
+                    oldLineDiv.className = 'leading-6 py-1 px-3 bg-red-900 bg-opacity-20 border-l-4 border-red-500';
+                    oldLineDiv.dataset.blockIndex = blockIndex;
+                    oldLineDiv.dataset.lineType = 'removed';
+                    oldLineDiv.innerHTML = `<span class="text-red-300 opacity-80">${this.escapeHtml(line.oldContent)}</span>`;
+
+                    const newLineDiv = document.createElement('div');
+                    newLineDiv.className = 'leading-6 py-1 px-3 bg-green-900 bg-opacity-20 border-l-4 border-green-500';
+                    newLineDiv.dataset.blockIndex = blockIndex;
+                    newLineDiv.dataset.lineType = 'added';
+
+                    // 使用行内diff显示差异
+                    const inlineDiff = this.computeInlineDiff(line.oldContent, line.content);
+                    newLineDiv.innerHTML = inlineDiff;
+
+                    // 添加操作按钮
+                    const btnDiv = document.createElement('div');
+                    btnDiv.className = 'flex gap-2 justify-end py-1 px-3 bg-gray-700 bg-opacity-30';
+                    btnDiv.innerHTML = `
+                        <button class="diff-reject-change-btn px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-xs transition" data-block="${blockIndex}" data-line="${lineIndex}">
+                            ↶ 回退修改
+                        </button>
+                    `;
+
+                    inlineDiffContainer.appendChild(oldLineDiv);
+                    inlineDiffContainer.appendChild(newLineDiv);
+                    inlineDiffContainer.appendChild(btnDiv);
+                    return; // 跳过后面的appendChild
+                } else {
+                    // 未改变的行：正常显示
+                    lineDiv.classList.add('bg-gray-800', 'bg-opacity-10');
+                    lineDiv.innerHTML = `<span class="text-gray-300">${this.escapeHtml(line.content)}</span>`;
+                }
+
+                inlineDiffContainer.appendChild(lineDiv);
+            });
+        });
+
+        // 绑定回退按钮事件
+        inlineDiffContainer.querySelectorAll('.diff-reject-change-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const blockIndex = parseInt(e.currentTarget.dataset.block);
+                const lineIndex = parseInt(e.currentTarget.dataset.line);
+                this.rejectLineChange(blockIndex, lineIndex);
+            });
+        });
+
+        console.log('✅ 原地diff视图渲染完成');
+    }
+
+    /**
+     * 重新加载笔记内容（从后端）
+     */
+    async reloadNoteContent(noteId) {
+        try {
+            const response = await fetch(`http://localhost:8080/api/notes/${noteId}`);
+            if (!response.ok) {
+                throw new Error('加载笔记失败');
+            }
+            const note = await response.json();
+            const noteEditor = document.getElementById('noteEditor');
+            if (noteEditor) {
+                noteEditor.value = note.content;
+                this.activeNoteOriginalContent = note.content; // 更新原始内容
+            }
+        } catch (error) {
+            console.error('重新加载笔记内容失败:', error);
+        }
+    }
+
+    /**
+     * 完成diff审查
+     */
+    async finishDiffReview() {
+        console.log('✅ 完成审查，关闭diff视图');
+        this.closeDiffView();
+        this.showNotification('审查完成', 'success');
+    }
+
+    /**
+     * 全部回退变更
+     */
+    async rejectAllChanges() {
+        if (!confirm('确定要回退所有变更吗？这将恢复到修改前的状态。')) {
+            return;
+        }
+
+        console.log('🔄 全部回退变更');
+
+        // 从diffData中提取原始内容
+        const originalLines = [];
+        this.currentDiffData.forEach(line => {
+            if (line.type === 'removed' || line.type === 'unchanged') {
+                originalLines.push(line.content);
+            } else if (line.type === 'modified') {
+                originalLines.push(line.oldContent);
+            }
+            // added类型的行不包含在原始内容中
+        });
+
+        const originalContent = originalLines.join('\n');
+
+        // 保存回后端
+        try {
+            const response = await fetch(`http://localhost:8080/api/notes/${this.activeNoteId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content: originalContent })
+            });
+
+            if (!response.ok) {
+                throw new Error('回退失败');
+            }
+
+            // 更新编辑器
+            const noteEditor = document.getElementById('noteEditor');
+            if (noteEditor) {
+                noteEditor.value = originalContent;
+                this.activeNoteOriginalContent = originalContent;
+            }
+
+            this.showNotification('已回退所有变更', 'success');
+            this.closeDiffView();
+        } catch (error) {
+            console.error('回退失败:', error);
+            this.showNotification('回退失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 将diff数据分组为变更块
+     */
+    groupDiffChanges(diffData) {
+        const blocks = [];
+        let currentBlock = null;
+
+        diffData.forEach(line => {
+            const isChange = line.type !== 'unchanged';
+
+            if (isChange) {
+                // 开始新的变更块或继续当前块
+                if (!currentBlock) {
+                    currentBlock = {
+                        hasChanges: true,
+                        lines: []
+                    };
+                }
+                currentBlock.lines.push(line);
+            } else {
+                // 遇到unchanged行
+                if (currentBlock) {
+                    // 结束当前变更块
+                    blocks.push(currentBlock);
+                    currentBlock = null;
+                }
+
+                // 添加unchanged行到单独的块（不显示操作按钮）
+                blocks.push({
+                    hasChanges: false,
+                    lines: [line]
+                });
+            }
+        });
+
+        // 处理最后一个块
+        if (currentBlock) {
+            blocks.push(currentBlock);
+        }
+
+        return blocks;
+    }
+
+    /**
+     * 计算行内diff（高亮变更部分）
+     */
+    computeInlineDiff(oldText, newText) {
+        if (typeof diff_match_patch === 'undefined') {
+            console.warn('diff_match_patch未加载，使用简单对比');
+            return `<span class="diff-removed-text">${this.escapeHtml(oldText)}</span> → <span class="diff-added-text">${this.escapeHtml(newText)}</span>`;
+        }
+
+        const dmp = new diff_match_patch();
+        const diffs = dmp.diff_main(oldText, newText);
+        dmp.diff_cleanupSemantic(diffs);
+
+        let html = '';
+        diffs.forEach(([type, text]) => {
+            const escaped = this.escapeHtml(text);
+            if (type === 1) { // 添加
+                html += `<span class="diff-added-text">${escaped}</span>`;
+            } else if (type === -1) { // 删除
+                html += `<span class="diff-removed-text">${escaped}</span>`;
+            } else { // 不变
+                html += escaped;
+            }
+        });
+
+        return html;
+    }
+
+    /**
+     * 接受变更块
+     */
+    /**
+     * 拒绝单行变更（回退修改）
+     */
+    async rejectLineChange(blockIndex, lineIndex) {
+        console.log('❌ 回退行变更:', blockIndex, lineIndex);
+
+        const inlineDiffContainer = document.getElementById('inlineDiffContainer');
+        if (!inlineDiffContainer) return;
+
+        const block = this.currentDiffBlocks[blockIndex];
+        if (!block) return;
+
+        const line = block.lines[lineIndex];
+        if (!line) return;
+
+        // 查找相关的DOM元素
+        const allLines = inlineDiffContainer.querySelectorAll(`[data-block-index="${blockIndex}"][data-line-index="${lineIndex}"]`);
+        const nextBtn = inlineDiffContainer.querySelector(`.diff-reject-change-btn[data-block="${blockIndex}"][data-line="${lineIndex}"]`);
+
+        if (line.type === 'modified') {
+            // 对于modified类型：保留旧行（红色变普通），移除新行（绿色），移除按钮
+            allLines.forEach(lineDiv => {
+                if (lineDiv.dataset.lineType === 'removed') {
+                    // 红色旧行变为普通行
+                    lineDiv.className = 'leading-6 py-1 px-3 bg-gray-800 bg-opacity-10';
+                    lineDiv.innerHTML = `<span class="text-gray-300">${this.escapeHtml(line.oldContent)}</span>`;
+                } else if (lineDiv.dataset.lineType === 'added') {
+                    lineDiv.remove(); // 移除绿色新行
+                }
+            });
+            if (nextBtn && nextBtn.parentElement) {
+                nextBtn.parentElement.remove(); // 移除按钮组
+            }
+        } else if (line.type === 'removed') {
+            // 查找下一行（added）
+            const nextLineIndex = lineIndex + 1;
+            const nextLine = block.lines[nextLineIndex];
+            if (nextLine && nextLine.type === 'added') {
+                // 保留removed行，移除added行，移除按钮
+                const removedLine = inlineDiffContainer.querySelector(`[data-block-index="${blockIndex}"][data-line-index="${lineIndex}"][data-line-type="removed"]`);
+                const addedLine = inlineDiffContainer.querySelector(`[data-block-index="${blockIndex}"][data-line-index="${nextLineIndex}"][data-line-type="added"]`);
+
+                if (removedLine) {
+                    removedLine.className = 'leading-6 py-1 px-3 bg-gray-800 bg-opacity-10';
+                    removedLine.innerHTML = `<span class="text-gray-300">${this.escapeHtml(line.content)}</span>`;
+                }
+                if (addedLine) addedLine.remove();
+                if (nextBtn && nextBtn.parentElement) {
+                    nextBtn.parentElement.remove();
+                }
+            }
+        }
+
+        // 收集当前所有可见行，构建新内容
+        await this.updateBackendFromInlineDiff();
+    }
+
+    /**
+     * 从内联diff视图更新后端文件
+     */
+    async updateBackendFromInlineDiff() {
+        const inlineDiffContainer = document.getElementById('inlineDiffContainer');
+        if (!inlineDiffContainer) return;
+
+        // 收集所有可见的行（跳过按钮行）
+        const lines = [];
+        inlineDiffContainer.querySelectorAll('[data-line-type]').forEach(lineDiv => {
+            const lineText = lineDiv.textContent.trim();
+            lines.push(lineText);
+        });
+
+        const newContent = lines.join('\n');
+
+        // 更新编辑器
+        const noteEditor = document.getElementById('noteEditor');
+        if (noteEditor) {
+            noteEditor.value = newContent;
+        }
+
+        // 保存到后端
+        try {
+            const response = await fetch(`http://localhost:8080/api/notes/${this.activeNoteId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content: newContent })
+            });
+
+            if (!response.ok) {
+                throw new Error('保存失败');
+            }
+
+            // 更新原始内容
+            this.activeNoteOriginalContent = newContent;
+
+            // 更新预览
+            if (this.isEditorPreview) {
+                this.updateEditorPreview();
+            }
+
+            this.showNotification('已回退该变更', 'success');
+        } catch (error) {
+            console.error('回退失败:', error);
+            this.showNotification('回退失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 接受内联diff块的变更
+     */
+    acceptInlineDiffBlock(blockIndex, changeBlocks) {
+        console.log('✅ 接受变更块:', blockIndex);
+
+        const blockDiv = document.querySelector(`.inline-diff-block[data-block-index="${blockIndex}"]`);
+        if (!blockDiv) return;
+
+        const block = changeBlocks[blockIndex];
+        if (!block) return;
+
+        // 更新header为已接受状态
+        const header = blockDiv.querySelector('.flex.items-center');
+        if (header) {
+            header.innerHTML = `
+                <span class="text-xs text-green-400 font-semibold">✓ 已接受变更</span>
+            `;
+            header.className = 'flex items-center justify-between px-3 py-2 bg-green-900 bg-opacity-30 border-l-4 border-green-500 mb-1';
+        }
+
+        // 移除所有removed行，保留added和modified的新内容
+        const linesContainer = blockDiv.querySelector('.inline-diff-lines');
+        if (linesContainer) {
+            linesContainer.querySelectorAll('.inline-diff-line').forEach(lineDiv => {
+                const lineType = lineDiv.dataset.lineType;
+                if (lineType === 'removed') {
+                    lineDiv.remove();
+                } else if (lineType === 'modified' || lineType === 'added') {
+                    // 清除diff样式，变为普通文本
+                    lineDiv.className = 'inline-diff-line leading-6 px-2 bg-gray-800 bg-opacity-20';
+                    const lineContent = lineDiv.textContent;
+                    const lineNumber = lineDiv.querySelector('span').textContent;
+                    lineDiv.innerHTML = `<span class="inline-block w-12 text-right pr-3 text-gray-400 select-none">${lineNumber}</span><span class="text-gray-200">${this.escapeHtml(lineContent.substring(lineNumber.length))}</span>`;
+                }
+            });
+        }
+
+        // 更新编辑器内容和预览
+        this.updateEditorFromInlineDiff();
+    }
+
+    /**
+     * 拒绝内联diff块的变更
+     */
+    rejectInlineDiffBlock(blockIndex, changeBlocks) {
+        console.log('❌ 拒绝变更块:', blockIndex);
+
+        const blockDiv = document.querySelector(`.inline-diff-block[data-block-index="${blockIndex}"]`);
+        if (!blockDiv) return;
+
+        const block = changeBlocks[blockIndex];
+        if (!block) return;
+
+        // 更新header为已拒绝状态
+        const header = blockDiv.querySelector('.flex.items-center');
+        if (header) {
+            header.innerHTML = `
+                <span class="text-xs text-red-400 font-semibold">✗ 已拒绝变更</span>
+            `;
+            header.className = 'flex items-center justify-between px-3 py-2 bg-red-900 bg-opacity-30 border-l-4 border-red-500 mb-1';
+        }
+
+        // 移除所有added和modified行，保留removed的原始内容
+        const linesContainer = blockDiv.querySelector('.inline-diff-lines');
+        if (linesContainer) {
+            linesContainer.querySelectorAll('.inline-diff-line').forEach(lineDiv => {
+                const lineType = lineDiv.dataset.lineType;
+                if (lineType === 'added' || lineType === 'modified') {
+                    lineDiv.remove();
+                } else if (lineType === 'removed') {
+                    // 清除删除样式，恢复为普通文本
+                    lineDiv.className = 'inline-diff-line leading-6 px-2 bg-gray-800 bg-opacity-20';
+                    const lineContent = lineDiv.textContent;
+                    const lineNumber = block.lines.find(l => l.type === 'removed')?.oldLineNumber || '-';
+                    lineDiv.innerHTML = `<span class="inline-block w-12 text-right pr-3 text-gray-400 select-none">${lineNumber}</span><span class="text-gray-200">${this.escapeHtml(lineContent.substring(2))}</span>`;
+                }
+            });
+        }
+
+        // 更新编辑器内容和预览
+        this.updateEditorFromInlineDiff();
+    }
+
+    /**
+     * 从内联diff视图更新编辑器内容
+     */
+    updateEditorFromInlineDiff() {
+        const inlineDiffContainer = document.getElementById('inlineDiffContainer');
+        if (!inlineDiffContainer) return;
+
+        // 收集所有可见的行
+        const lines = [];
+        inlineDiffContainer.querySelectorAll('.inline-diff-line').forEach(lineDiv => {
+            const lineText = lineDiv.textContent.trim();
+            // 移除行号（前12个字符）
+            const content = lineText.substring(lineText.indexOf(' ') + 1);
+            lines.push(content);
+        });
+
+        const newContent = lines.join('\n');
+
+        // 更新编辑器
+        const noteEditor = document.getElementById('noteEditor');
+        if (noteEditor) {
+            noteEditor.value = newContent;
+        }
+
+        // 更新预览
+        if (this.isEditorPreview) {
+            this.updateEditorPreview();
+        }
+    }
+
+    acceptDiffBlock(blockIndex, changeBlocks) {
+        console.log('✅ 接受变更块:', blockIndex);
+
+        const blockDiv = document.querySelector(`.diff-block[data-block-index="${blockIndex}"]`);
+        if (!blockDiv) return;
+
+        // 移除拒绝按钮，只保留已接受状态
+        const header = blockDiv.querySelector('.diff-block-header');
+        if (header) {
+            header.innerHTML = `
+                <div class="flex items-center justify-between px-3 py-1 bg-green-900 bg-opacity-30">
+                    <span class="text-xs text-green-400 flex items-center gap-1">
+                        <i data-lucide="check-circle" class="w-3 h-3"></i>
+                        <span>已接受</span>
+                    </span>
+                </div>
+            `;
+        }
+
+        // 移除删除的行，只保留添加/修改的行
+        blockDiv.querySelectorAll('.diff-line').forEach(lineDiv => {
+            if (lineDiv.dataset.lineType === 'removed') {
+                lineDiv.remove();
+            } else if (lineDiv.dataset.lineType === 'modified' || lineDiv.dataset.lineType === 'added') {
+                // 转换为unchanged样式
+                lineDiv.classList.remove('diff-modified', 'diff-add');
+                lineDiv.classList.add('diff-unchanged');
+            }
+        });
+
+        // 重新初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        this.showNotification('已接受变更', 'success');
+    }
+
+    /**
+     * 拒绝变更块
+     */
+    rejectDiffBlock(blockIndex, changeBlocks) {
+        console.log('❌ 拒绝变更块:', blockIndex);
+
+        const blockDiv = document.querySelector(`.diff-block[data-block-index="${blockIndex}"]`);
+        if (!blockDiv) return;
+
+        // 移除接受按钮，只保留已拒绝状态
+        const header = blockDiv.querySelector('.diff-block-header');
+        if (header) {
+            header.innerHTML = `
+                <div class="flex items-center justify-between px-3 py-1 bg-red-900 bg-opacity-30">
+                    <span class="text-xs text-red-400 flex items-center gap-1">
+                        <i data-lucide="x-circle" class="w-3 h-3"></i>
+                        <span>已拒绝</span>
+                    </span>
+                </div>
+            `;
+        }
+
+        // 移除添加/修改的行，只保留删除的行（但显示为unchanged）
+        blockDiv.querySelectorAll('.diff-line').forEach(lineDiv => {
+            if (lineDiv.dataset.lineType === 'added' || lineDiv.dataset.lineType === 'modified') {
+                lineDiv.remove();
+            } else if (lineDiv.dataset.lineType === 'removed') {
+                // 转换为unchanged样式（恢复原始内容）
+                lineDiv.classList.remove('diff-remove');
+                lineDiv.classList.add('diff-unchanged');
+            }
+        });
+
+        // 重新初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        this.showNotification('已拒绝变更', 'info');
+    }
+
+    /**
+     * 关闭Diff视图
+     */
+    closeDiffView() {
+        const noteEditor = document.getElementById('noteEditor');
+        const notePreview = document.getElementById('notePreview');
+        const noteDiffViewer = document.getElementById('noteDiffViewer');
+        const inlineDiffContainer = document.getElementById('inlineDiffContainer');
+
+        // 隐藏旧的diff视图
+        if (noteDiffViewer) noteDiffViewer.classList.add('hidden');
+
+        // 隐藏内联diff容器
+        if (inlineDiffContainer) inlineDiffContainer.classList.add('hidden');
+
+        // 显示编辑器
+        if (noteEditor) noteEditor.classList.remove('hidden');
+
+        // 恢复预览状态
+        if (this.isEditorPreview && notePreview) {
+            notePreview.classList.remove('hidden');
+        }
+
+        // 恢复顶部按钮状态
+        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
+        const finishDiffReviewBtn = document.getElementById('finishDiffReviewBtn');
+        const saveNoteBtn = document.getElementById('saveNoteBtn');
+        const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+
+        if (rejectAllChangesBtn) rejectAllChangesBtn.classList.add('hidden');
+        if (finishDiffReviewBtn) finishDiffReviewBtn.classList.add('hidden');
+        if (saveNoteBtn) saveNoteBtn.classList.remove('hidden');
+        if (togglePreviewBtn) togglePreviewBtn.classList.remove('hidden');
+    }
+
+    /**
+     * 计算客户端diff（用于手动编辑保存）
+     * @param {string} original - 原始文本
+     * @param {string} newText - 新文本
+     * @returns {Array} diff数据数组
+     */
+    computeClientDiff(original, newText) {
+        if (typeof Diff === 'undefined') {
+            console.error('jsdiff库未加载');
+            return [];
+        }
+
+        const diff = Diff.diffLines(original, newText);
+        const result = [];
+        let lineNumber = 1;
+
+        diff.forEach(part => {
+            const lines = part.value.split('\n');
+
+            // 移除最后一个空行（如果存在）
+            if (lines[lines.length - 1] === '') {
+                lines.pop();
+            }
+
+            lines.forEach(line => {
+                if (part.added) {
+                    result.push({
+                        type: 'added',
+                        content: line,
+                        lineNumber: lineNumber
+                    });
+                    lineNumber++;
+                } else if (part.removed) {
+                    result.push({
+                        type: 'removed',
+                        content: line,
+                        lineNumber: lineNumber
+                    });
+                } else {
+                    result.push({
+                        type: 'unchanged',
+                        content: line,
+                        lineNumber: lineNumber
+                    });
+                    lineNumber++;
+                }
+            });
+        });
+
+        return result;
+    }
+
+    /**
+     * 请求用户确认文件夹授权
+     * @param {string} folderPath - 文件夹路径
+     * @returns {Promise<boolean>} 是否授权
+     */
+    async requestFolderPermission(folderPath) {
+        return new Promise((resolve) => {
+            // 创建确认对话框
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-gray-800 rounded-lg p-6 max-w-md">
+                    <h3 class="text-lg font-bold mb-3 flex items-center gap-2">
+                        <i data-lucide="alert-circle" class="w-5 h-5 text-yellow-400"></i>
+                        <span>文件修改授权</span>
+                    </h3>
+                    <p class="text-gray-300 mb-4">
+                        Copilot尝试修改以下位置的文件：<br>
+                        <code class="text-blue-400">${this.escapeHtml(folderPath || '根目录')}</code>
+                    </p>
+                    <div class="mb-4">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="rememberChoice" class="w-4 h-4">
+                            <span class="text-sm text-gray-400">记住本次选择，不再询问此文件夹</span>
+                        </label>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button id="denyBtn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded">
+                            拒绝
+                        </button>
+                        <button id="allowBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded">
+                            允许
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // 初始化图标
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+
+            const allowBtn = modal.querySelector('#allowBtn');
+            const denyBtn = modal.querySelector('#denyBtn');
+            const rememberChoice = modal.querySelector('#rememberChoice');
+
+            allowBtn.addEventListener('click', () => {
+                const remember = rememberChoice.checked;
+                if (remember) {
+                    this.approvedFolders.add(folderPath);
+                }
+                document.body.removeChild(modal);
+                resolve(true);
+            });
+
+            denyBtn.addEventListener('click', () => {
+                document.body.removeChild(modal);
+                resolve(false);
+            });
         });
     }
 
