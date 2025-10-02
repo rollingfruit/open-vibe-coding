@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,15 +84,22 @@ func main() {
 
 	// 知识库API端点
 	http.HandleFunc("/api/notes", handleNotes)
+	http.HandleFunc("/api/notes/upload-image", handleNoteImageUpload)
 	http.HandleFunc("/api/notes/", handleNoteByID)
 	http.HandleFunc("/api/search", handleSearchNotes)
 	http.HandleFunc("/agent/knowledge/tools", handleKnowledgeAgentTools)
+
+	// 配置API端点
+	http.HandleFunc("/api/save-config", handleSaveConfig)
 
 	// WebSocket端点
 	http.HandleFunc("/ws/notes", handleNotesWebSocket)
 
 	// 静态文件服务：提供uploads目录的访问
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
+
+	// 静态文件服务：提供KnowledgeBase目录的访问（用于图片）
+	http.Handle("/KnowledgeBase/", http.StripPrefix("/KnowledgeBase/", http.FileServer(http.Dir("./KnowledgeBase"))))
 
 	// 设置静态文件服务器，指向web目录（必须放在最后）
 	fs := http.FileServer(http.Dir("./web"))
@@ -423,6 +431,118 @@ func generateRandomString(length int) string {
 		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
 	}
 	return string(result)
+}
+
+// handleNoteImageUpload 处理笔记中的图片上传
+func handleNoteImageUpload(w http.ResponseWriter, r *http.Request) {
+	// 设置CORS头
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 解析multipart表单，限制最大内存为10MB
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	// 获取上传的文件
+	file, handler, err := r.FormFile("image")
+	if err != nil {
+		http.Error(w, "Failed to get file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// 验证文件类型
+	contentType := handler.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		http.Error(w, "File must be an image", http.StatusBadRequest)
+		return
+	}
+
+	// 获取存储模式和笔记ID
+	storageMode := r.FormValue("storage_mode")
+	if storageMode == "" {
+		storageMode = "fixed"
+	}
+	noteID := r.FormValue("note_id")
+
+	// 生成唯一的文件名
+	ext := filepath.Ext(handler.Filename)
+	filename := fmt.Sprintf("%d_%s%s", time.Now().Unix(), generateRandomString(8), ext)
+
+	var uploadsDir string
+	var webPath string
+
+	if storageMode == "relative" && noteID != "" {
+		// 相对路径模式：存储在笔记同级的imgs文件夹
+		// 移除.md扩展名
+		noteIDClean := strings.TrimSuffix(noteID, ".md")
+
+		// 获取笔记所在目录
+		noteDir := filepath.Dir(noteIDClean)
+		if noteDir == "." {
+			noteDir = ""
+		}
+
+		// 构建imgs目录路径
+		if noteDir != "" {
+			uploadsDir = filepath.Join("./KnowledgeBase", noteDir, "imgs")
+			webPath = fmt.Sprintf("/KnowledgeBase/%s/imgs/%s", noteDir, filename)
+		} else {
+			uploadsDir = "./KnowledgeBase/imgs"
+			webPath = fmt.Sprintf("/KnowledgeBase/imgs/%s", filename)
+		}
+	} else {
+		// 固定路径模式：统一存储在uploads/nodes
+		uploadsDir = "./uploads/nodes"
+		webPath = fmt.Sprintf("/uploads/nodes/%s", filename)
+	}
+
+	// 确保目录存在
+	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
+		log.Printf("Failed to create uploads directory: %v", err)
+		http.Error(w, "Failed to create uploads directory", http.StatusInternalServerError)
+		return
+	}
+
+	filePath := filepath.Join(uploadsDir, filename)
+
+	// 创建目标文件
+	dst, err := os.Create(filePath)
+	if err != nil {
+		log.Printf("Failed to create file: %v", err)
+		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	// 将上传的文件内容复制到目标文件
+	if _, err := dst.ReadFrom(file); err != nil {
+		log.Printf("Failed to write file: %v", err)
+		http.Error(w, "Failed to save file", http.StatusInternalServerError)
+		return
+	}
+
+	// 返回文件路径
+	response := map[string]interface{}{
+		"success":  true,
+		"filePath": webPath,
+		"filename": filename,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleAgentTools 返回可用的工具列表
@@ -779,8 +899,13 @@ func handleNoteByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 提取note_id
+	// 提取note_id并URL解码
 	noteID := strings.TrimPrefix(r.URL.Path, "/api/notes/")
+	noteID, err := url.QueryUnescape(noteID)
+	if err != nil {
+		http.Error(w, "Invalid note ID", http.StatusBadRequest)
+		return
+	}
 
 	switch r.Method {
 	case "GET":
@@ -887,6 +1012,60 @@ func handleSearchNotes(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(result))
+}
+
+// handleSaveConfig 保存配置到config.json
+func handleSaveConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 读取请求体
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	// 验证JSON格式
+	var config map[string]interface{}
+	if err := json.Unmarshal(body, &config); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 格式化JSON并写入文件
+	formattedJSON, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		http.Error(w, "Failed to format JSON", http.StatusInternalServerError)
+		return
+	}
+
+	// 保存到web/config.json
+	configPath := "./web/config.json"
+	if err := ioutil.WriteFile(configPath, formattedJSON, 0644); err != nil {
+		log.Printf("Failed to write config file: %v", err)
+		http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("配置已保存到: %s", configPath)
+
+	// 返回成功响应
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Configuration saved successfully",
+	})
 }
 
 // handleNotesWebSocket 处理知识库WebSocket连接

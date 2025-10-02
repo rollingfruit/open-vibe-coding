@@ -371,6 +371,12 @@ func updateNote(args map[string]interface{}, basePath string) (string, error) {
 		finalContent = content
 	}
 
+	// 确保目录存在
+	noteDir := filepath.Dir(notePath)
+	if err := os.MkdirAll(noteDir, 0755); err != nil {
+		return "", fmt.Errorf("创建目录失败: %v", err)
+	}
+
 	err = os.WriteFile(notePath, []byte(finalContent), 0644)
 	if err != nil {
 		return "", fmt.Errorf("更新笔记失败: %v", err)

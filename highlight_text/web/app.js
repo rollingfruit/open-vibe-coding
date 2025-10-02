@@ -1087,6 +1087,15 @@ class AIAssistant {
             });
         }
 
+        // 笔记列表右键菜单事件
+        const notesList = document.getElementById('notesList');
+        if (notesList) {
+            notesList.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                this.showContextMenu(e);
+            });
+        }
+
         // 编辑器输入事件 - 实时更新预览 + 自动保存
         const noteEditor = document.getElementById('noteEditor');
         if (noteEditor) {
@@ -1101,6 +1110,26 @@ class AIAssistant {
                 this.autoSaveTimeout = setTimeout(() => {
                     this.saveActiveNote();
                 }, 5000);
+            });
+
+            // 编辑器拖拽上传图片事件
+            noteEditor.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                noteEditor.classList.add('drag-over');
+            });
+
+            noteEditor.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                noteEditor.classList.remove('drag-over');
+            });
+
+            noteEditor.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                noteEditor.classList.remove('drag-over');
+                this.handleEditorImageDrop(e);
             });
         }
 
@@ -1144,23 +1173,171 @@ class AIAssistant {
 
     showSettings() {
         const modal = document.getElementById('settingsModal');
+
+        // 加载LLM配置
         document.getElementById('apiKeyInput').value = this.settings.apiKey;
         document.getElementById('apiEndpointInput').value = this.settings.endpoint;
         document.getElementById('modelSelect').value = this.settings.model;
+
+        // 加载知识库配置
+        const imageStorageMode = this.config?.knowledgeBase?.imageStorage?.mode || 'fixed';
+        document.getElementById('imageStorageModeSelect').value = imageStorageMode;
+
+        // 加载划词指令配置
+        this.renderCommandsList();
+
+        // 绑定标签页切换事件
+        this.bindSettingsTabEvents();
+
         modal.classList.remove('hidden');
+
+        // 重新初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
     }
 
     hideSettings() {
         document.getElementById('settingsModal').classList.add('hidden');
     }
 
-    saveSettingsFromModal() {
+    bindSettingsTabEvents() {
+        const tabButtons = document.querySelectorAll('.settings-tab-btn');
+        const panels = document.querySelectorAll('.settings-panel');
+
+        tabButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // 移除所有激活状态
+                tabButtons.forEach(b => b.classList.remove('bg-gray-700'));
+                panels.forEach(p => p.classList.add('hidden'));
+
+                // 激活当前标签
+                btn.classList.add('bg-gray-700');
+                const tabName = btn.dataset.tab;
+                const panelId = `${tabName}SettingsPanel`;
+                document.getElementById(panelId).classList.remove('hidden');
+            });
+        });
+    }
+
+    renderCommandsList() {
+        const commandsList = document.getElementById('commandsList');
+        commandsList.innerHTML = '';
+
+        const commands = this.config?.commands || [];
+
+        commands.forEach((cmd, index) => {
+            const cmdItem = document.createElement('div');
+            cmdItem.className = 'bg-gray-700 p-3 rounded border border-gray-600';
+            cmdItem.innerHTML = `
+                <div class="flex justify-between items-start mb-2">
+                    <input
+                        type="text"
+                        value="${this.escapeHtml(cmd.label)}"
+                        class="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm mr-2 command-label"
+                        placeholder="指令标签"
+                        data-index="${index}"
+                    >
+                    <button class="delete-command-btn px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-sm" data-index="${index}">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+                <textarea
+                    class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm command-prompt resize-none"
+                    placeholder="提示词模板"
+                    rows="2"
+                    data-index="${index}"
+                >${this.escapeHtml(cmd.prompt)}</textarea>
+            `;
+            commandsList.appendChild(cmdItem);
+        });
+
+        // 绑定删除按钮事件
+        document.querySelectorAll('.delete-command-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt(e.currentTarget.dataset.index);
+                this.deleteCommand(index);
+            });
+        });
+
+        // 绑定添加按钮事件
+        const addBtn = document.getElementById('addCommandBtn');
+        if (addBtn) {
+            addBtn.replaceWith(addBtn.cloneNode(true)); // 移除旧事件
+            document.getElementById('addCommandBtn').addEventListener('click', () => {
+                this.addCommand();
+            });
+        }
+
+        // 重新初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    addCommand() {
+        if (!this.config.commands) {
+            this.config.commands = [];
+        }
+        this.config.commands.push({
+            label: '新指令',
+            prompt: '请输入提示词：\n'
+        });
+        this.renderCommandsList();
+    }
+
+    deleteCommand(index) {
+        if (confirm('确定要删除这个指令吗？')) {
+            this.config.commands.splice(index, 1);
+            this.renderCommandsList();
+        }
+    }
+
+    async saveSettingsFromModal() {
+        // 保存LLM配置到localStorage
         this.settings.apiKey = document.getElementById('apiKeyInput').value;
         this.settings.endpoint = document.getElementById('apiEndpointInput').value;
         this.settings.model = document.getElementById('modelSelect').value;
         this.saveSettings();
-        this.hideSettings();
-        this.showNotification('设置已保存', 'success');
+
+        // 保存划词指令配置
+        const commandLabels = document.querySelectorAll('.command-label');
+        const commandPrompts = document.querySelectorAll('.command-prompt');
+
+        this.config.commands = Array.from(commandLabels).map((label, index) => ({
+            label: label.value,
+            prompt: commandPrompts[index].value
+        }));
+
+        // 保存知识库配置
+        if (!this.config.knowledgeBase) {
+            this.config.knowledgeBase = {};
+        }
+        if (!this.config.knowledgeBase.imageStorage) {
+            this.config.knowledgeBase.imageStorage = {};
+        }
+        this.config.knowledgeBase.imageStorage.mode = document.getElementById('imageStorageModeSelect').value;
+
+        // 将配置保存到config.json
+        try {
+            const response = await fetch('http://localhost:8080/api/save-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(this.config)
+            });
+
+            if (!response.ok) {
+                throw new Error('保存配置失败');
+            }
+
+            this.hideSettings();
+            this.showNotification('设置已保存', 'success');
+        } catch (error) {
+            console.error('保存配置失败:', error);
+            this.showNotification('保存配置失败: ' + error.message, 'error');
+        }
     }
 
     clearChat() {
@@ -3326,7 +3503,7 @@ class AIAssistant {
     /**
      * 创建新笔记
      */
-    async createNewNote() {
+    async createNewNote(parentPath = '') {
         const title = prompt('请输入笔记标题:');
         if (!title || !title.trim()) {
             return;
@@ -3334,7 +3511,10 @@ class AIAssistant {
 
         try {
             // 生成笔记ID（清理文件名）
-            const noteId = title.replace(/[\/\\:*?"<>|\s]/g, '_');
+            const cleanTitle = title.replace(/[\/\\:*?"<>|\s]/g, '_');
+
+            // 如果有父路径，添加到笔记ID前面
+            const noteId = parentPath ? `${parentPath}/${cleanTitle}` : cleanTitle;
 
             // 创建带有YAML Front Matter的初始内容
             const now = new Date().toISOString();
@@ -3379,7 +3559,7 @@ tags: []
     /**
      * 创建新文件夹
      */
-    async createNewFolder() {
+    async createNewFolder(parentPath = '') {
         const folderName = prompt('请输入文件夹名称:');
         if (!folderName || !folderName.trim()) {
             return;
@@ -3389,10 +3569,13 @@ tags: []
             // 清理文件夹名
             const cleanFolderName = folderName.replace(/[\/\\:*?"<>|]/g, '_');
 
-            // 在文件夹中创建一个.gitkeep文件以确保文件夹被创建
-            const placeholderPath = `${cleanFolderName}/.gitkeep`;
+            // 如果有父路径，添加到文件夹名前面
+            const folderPath = parentPath ? `${parentPath}/${cleanFolderName}` : cleanFolderName;
 
-            const response = await fetch(`http://localhost:8080/api/notes/${placeholderPath}`, {
+            // 在文件夹中创建一个.gitkeep文件以确保文件夹被创建
+            const placeholderPath = `${folderPath}/.gitkeep`;
+
+            const response = await fetch(`http://localhost:8080/api/notes/${encodeURIComponent(placeholderPath)}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -3401,6 +3584,8 @@ tags: []
             });
 
             if (!response.ok) {
+                const errorText = await response.text();
+                console.error('服务器返回错误:', errorText);
                 throw new Error('创建文件夹失败');
             }
 
@@ -3411,6 +3596,175 @@ tags: []
         } catch (error) {
             console.error('创建文件夹失败:', error);
             this.showNotification('创建失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 显示右键菜单
+     */
+    showContextMenu(event) {
+        // 移除已存在的菜单
+        this.hideContextMenu();
+
+        // 获取右键点击的目标元素（查找最近的笔记项）
+        let targetElement = event.target.closest('.note-item');
+        let parentPath = '';
+
+        // 如果点击在某个笔记项上，获取其路径
+        if (targetElement) {
+            const noteId = targetElement.dataset.noteId;
+            // 查找对应的笔记对象
+            const findNote = (notes) => {
+                for (const note of notes) {
+                    if (note.id === noteId) {
+                        // 如果是文件夹，使用其路径作为父路径
+                        if (note.isFolder) {
+                            parentPath = note.path;
+                        } else {
+                            // 如果是文件，使用其所在目录作为父路径
+                            parentPath = note.path.substring(0, note.path.lastIndexOf('/'));
+                        }
+                        return true;
+                    }
+                    if (note.children && findNote(note.children)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            findNote(this.notes);
+        }
+
+        // 创建菜单元素
+        const menu = document.createElement('div');
+        menu.id = 'contextMenu';
+        menu.className = 'fixed bg-gray-800 border border-gray-600 rounded-lg shadow-lg py-2 z-[1002]';
+        menu.style.left = `${event.clientX}px`;
+        menu.style.top = `${event.clientY}px`;
+
+        // 菜单项
+        const menuItems = [
+            {
+                icon: 'file-plus',
+                label: '新建文件',
+                handler: () => {
+                    this.hideContextMenu();
+                    this.createNewNote(parentPath);
+                }
+            },
+            {
+                icon: 'folder-plus',
+                label: '新建文件夹',
+                handler: () => {
+                    this.hideContextMenu();
+                    this.createNewFolder(parentPath);
+                }
+            }
+        ];
+
+        // 构建菜单HTML
+        menuItems.forEach(item => {
+            const menuItem = document.createElement('div');
+            menuItem.className = 'px-4 py-2 hover:bg-gray-700 cursor-pointer flex items-center gap-2 text-sm';
+            menuItem.innerHTML = `
+                <i data-lucide="${item.icon}" class="w-4 h-4"></i>
+                <span>${item.label}</span>
+            `;
+            menuItem.addEventListener('click', item.handler);
+            menu.appendChild(menuItem);
+        });
+
+        document.body.appendChild(menu);
+
+        // 初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        // 点击其他地方关闭菜单
+        setTimeout(() => {
+            document.addEventListener('click', this.hideContextMenu.bind(this), { once: true });
+        }, 0);
+    }
+
+    /**
+     * 隐藏右键菜单
+     */
+    hideContextMenu() {
+        const menu = document.getElementById('contextMenu');
+        if (menu) {
+            menu.remove();
+        }
+    }
+
+    /**
+     * 处理编辑器中的图片拖拽上传
+     */
+    async handleEditorImageDrop(event) {
+        const files = event.dataTransfer?.files;
+        if (!files || files.length === 0) return;
+
+        const noteEditor = document.getElementById('noteEditor');
+        if (!noteEditor) return;
+
+        // 获取图片存储配置
+        const imageStorageMode = this.config?.knowledgeBase?.imageStorage?.mode || 'fixed';
+
+        // 遍历所有文件
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+
+            // 检查是否是图片
+            if (!file.type.startsWith('image/')) {
+                this.showNotification(`文件 ${file.name} 不是图片`, 'warning');
+                continue;
+            }
+
+            try {
+                // 上传图片
+                const formData = new FormData();
+                formData.append('image', file);
+                formData.append('storage_mode', imageStorageMode);
+                if (imageStorageMode === 'relative' && this.activeNoteId) {
+                    formData.append('note_id', this.activeNoteId);
+                }
+
+                const response = await fetch('http://localhost:8080/api/notes/upload-image', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('上传失败');
+                }
+
+                const result = await response.json();
+
+                // 获取光标位置
+                const cursorPos = noteEditor.selectionStart;
+                const textBefore = noteEditor.value.substring(0, cursorPos);
+                const textAfter = noteEditor.value.substring(cursorPos);
+
+                // 构造Markdown图片语法
+                const imageMarkdown = `![${file.name}](${result.filePath})`;
+
+                // 插入图片引用
+                noteEditor.value = textBefore + imageMarkdown + textAfter;
+
+                // 设置新的光标位置
+                const newCursorPos = cursorPos + imageMarkdown.length;
+                noteEditor.setSelectionRange(newCursorPos, newCursorPos);
+
+                // 更新预览
+                if (this.isEditorPreview) {
+                    this.updateEditorPreview();
+                }
+
+                this.showNotification('图片上传成功', 'success');
+            } catch (error) {
+                console.error('图片上传失败:', error);
+                this.showNotification(`图片上传失败: ${error.message}`, 'error');
+            }
         }
     }
 

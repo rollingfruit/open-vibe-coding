@@ -120,6 +120,12 @@ body.view-mode-editor #editor-container.hidden {
     box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1);
 }
 
+#noteEditor.drag-over {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+    background-color: rgba(59, 130, 246, 0.05);
+}
+
 /* Copilot消息样式 */
 .copilot-message {
     background: rgba(147, 51, 234, 0.1);
