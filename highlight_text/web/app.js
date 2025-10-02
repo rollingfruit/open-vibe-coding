@@ -23,6 +23,8 @@ class AIAssistant {
         this.editorInstance = null; // 编辑器实例
         this.knowledgeAgentHandler = null; // 知识库Copilot处理器
         this.isEditorPreview = false; // 编辑器预览模式
+        this.autoSaveTimeout = null; // 自动保存定时器
+        this.notesWebSocket = null; // WebSocket连接
 
         // 初始化代码存储
         if (!window.codeStorage) {
@@ -44,6 +46,7 @@ class AIAssistant {
         this.checkUrlParams();
         this.loadSessions();
         this.loadNotes(); // 加载笔记列表
+        this.initNotesWebSocket(); // 初始化WebSocket连接
     }
 
     async loadConfig() {
@@ -1084,13 +1087,20 @@ class AIAssistant {
             });
         }
 
-        // 编辑器输入事件 - 实时更新预览
+        // 编辑器输入事件 - 实时更新预览 + 自动保存
         const noteEditor = document.getElementById('noteEditor');
         if (noteEditor) {
             noteEditor.addEventListener('input', () => {
+                // 实时更新预览
                 if (this.isEditorPreview) {
                     this.updateEditorPreview();
                 }
+
+                // 自动保存（防抖5秒）
+                clearTimeout(this.autoSaveTimeout);
+                this.autoSaveTimeout = setTimeout(() => {
+                    this.saveActiveNote();
+                }, 5000);
             });
         }
 
@@ -3107,6 +3117,9 @@ class AIAssistant {
      * 切换回聊天模式
      */
     switchToChatMode() {
+        // 清除自动保存定时器
+        clearTimeout(this.autoSaveTimeout);
+
         this.viewMode = 'chat';
         this.activeNoteId = null;
         this.editorInstance = null;
@@ -3405,54 +3418,8 @@ tags: []
     configureMarked() {
         if (typeof marked === 'undefined') return;
 
-        const self = this;
-
-        // 自定义渲染器
-        const renderer = new marked.Renderer();
-
-        // 自定义代码块渲染
-        renderer.code = function(token) {
-            // token 是一个对象，包含 text 和 lang 属性
-            const code = token.text || token || '';
-            const language = token.lang || token.language || 'text';
-
-            const cleanCode = typeof code === 'string' ? code.trim() : String(code).trim();
-            const lang = language || 'text';
-            const escapedCode = self.escapeHtml(cleanCode);
-
-            // 生成唯一ID来存储代码
-            const codeId = 'code_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            window.codeStorage.set(codeId, cleanCode);
-
-            return `
-                <div class="code-block relative bg-gray-800 rounded-lg mt-2 mb-2">
-                    <div class="flex justify-between items-center px-4 py-2 bg-gray-700 rounded-t-lg">
-                        <span class="text-sm text-gray-300 font-medium">${lang}</span>
-                        <div class="flex space-x-2">
-                            ${lang.toLowerCase() === 'html' ? `
-                                <button class="render-html-btn text-gray-400 hover:text-white text-sm flex items-center gap-1" data-code-id="${codeId}">
-                                    <i data-lucide="palette" class="w-4 h-4"></i>
-                                    <span>渲染</span>
-                                </button>
-                                <button class="fullscreen-html-btn text-gray-400 hover:text-white text-sm flex items-center gap-1" data-code-id="${codeId}">
-                                    <i data-lucide="maximize" class="w-4 h-4"></i>
-                                    <span>全屏</span>
-                                </button>
-                            ` : ''}
-                            <button class="copy-code-btn text-gray-400 hover:text-white text-sm flex items-center gap-1" data-code-id="${codeId}">
-                                <i data-lucide="copy" class="w-4 h-4"></i>
-                                <span>复制</span>
-                            </button>
-                        </div>
-                    </div>
-                    <pre class="p-4 overflow-x-auto"><code class="language-${lang}">${escapedCode}</code></pre>
-                </div>
-            `;
-        };
-
-        // 配置 marked 选项
+        // 配置 marked 选项 - 不使用自定义renderer以保留所有默认渲染功能
         marked.setOptions({
-            renderer: renderer,
             breaks: true, // 支持GFM换行
             gfm: true, // 启用GitHub风格的Markdown
             tables: true, // 支持表格
@@ -3461,6 +3428,44 @@ tags: []
             smartLists: true,
             smartypants: false
         });
+    }
+
+    /**
+     * 初始化知识库WebSocket连接
+     */
+    initNotesWebSocket() {
+        const wsUrl = 'ws://localhost:8080/ws/notes';
+
+        const connectWebSocket = () => {
+            this.notesWebSocket = new WebSocket(wsUrl);
+
+            this.notesWebSocket.onopen = () => {
+                console.log('知识库WebSocket连接已建立');
+            };
+
+            this.notesWebSocket.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    if (message.type === 'refresh_notes') {
+                        console.log('收到知识库更新通知，刷新笔记列表');
+                        this.loadNotes();
+                    }
+                } catch (error) {
+                    console.error('解析WebSocket消息失败:', error);
+                }
+            };
+
+            this.notesWebSocket.onerror = (error) => {
+                console.error('WebSocket错误:', error);
+            };
+
+            this.notesWebSocket.onclose = () => {
+                console.log('WebSocket连接已关闭，5秒后重连...');
+                setTimeout(connectWebSocket, 5000);
+            };
+        };
+
+        connectWebSocket();
     }
 }
 

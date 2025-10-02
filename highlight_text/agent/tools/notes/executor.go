@@ -324,7 +324,54 @@ func updateNote(args map[string]interface{}, basePath string) (string, error) {
 		return "", err
 	}
 
-	err = os.WriteFile(notePath, []byte(content), 0644)
+	// 读取原文件以保留元数据
+	var finalContent string
+	if existingContent, err := os.ReadFile(notePath); err == nil {
+		existingStr := string(existingContent)
+
+		// 检查是否有YAML Front Matter
+		if strings.HasPrefix(existingStr, "---\n") {
+			// 提取原有的Front Matter
+			parts := strings.SplitN(existingStr, "---\n", 3)
+			if len(parts) >= 3 {
+				frontMatter := parts[1]
+
+				// 更新updated_at时间戳
+				now := time.Now().Format(time.RFC3339)
+				lines := strings.Split(frontMatter, "\n")
+				updatedLines := []string{}
+				hasUpdatedAt := false
+
+				for _, line := range lines {
+					if strings.HasPrefix(line, "updated_at:") {
+						updatedLines = append(updatedLines, fmt.Sprintf("updated_at: %s", now))
+						hasUpdatedAt = true
+					} else {
+						updatedLines = append(updatedLines, line)
+					}
+				}
+
+				// 如果没有updated_at字段，添加它
+				if !hasUpdatedAt {
+					updatedLines = append(updatedLines, fmt.Sprintf("updated_at: %s", now))
+				}
+
+				// 重建完整内容：Front Matter + 新内容
+				finalContent = fmt.Sprintf("---\n%s\n---\n%s", strings.Join(updatedLines, "\n"), content)
+			} else {
+				// Front Matter格式不正确，直接使用新内容
+				finalContent = content
+			}
+		} else {
+			// 没有Front Matter，直接使用新内容
+			finalContent = content
+		}
+	} else {
+		// 文件不存在，直接使用新内容
+		finalContent = content
+	}
+
+	err = os.WriteFile(notePath, []byte(finalContent), 0644)
 	if err != nil {
 		return "", fmt.Errorf("更新笔记失败: %v", err)
 	}

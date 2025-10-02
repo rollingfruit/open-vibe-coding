@@ -15,6 +15,8 @@ import (
 	"highlight_text/agent/terminal"
 	"highlight_text/agent/tools"
 	"highlight_text/agent/tools/notes"
+
+	"github.com/gorilla/websocket"
 )
 
 type InteractionLog struct {
@@ -49,6 +51,16 @@ type AgentResponse struct {
 var logMutex sync.Mutex
 var terminals sync.Map // 存储所有活动的终端会话
 
+// WebSocket相关
+var wsUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // 允许所有来源
+	},
+}
+var wsClients = make(map[*websocket.Conn]bool)
+var wsClientsMutex sync.Mutex
+var lastKBModTime time.Time
+
 func main() {
 	// API端点必须在静态文件服务器之前注册
 	// API端点：记录交互日志
@@ -74,6 +86,9 @@ func main() {
 	http.HandleFunc("/api/notes/", handleNoteByID)
 	http.HandleFunc("/api/search", handleSearchNotes)
 	http.HandleFunc("/agent/knowledge/tools", handleKnowledgeAgentTools)
+
+	// WebSocket端点
+	http.HandleFunc("/ws/notes", handleNotesWebSocket)
 
 	// 静态文件服务：提供uploads目录的访问
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
@@ -103,7 +118,11 @@ func main() {
 	fmt.Println("🔍 HTML预览: http://localhost:8080/preview")
 	fmt.Println("📷 图片上传: http://localhost:8080/upload-image")
 	fmt.Println("📚 知识库路径: ./KnowledgeBase")
+	fmt.Println("🔌 WebSocket: ws://localhost:8080/ws/notes")
 	fmt.Println("⏹️  按 Ctrl+C 停止服务")
+
+	// 启动文件监控协程
+	go monitorKnowledgeBase()
 
 	// 启动HTTP服务器
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -868,4 +887,94 @@ func handleSearchNotes(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(result))
+}
+
+// handleNotesWebSocket 处理知识库WebSocket连接
+func handleNotesWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket升级失败: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	// 注册客户端
+	wsClientsMutex.Lock()
+	wsClients[conn] = true
+	wsClientsMutex.Unlock()
+
+	log.Printf("新的WebSocket客户端已连接, 当前客户端数: %d", len(wsClients))
+
+	// 保持连接直到客户端断开
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			// 客户端断开连接
+			wsClientsMutex.Lock()
+			delete(wsClients, conn)
+			wsClientsMutex.Unlock()
+			log.Printf("WebSocket客户端已断开, 当前客户端数: %d", len(wsClients))
+			break
+		}
+	}
+}
+
+// broadcastNotesUpdate 广播知识库更新通知
+func broadcastNotesUpdate() {
+	wsClientsMutex.Lock()
+	defer wsClientsMutex.Unlock()
+
+	message := map[string]string{
+		"type": "refresh_notes",
+	}
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("序列化WebSocket消息失败: %v", err)
+		return
+	}
+
+	// 向所有连接的客户端发送消息
+	for conn := range wsClients {
+		err := conn.WriteMessage(websocket.TextMessage, messageJSON)
+		if err != nil {
+			log.Printf("发送WebSocket消息失败: %v", err)
+			conn.Close()
+			delete(wsClients, conn)
+		}
+	}
+}
+
+// getKBModTime 获取知识库目录的最新修改时间
+func getKBModTime() time.Time {
+	var latestTime time.Time
+
+	filepath.Walk("./KnowledgeBase", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.ModTime().After(latestTime) {
+			latestTime = info.ModTime()
+		}
+		return nil
+	})
+
+	return latestTime
+}
+
+// monitorKnowledgeBase 监控知识库目录变化
+func monitorKnowledgeBase() {
+	// 初始化时间戳
+	lastKBModTime = getKBModTime()
+
+	ticker := time.NewTicker(2 * time.Second) // 每2秒检查一次
+	defer ticker.Stop()
+
+	for range ticker.C {
+		currentModTime := getKBModTime()
+		if currentModTime.After(lastKBModTime) {
+			log.Printf("检测到知识库文件变化，通知客户端刷新")
+			lastKBModTime = currentModTime
+			broadcastNotesUpdate()
+		}
+	}
 }

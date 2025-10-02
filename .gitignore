@@ -10,3 +10,5 @@ highlight_text/uploads/
 highlight_text/logs/
 .DS_Store
 highlight_text/KnowledgeBase/
+highlight_text/.playwright-mcp/editor-preview-mode.png
+highlight_text/go.sum

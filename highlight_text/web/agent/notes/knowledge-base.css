@@ -206,3 +206,194 @@ body.view-mode-editor .agent-trace-step .text-sm {
 .notes-list::-webkit-scrollbar-thumb:hover {
     background: rgba(147, 51, 234, 0.7);
 }
+
+/* Markdown预览样式 - 适配暗色主题 */
+#notePreview.markdown-body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    word-wrap: break-word;
+    color: var(--text-color, #e5e7eb);
+    background-color: transparent;
+}
+
+#notePreview.markdown-body h1,
+#notePreview.markdown-body h2,
+#notePreview.markdown-body h3,
+#notePreview.markdown-body h4,
+#notePreview.markdown-body h5,
+#notePreview.markdown-body h6 {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--heading-color, #050505);
+}
+
+#notePreview.markdown-body h1 {
+    font-size: 2em;
+    border-bottom: 1px solid var(--border-color, #374151);
+    padding-bottom: 0.3em;
+}
+
+#notePreview.markdown-body h2 {
+    font-size: 1.5em;
+    border-bottom: 1px solid var(--border-color, #374151);
+    padding-bottom: 0.3em;
+}
+
+#notePreview.markdown-body h3 {
+    font-size: 1.25em;
+}
+
+#notePreview.markdown-body h4 {
+    font-size: 1em;
+}
+
+#notePreview.markdown-body h5 {
+    font-size: 0.875em;
+}
+
+#notePreview.markdown-body h6 {
+    font-size: 0.85em;
+    color: var(--muted-text, #9ca3af);
+}
+
+#notePreview.markdown-body p {
+    margin-top: 0;
+    margin-bottom: 16px;
+}
+
+#notePreview.markdown-body ul,
+#notePreview.markdown-body ol {
+    margin-top: 0;
+    margin-bottom: 16px;
+    padding-left: 2em;
+    list-style: initial;
+}
+
+#notePreview.markdown-body ul {
+    list-style-type: disc;
+}
+
+#notePreview.markdown-body ol {
+    list-style-type: decimal;
+}
+
+#notePreview.markdown-body li {
+    margin-top: 0.25em;
+    display: list-item;
+}
+
+#notePreview.markdown-body li + li {
+    margin-top: 0.25em;
+}
+
+#notePreview.markdown-body ul ul,
+#notePreview.markdown-body ul ol,
+#notePreview.markdown-body ol ol,
+#notePreview.markdown-body ol ul {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+#notePreview.markdown-body ul ul {
+    list-style-type: circle;
+}
+
+#notePreview.markdown-body ul ul ul {
+    list-style-type: square;
+}
+
+#notePreview.markdown-body blockquote {
+    margin: 0 0 16px 0;
+    padding: 0 1em;
+    color: var(--muted-text, #9ca3af);
+    border-left: 0.25em solid var(--border-color, #374151);
+}
+
+#notePreview.markdown-body code {
+    padding: 0.2em 0.4em;
+    margin: 0;
+    font-size: 85%;
+    background-color: rgba(110, 118, 129, 0.4);
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+#notePreview.markdown-body pre {
+    margin-top: 0;
+    margin-bottom: 16px;
+    padding: 16px;
+    overflow: auto;
+    font-size: 85%;
+    line-height: 1.45;
+    background-color: rgba(110, 118, 129, 0.2);
+    border-radius: 6px;
+}
+
+#notePreview.markdown-body pre code {
+    display: inline-block;
+    max-width: auto;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    line-height: inherit;
+    word-wrap: normal;
+    background-color: transparent;
+    border: 0;
+}
+
+#notePreview.markdown-body table {
+    border-spacing: 0;
+    border-collapse: collapse;
+    margin-top: 0;
+    margin-bottom: 16px;
+    width: 100%;
+    overflow: auto;
+}
+
+#notePreview.markdown-body table th,
+#notePreview.markdown-body table td {
+    padding: 6px 13px;
+    border: 1px solid var(--border-color, #374151);
+}
+
+#notePreview.markdown-body table th {
+    font-weight: 600;
+    background-color: rgba(110, 118, 129, 0.2);
+}
+
+#notePreview.markdown-body table tr {
+    background-color: transparent;
+    border-top: 1px solid var(--border-color, #374151);
+}
+
+#notePreview.markdown-body table tr:nth-child(2n) {
+    background-color: rgba(110, 118, 129, 0.1);
+}
+
+#notePreview.markdown-body hr {
+    height: 0.25em;
+    padding: 0;
+    margin: 24px 0;
+    background-color: var(--border-color, #374151);
+    border: 0;
+}
+
+#notePreview.markdown-body a {
+    color: #58a6ff;
+    text-decoration: none;
+}
+
+#notePreview.markdown-body a:hover {
+    text-decoration: underline;
+}
+
+#notePreview.markdown-body strong {
+    font-weight: 600;
+}
+
+#notePreview.markdown-body em {
+    font-style: italic;
+}
