@@ -24,6 +24,7 @@ class AIAssistant {
         this.knowledgeAgentHandler = null; // 知识库Copilot处理器
         this.isEditorPreview = false; // 编辑器预览模式
         this.autoSaveTimeout = null; // 自动保存定时器
+        this.previewDebounceTimeout = null; // 预览防抖定时器
         this.notesWebSocket = null; // WebSocket连接
         this.approvedFolders = new Set(); // 已授权的文件夹路径集合
         this.activeNoteOriginalContent = null; // 笔记的原始内容（用于手动编辑diff）
@@ -1178,9 +1179,12 @@ class AIAssistant {
         const noteEditor = document.getElementById('noteEditor');
         if (noteEditor) {
             noteEditor.addEventListener('input', () => {
-                // 实时更新预览
+                // 实时更新预览（防抖500ms）
                 if (this.isEditorPreview) {
-                    this.updateEditorPreview();
+                    clearTimeout(this.previewDebounceTimeout);
+                    this.previewDebounceTimeout = setTimeout(() => {
+                        this.updateEditorPreview();
+                    }, 500);
                 }
 
                 // 自动保存（防抖5秒）
@@ -1235,6 +1239,11 @@ class AIAssistant {
                     console.log('❌ 未检测到选中文本，允许默认右键菜单');
                 }
             });
+
+            // 编辑器粘贴事件 - 支持粘贴图片
+            noteEditor.addEventListener('paste', (e) => {
+                this.handleEditorPaste(e);
+            });
         }
 
         // Wiki链接和标签点击事件委托
@@ -1261,6 +1270,14 @@ class AIAssistant {
                 return;
             }
         });
+
+        // notePreview右键菜单 - 支持图片缩放
+        const notePreview = document.getElementById('notePreview');
+        if (notePreview) {
+            notePreview.addEventListener('contextmenu', (e) => {
+                this.handlePreviewContextMenu(e);
+            });
+        }
 
         // Copilot输入区域拖拽事件
         const copilotInputArea = document.getElementById('copilotInputArea');
@@ -4101,6 +4118,144 @@ ${selectedText}`;
     }
 
     /**
+     * 处理预览区右键菜单
+     */
+    handlePreviewContextMenu(e) {
+        // 检查是否点击的是图片
+        if (e.target.tagName === 'IMG') {
+            e.preventDefault();
+            this.showImageZoomMenu(e.target, e.clientX, e.clientY);
+        }
+    }
+
+    /**
+     * 显示图片缩放菜单
+     */
+    showImageZoomMenu(imageElement, x, y) {
+        // 移除旧菜单
+        this.hideImageZoomMenu();
+
+        // 创建菜单容器
+        const menu = document.createElement('div');
+        menu.id = 'imageZoomMenu';
+        menu.className = 'fixed z-[1000] bg-gray-800 border border-gray-600 rounded-lg shadow-xl';
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+
+        // 获取当前图片的缩放比例（优先从src的#zoom参数读取，其次从style.width）
+        const src = imageElement.src;
+        const zoomMatch = src.match(/#zoom=(\d+)/);
+        let currentScale = 60; // 默认值
+
+        if (zoomMatch) {
+            currentScale = parseInt(zoomMatch[1]);
+        } else if (imageElement.style.width) {
+            currentScale = parseInt(imageElement.style.width);
+        }
+
+        menu.innerHTML = `
+            <div class="p-3 min-w-[200px]">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium text-gray-300">图片缩放</span>
+                    <span id="zoomValue" class="text-sm text-blue-400 font-semibold">${currentScale}%</span>
+                </div>
+                <input
+                    type="range"
+                    id="zoomSlider"
+                    min="20"
+                    max="100"
+                    value="${currentScale}"
+                    class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                    style="accent-color: #3b82f6;"
+                />
+            </div>
+        `;
+
+        document.body.appendChild(menu);
+
+        // 初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        // 绑定滑轮事件
+        const slider = menu.querySelector('#zoomSlider');
+        const valueDisplay = menu.querySelector('#zoomValue');
+
+        slider.addEventListener('input', (e) => {
+            const newValue = e.target.value;
+            valueDisplay.textContent = `${newValue}%`;
+            imageElement.style.width = `${newValue}%`;
+
+            // 更新Markdown中的缩放参数
+            this.updateImageZoomInMarkdown(imageElement, newValue);
+        });
+
+        // 点击外部关闭菜单
+        const closeOnClickOutside = (e) => {
+            if (!menu.contains(e.target)) {
+                this.hideImageZoomMenu();
+                document.removeEventListener('click', closeOnClickOutside);
+            }
+        };
+        setTimeout(() => {
+            document.addEventListener('click', closeOnClickOutside);
+        }, 100);
+    }
+
+    /**
+     * 隐藏图片缩放菜单
+     */
+    hideImageZoomMenu() {
+        const menu = document.getElementById('imageZoomMenu');
+        if (menu) {
+            menu.remove();
+        }
+    }
+
+    /**
+     * 更新Markdown中的图片缩放参数
+     */
+    updateImageZoomInMarkdown(imageElement, zoomValue) {
+        const noteEditor = document.getElementById('noteEditor');
+        if (!noteEditor) return;
+
+        // 获取图片的src，移除可能的查询参数和fragment
+        let imageSrc = imageElement.src;
+
+        // 将绝对路径转换为相对路径
+        const baseUrl = window.location.origin;
+        if (imageSrc.startsWith(baseUrl)) {
+            imageSrc = imageSrc.substring(baseUrl.length);
+        }
+
+        // 移除已有的#zoom参数以便匹配
+        const srcWithoutZoom = imageSrc.split('#')[0];
+
+        // 获取当前Markdown内容
+        let content = noteEditor.value;
+
+        // 匹配Markdown图片语法: ![...](path) 或 ![...](path#zoom=xx)
+        // 需要转义特殊字符
+        const escapedPath = srcWithoutZoom.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const imageRegex = new RegExp(`(!\\[[^\\]]*\\]\\()${escapedPath}(#zoom=\\d+)?(\\))`, 'g');
+
+        // 替换为带有新缩放参数的图片链接
+        const newContent = content.replace(imageRegex, `$1${srcWithoutZoom}#zoom=${zoomValue}$3`);
+
+        // 更新编辑器内容
+        if (newContent !== content) {
+            noteEditor.value = newContent;
+
+            // 触发自动保存
+            clearTimeout(this.autoSaveTimeout);
+            this.autoSaveTimeout = setTimeout(() => {
+                this.saveActiveNote();
+            }, 5000);
+        }
+    }
+
+    /**
      * 更新编辑器预览
      */
     updateEditorPreview() {
@@ -4116,6 +4271,21 @@ ${selectedText}`;
         // 使用formatMessage渲染Markdown
         const html = this.formatMessage(content);
         notePreview.innerHTML = html;
+
+        // 为预览中的图片设置宽度（从URL的#zoom参数读取，或使用默认60%）
+        notePreview.querySelectorAll('img').forEach(img => {
+            // 检查图片src是否包含#zoom参数
+            const src = img.src;
+            const zoomMatch = src.match(/#zoom=(\d+)/);
+
+            if (zoomMatch) {
+                // 如果有zoom参数，使用该值
+                img.style.width = `${zoomMatch[1]}%`;
+            } else if (!img.style.width) {
+                // 否则使用默认值
+                img.style.width = '60%';
+            }
+        });
 
         // 重新添加复制按钮和代码高亮
         this.addCopyButtons();
@@ -4346,17 +4516,105 @@ tags: []
     }
 
     /**
-     * 处理编辑器中的图片拖拽上传
+     * 处理编辑器粘贴事件 - 支持粘贴图片
      */
-    async handleEditorImageDrop(event) {
-        const files = event.dataTransfer?.files;
-        if (!files || files.length === 0) return;
+    async handleEditorPaste(event) {
+        const items = event.clipboardData?.items;
+        if (!items) return;
 
+        // 查找图片类型的数据
+        for (let item of items) {
+            if (item.type.indexOf('image') !== -1) {
+                event.preventDefault(); // 阻止默认粘贴行为
+
+                const file = item.getAsFile();
+                if (file) {
+                    // 生成基于时间的文件名 MM_DD_HH_MM_SS
+                    const now = new Date();
+                    const month = String(now.getMonth() + 1).padStart(2, '0');
+                    const day = String(now.getDate()).padStart(2, '0');
+                    const hours = String(now.getHours()).padStart(2, '0');
+                    const minutes = String(now.getMinutes()).padStart(2, '0');
+                    const seconds = String(now.getSeconds()).padStart(2, '0');
+
+                    // 获取文件扩展名
+                    const ext = file.name.split('.').pop() || 'png';
+                    const newFileName = `${month}_${day}_${hours}_${minutes}_${seconds}.${ext}`;
+
+                    // 创建新的File对象
+                    const renamedFile = new File([file], newFileName, { type: file.type });
+
+                    // 调用上传和插入方法
+                    await this.uploadAndInsertImage(renamedFile);
+                }
+                break;
+            }
+        }
+    }
+
+    /**
+     * 上传图片并插入到编辑器光标位置
+     */
+    async uploadAndInsertImage(file) {
         const noteEditor = document.getElementById('noteEditor');
         if (!noteEditor) return;
 
         // 获取图片存储配置
         const imageStorageMode = this.config?.knowledgeBase?.imageStorage?.mode || 'fixed';
+
+        try {
+            // 上传图片
+            const formData = new FormData();
+            formData.append('image', file);
+            formData.append('storage_mode', imageStorageMode);
+            if (imageStorageMode === 'relative' && this.activeNoteId) {
+                formData.append('note_id', this.activeNoteId);
+            }
+
+            const response = await fetch('http://localhost:8080/api/notes/upload-image', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error('上传失败');
+            }
+
+            const result = await response.json();
+
+            // 获取光标位置
+            const cursorPos = noteEditor.selectionStart;
+            const textBefore = noteEditor.value.substring(0, cursorPos);
+            const textAfter = noteEditor.value.substring(cursorPos);
+
+            // 构造Markdown图片语法
+            const imageMarkdown = `![${file.name}](${result.filePath})`;
+
+            // 插入图片引用
+            noteEditor.value = textBefore + imageMarkdown + textAfter;
+
+            // 设置新的光标位置
+            const newCursorPos = cursorPos + imageMarkdown.length;
+            noteEditor.setSelectionRange(newCursorPos, newCursorPos);
+
+            // 更新预览
+            if (this.isEditorPreview) {
+                this.updateEditorPreview();
+            }
+
+            this.showNotification('图片上传成功', 'success');
+        } catch (error) {
+            console.error('图片上传失败:', error);
+            this.showNotification(`图片上传失败: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * 处理编辑器中的图片拖拽上传
+     */
+    async handleEditorImageDrop(event) {
+        const files = event.dataTransfer?.files;
+        if (!files || files.length === 0) return;
 
         // 遍历所有文件
         for (let i = 0; i < files.length; i++) {
@@ -4368,51 +4626,8 @@ tags: []
                 continue;
             }
 
-            try {
-                // 上传图片
-                const formData = new FormData();
-                formData.append('image', file);
-                formData.append('storage_mode', imageStorageMode);
-                if (imageStorageMode === 'relative' && this.activeNoteId) {
-                    formData.append('note_id', this.activeNoteId);
-                }
-
-                const response = await fetch('http://localhost:8080/api/notes/upload-image', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    throw new Error('上传失败');
-                }
-
-                const result = await response.json();
-
-                // 获取光标位置
-                const cursorPos = noteEditor.selectionStart;
-                const textBefore = noteEditor.value.substring(0, cursorPos);
-                const textAfter = noteEditor.value.substring(cursorPos);
-
-                // 构造Markdown图片语法
-                const imageMarkdown = `![${file.name}](${result.filePath})`;
-
-                // 插入图片引用
-                noteEditor.value = textBefore + imageMarkdown + textAfter;
-
-                // 设置新的光标位置
-                const newCursorPos = cursorPos + imageMarkdown.length;
-                noteEditor.setSelectionRange(newCursorPos, newCursorPos);
-
-                // 更新预览
-                if (this.isEditorPreview) {
-                    this.updateEditorPreview();
-                }
-
-                this.showNotification('图片上传成功', 'success');
-            } catch (error) {
-                console.error('图片上传失败:', error);
-                this.showNotification(`图片上传失败: ${error.message}`, 'error');
-            }
+            // 调用上传和插入方法
+            await this.uploadAndInsertImage(file);
         }
     }
 
