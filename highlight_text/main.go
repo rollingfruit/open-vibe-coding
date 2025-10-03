@@ -85,6 +85,8 @@ func main() {
 	// 知识库API端点
 	http.HandleFunc("/api/notes", handleNotes)
 	http.HandleFunc("/api/notes/upload-image", handleNoteImageUpload)
+	http.HandleFunc("/api/notes/move", handleMoveNote)
+	http.HandleFunc("/api/notes/delete", handleDeleteNote)
 	http.HandleFunc("/api/notes/", handleNoteByID)
 	http.HandleFunc("/api/search", handleSearchNotes)
 	http.HandleFunc("/agent/knowledge/tools", handleKnowledgeAgentTools)
@@ -889,6 +891,110 @@ func handleNotes(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(result))
 }
 
+// handleDeleteNote 处理笔记或文件夹删除
+func handleDeleteNote(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Path string `json:"path"`
+		Type string `json:"type"` // "file" or "folder"
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 调用notes包的删除函数
+	err = notes.DeleteNote(req.Path, req.Type, "./KnowledgeBase")
+	if err != nil {
+		log.Printf("删除失败: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 广播更新通知
+	broadcastNotesUpdate()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Deleted successfully",
+	})
+}
+
+// handleMoveNote 处理笔记或文件夹移动
+func handleMoveNote(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Source      string `json:"source"`
+		Destination string `json:"destination"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 调用notes包的移动函数
+	err = notes.MoveNote(req.Source, req.Destination, "./KnowledgeBase")
+	if err != nil {
+		log.Printf("移动文件失败: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 广播更新通知
+	broadcastNotesUpdate()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "File moved successfully",
+	})
+}
+
 // handleNoteByID 处理单个笔记的GET/PUT/DELETE
 func handleNoteByID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -901,6 +1007,13 @@ func handleNoteByID(w http.ResponseWriter, r *http.Request) {
 
 	// 提取note_id并URL解码
 	noteID := strings.TrimPrefix(r.URL.Path, "/api/notes/")
+
+	// 排除特殊路径（这些路径由其他处理器处理）
+	if noteID == "move" || noteID == "delete" || noteID == "upload-image" {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+
 	noteID, err := url.QueryUnescape(noteID)
 	if err != nil {
 		http.Error(w, "Invalid note ID", http.StatusBadRequest)

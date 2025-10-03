@@ -27,6 +27,7 @@ class AIAssistant {
         this.notesWebSocket = null; // WebSocket连接
         this.approvedFolders = new Set(); // 已授权的文件夹路径集合
         this.activeNoteOriginalContent = null; // 笔记的原始内容（用于手动编辑diff）
+        this.copilotContextFiles = []; // Copilot上下文文件列表
 
         // 初始化代码存储
         if (!window.codeStorage) {
@@ -1136,6 +1137,41 @@ class AIAssistant {
                 e.preventDefault();
                 this.showContextMenu(e);
             });
+
+            // 笔记列表拖拽放置事件（用于移动到根目录）
+            notesList.addEventListener('dragover', (e) => {
+                // 检查是否在空白区域（不在任何文件夹或文件节点上）
+                const targetFolder = e.target.closest('.folder-node');
+                const targetFile = e.target.closest('.file-node');
+
+                if (!targetFolder && !targetFile) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    notesList.style.backgroundColor = 'rgba(139, 92, 246, 0.1)';
+                }
+            });
+
+            notesList.addEventListener('dragleave', (e) => {
+                notesList.style.backgroundColor = '';
+            });
+
+            notesList.addEventListener('drop', (e) => {
+                // 检查是否在空白区域
+                const targetFolder = e.target.closest('.folder-node');
+                const targetFile = e.target.closest('.file-node');
+
+                if (!targetFolder && !targetFile) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    notesList.style.backgroundColor = '';
+
+                    const sourcePath = e.dataTransfer.getData('text/plain');
+                    if (sourcePath) {
+                        // 移动到根目录（空字符串表示根目录）
+                        this.moveNoteOrFolder(sourcePath, '');
+                    }
+                }
+            });
         }
 
         // 编辑器输入事件 - 实时更新预览 + 自动保存
@@ -1225,6 +1261,41 @@ class AIAssistant {
                 return;
             }
         });
+
+        // Copilot输入区域拖拽事件
+        const copilotInputArea = document.getElementById('copilotInputArea');
+        if (copilotInputArea) {
+            copilotInputArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                copilotInputArea.style.backgroundColor = 'rgba(139, 92, 246, 0.2)';
+            });
+
+            copilotInputArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                copilotInputArea.style.backgroundColor = '';
+            });
+
+            copilotInputArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                copilotInputArea.style.backgroundColor = '';
+
+                const filePath = e.dataTransfer.getData('text/plain');
+                const itemType = e.dataTransfer.getData('item-type');
+                const noteId = e.dataTransfer.getData('note-id');
+
+                if (itemType === 'file' && (filePath || noteId)) {
+                    // 添加文件到上下文
+                    const actualPath = noteId || filePath.replace(/\.md$/, '');
+                    this.addCopilotContextFile(actualPath);
+                } else if (itemType === 'folder' && filePath) {
+                    // TODO: 处理文件夹拖拽
+                    console.log('文件夹拖拽暂不支持添加到上下文');
+                }
+            });
+        }
     }
 
     checkUrlParams() {
@@ -3434,6 +3505,9 @@ ${selectedText}`;
                 // 文件夹节点
                 const folderDiv = document.createElement('div');
                 folderDiv.className = 'folder-node p-2 rounded cursor-pointer transition-colors hover:bg-gray-700 border-b border-gray-700 flex items-center gap-2';
+                folderDiv.draggable = true;
+                folderDiv.dataset.path = node.path;
+                folderDiv.dataset.type = 'folder';
                 folderDiv.innerHTML = `
                     <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400 folder-chevron transition-transform"></i>
                     <i data-lucide="folder" class="w-4 h-4 text-yellow-400"></i>
@@ -3443,6 +3517,45 @@ ${selectedText}`;
                 // 子节点容器
                 const childrenContainer = document.createElement('ul');
                 childrenContainer.className = 'folder-children hidden';
+
+                // 拖拽开始
+                folderDiv.addEventListener('dragstart', (e) => {
+                    e.stopPropagation();
+                    e.dataTransfer.setData('text/plain', node.path);
+                    e.dataTransfer.setData('item-type', 'folder');
+                    folderDiv.style.opacity = '0.5';
+                });
+
+                // 拖拽结束
+                folderDiv.addEventListener('dragend', (e) => {
+                    folderDiv.style.opacity = '1';
+                });
+
+                // 拖拽悬停
+                folderDiv.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    folderDiv.style.backgroundColor = 'rgba(139, 92, 246, 0.3)';
+                });
+
+                // 拖拽离开
+                folderDiv.addEventListener('dragleave', (e) => {
+                    folderDiv.style.backgroundColor = '';
+                });
+
+                // 接收放置
+                folderDiv.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    folderDiv.style.backgroundColor = '';
+
+                    const sourcePath = e.dataTransfer.getData('text/plain');
+                    const targetPath = node.path;
+
+                    if (sourcePath && sourcePath !== targetPath) {
+                        this.moveNoteOrFolder(sourcePath, targetPath);
+                    }
+                });
 
                 // 切换展开/折叠
                 folderDiv.addEventListener('click', (e) => {
@@ -3471,6 +3584,9 @@ ${selectedText}`;
                 // 文件节点
                 const fileDiv = document.createElement('div');
                 fileDiv.className = 'file-node p-2 rounded cursor-pointer transition-colors hover:bg-gray-700 border-b border-gray-700';
+                fileDiv.draggable = true;
+                fileDiv.dataset.path = node.path;
+                fileDiv.dataset.type = 'file';
 
                 // 从path提取noteId（移除.md扩展名）
                 const noteId = node.path.replace(/\.md$/, '');
@@ -3497,6 +3613,20 @@ ${selectedText}`;
                     </div>
                     ${tagsHtml}
                 `;
+
+                // 拖拽开始
+                fileDiv.addEventListener('dragstart', (e) => {
+                    e.stopPropagation();
+                    e.dataTransfer.setData('text/plain', node.path);
+                    e.dataTransfer.setData('item-type', 'file');
+                    e.dataTransfer.setData('note-id', noteId);
+                    fileDiv.style.opacity = '0.5';
+                });
+
+                // 拖拽结束
+                fileDiv.addEventListener('dragend', (e) => {
+                    fileDiv.style.opacity = '1';
+                });
 
                 fileDiv.addEventListener('click', () => {
                     this.switchToEditorMode(noteId);
@@ -3547,6 +3677,14 @@ ${selectedText}`;
         if (copilotMessages) {
             copilotMessages.innerHTML = '<div class="text-gray-400 text-sm">在编辑器中提问，Copilot将帮助你写作和组织知识...</div>';
         }
+
+        // 清空Copilot上下文文件标签，并添加当前文档
+        this.copilotContextFiles = [];
+        // 自动添加当前打开的文档到上下文
+        if (noteId) {
+            this.copilotContextFiles.push(noteId);
+        }
+        this.renderCopilotContextTags();
 
         // 加载笔记内容
         try {
@@ -3687,6 +3825,90 @@ ${selectedText}`;
     }
 
     /**
+     * 删除笔记或文件夹
+     */
+    async deleteNoteOrFolder(path, type) {
+        const itemName = path.includes('/') ? path.substring(path.lastIndexOf('/') + 1) : path;
+        const confirmMsg = type === 'folder'
+            ? `确定要删除文件夹"${itemName}"及其所有内容吗？此操作不可恢复！`
+            : `确定要删除文件"${itemName}"吗？此操作不可恢复！`;
+
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+
+        try {
+            const response = await fetch('http://localhost:8080/api/notes/delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    path: path,
+                    type: type
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showNotification('删除成功', 'success');
+
+                // 如果删除的是当前打开的笔记，关闭编辑器
+                if (this.activeNoteId && path.includes(this.activeNoteId)) {
+                    this.activeNoteId = null;
+                    this.editorInstance = null;
+                    // 切换回聊天模式
+                    this.viewMode = 'chat';
+                    document.body.classList.remove('view-mode-editor');
+                    document.body.classList.add('view-mode-chat');
+                    const chatContainer = document.getElementById('chatContainer');
+                    const editorContainer = document.getElementById('editor-container');
+                    if (chatContainer) chatContainer.classList.remove('hidden');
+                    if (editorContainer) editorContainer.classList.add('hidden');
+                }
+
+                await this.loadNotes();
+            } else {
+                this.showNotification(`删除失败: ${result.error}`, 'error');
+            }
+        } catch (error) {
+            console.error('删除失败:', error);
+            this.showNotification('删除失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * 移动笔记或文件夹
+     */
+    async moveNoteOrFolder(sourcePath, targetFolderPath) {
+        try {
+            const response = await fetch('http://localhost:8080/api/notes/move', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    source: sourcePath,
+                    destination: targetFolderPath
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showNotification('移动成功', 'success');
+                await this.loadNotes();
+            } else {
+                this.showNotification(`移动失败: ${result.error}`, 'error');
+            }
+        } catch (error) {
+            console.error('移动文件失败:', error);
+            this.showNotification('移动文件失败: ' + error.message, 'error');
+        }
+    }
+
+    /**
      * 确认diff后执行实际保存
      */
     async confirmDiffSave() {
@@ -3774,6 +3996,83 @@ ${selectedText}`;
         }
 
         this.showNotification(`搜索标签: ${tag}`, 'info');
+    }
+
+    /**
+     * 添加Copilot上下文文件
+     */
+    addCopilotContextFile(noteId) {
+        // 避免重复添加
+        if (this.copilotContextFiles.includes(noteId)) {
+            this.showNotification('文件已在上下文中', 'info');
+            return;
+        }
+
+        this.copilotContextFiles.push(noteId);
+        this.renderCopilotContextTags();
+        this.showNotification(`已添加上下文: ${noteId}`, 'success');
+    }
+
+    /**
+     * 移除Copilot上下文文件
+     */
+    removeCopilotContextFile(noteId) {
+        const index = this.copilotContextFiles.indexOf(noteId);
+        if (index > -1) {
+            this.copilotContextFiles.splice(index, 1);
+            this.renderCopilotContextTags();
+            this.showNotification(`已移除上下文: ${noteId}`, 'info');
+        }
+    }
+
+    /**
+     * 渲染Copilot上下文标签
+     */
+    renderCopilotContextTags() {
+        const tagsContainer = document.getElementById('copilotContextTags');
+        if (!tagsContainer) return;
+
+        // 清空容器
+        tagsContainer.innerHTML = '';
+
+        if (this.copilotContextFiles.length === 0) {
+            tagsContainer.classList.add('hidden');
+            return;
+        }
+
+        tagsContainer.classList.remove('hidden');
+
+        // 创建标签
+        this.copilotContextFiles.forEach(noteId => {
+            const tag = document.createElement('div');
+            tag.className = 'inline-flex items-center gap-1 px-2 py-1 bg-purple-900 bg-opacity-50 border border-purple-600 rounded text-xs text-purple-300';
+
+            // 提取文件名（最多8个字符）
+            const fileName = noteId.includes('/') ? noteId.substring(noteId.lastIndexOf('/') + 1) : noteId;
+            const displayName = fileName.length > 8 ? fileName.substring(0, 8) + '...' : fileName;
+
+            tag.innerHTML = `
+                <span>@${this.escapeHtml(displayName)}</span>
+                <button class="hover:text-red-400 transition-colors" title="移除" data-note-id="${this.escapeHtml(noteId)}">
+                    <i data-lucide="x" class="w-3 h-3"></i>
+                </button>
+            `;
+
+            // 移除按钮点击事件
+            const removeBtn = tag.querySelector('button');
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const noteIdToRemove = removeBtn.dataset.noteId;
+                this.removeCopilotContextFile(noteIdToRemove);
+            });
+
+            tagsContainer.appendChild(tag);
+        });
+
+        // 初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
     }
 
     /**
@@ -3940,33 +4239,23 @@ tags: []
         // 移除已存在的菜单
         this.hideContextMenu();
 
-        // 获取右键点击的目标元素（查找最近的笔记项）
-        let targetElement = event.target.closest('.note-item');
+        // 获取右键点击的目标元素（文件夹或文件）
+        let folderElement = event.target.closest('.folder-node');
+        let fileElement = event.target.closest('.file-node');
         let parentPath = '';
 
-        // 如果点击在某个笔记项上，获取其路径
-        if (targetElement) {
-            const noteId = targetElement.dataset.noteId;
-            // 查找对应的笔记对象
-            const findNote = (notes) => {
-                for (const note of notes) {
-                    if (note.id === noteId) {
-                        // 如果是文件夹，使用其路径作为父路径
-                        if (note.isFolder) {
-                            parentPath = note.path;
-                        } else {
-                            // 如果是文件，使用其所在目录作为父路径
-                            parentPath = note.path.substring(0, note.path.lastIndexOf('/'));
-                        }
-                        return true;
-                    }
-                    if (note.children && findNote(note.children)) {
-                        return true;
-                    }
-                }
-                return false;
-            };
-            findNote(this.notes);
+        // 如果点击在文件夹上，使用文件夹路径作为父路径
+        if (folderElement) {
+            parentPath = folderElement.dataset.path || '';
+            // 移除.md扩展名（如果有）
+            parentPath = parentPath.replace(/\.md$/, '');
+        }
+        // 如果点击在文件上，使用文件所在目录作为父路径
+        else if (fileElement) {
+            const filePath = fileElement.dataset.path || '';
+            // 移除文件名，保留目录部分
+            const lastSlash = filePath.lastIndexOf('/');
+            parentPath = lastSlash > 0 ? filePath.substring(0, lastSlash) : '';
         }
 
         // 创建菜单元素
@@ -3975,6 +4264,17 @@ tags: []
         menu.className = 'fixed bg-gray-800 border border-gray-600 rounded-lg shadow-lg py-2 z-[1002]';
         menu.style.left = `${event.clientX}px`;
         menu.style.top = `${event.clientY}px`;
+
+        // 获取当前点击的目标路径（用于删除）
+        let targetPath = '';
+        let targetType = '';
+        if (folderElement) {
+            targetPath = folderElement.dataset.path || '';
+            targetType = 'folder';
+        } else if (fileElement) {
+            targetPath = fileElement.dataset.path || '';
+            targetType = 'file';
+        }
 
         // 菜单项
         const menuItems = [
@@ -3996,10 +4296,24 @@ tags: []
             }
         ];
 
+        // 如果点击了具体的文件或文件夹，添加删除选项
+        if (targetPath) {
+            menuItems.push({
+                icon: 'trash-2',
+                label: targetType === 'folder' ? '删除文件夹' : '删除文件',
+                className: 'text-red-400 hover:bg-red-900',
+                handler: () => {
+                    this.hideContextMenu();
+                    this.deleteNoteOrFolder(targetPath, targetType);
+                }
+            });
+        }
+
         // 构建菜单HTML
         menuItems.forEach(item => {
             const menuItem = document.createElement('div');
-            menuItem.className = 'px-4 py-2 hover:bg-gray-700 cursor-pointer flex items-center gap-2 text-sm';
+            const baseClass = 'px-4 py-2 hover:bg-gray-700 cursor-pointer flex items-center gap-2 text-sm';
+            menuItem.className = item.className ? `${baseClass} ${item.className}` : baseClass;
             menuItem.innerHTML = `
                 <i data-lucide="${item.icon}" class="w-4 h-4"></i>
                 <span>${item.label}</span>

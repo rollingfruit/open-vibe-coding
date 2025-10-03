@@ -880,3 +880,103 @@ func sanitizePath(basePath string, userPath string) (string, error) {
 
 	return fullPath, nil
 }
+
+// DeleteNote 删除笔记或文件夹
+func DeleteNote(path, itemType, basePath string) error {
+	// 验证路径
+	fullPath, err := sanitizePath(basePath, path)
+	if err != nil {
+		return fmt.Errorf("路径无效: %v", err)
+	}
+
+	// 检查路径是否存在
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return fmt.Errorf("路径不存在: %v", err)
+	}
+
+	// 验证类型匹配
+	if itemType == "folder" && !info.IsDir() {
+		return fmt.Errorf("路径不是文件夹")
+	}
+	if itemType == "file" && info.IsDir() {
+		return fmt.Errorf("路径不是文件")
+	}
+
+	// 执行删除
+	if info.IsDir() {
+		// 删除文件夹及其所有内容
+		err = os.RemoveAll(fullPath)
+	} else {
+		// 删除文件
+		err = os.Remove(fullPath)
+	}
+
+	if err != nil {
+		return fmt.Errorf("删除失败: %v", err)
+	}
+
+	return nil
+}
+
+// MoveNote 移动笔记或文件夹到目标文件夹
+func MoveNote(sourcePath, destFolderPath, basePath string) error {
+	// 验证源路径
+	fullSourcePath, err := sanitizePath(basePath, sourcePath)
+	if err != nil {
+		return fmt.Errorf("源路径无效: %v", err)
+	}
+
+	// 验证目标路径（空字符串表示根目录）
+	var fullDestFolderPath string
+	if destFolderPath == "" {
+		// 移动到根目录
+		fullDestFolderPath = basePath
+	} else {
+		fullDestFolderPath, err = sanitizePath(basePath, destFolderPath)
+		if err != nil {
+			return fmt.Errorf("目标路径无效: %v", err)
+		}
+	}
+
+	// 检查源路径是否存在
+	sourceInfo, err := os.Stat(fullSourcePath)
+	if err != nil {
+		return fmt.Errorf("源路径不存在: %v", err)
+	}
+
+	// 检查目标文件夹是否存在
+	destInfo, err := os.Stat(fullDestFolderPath)
+	if err != nil {
+		return fmt.Errorf("目标文件夹不存在: %v", err)
+	}
+
+	// 确保目标是文件夹
+	if !destInfo.IsDir() {
+		return fmt.Errorf("目标必须是文件夹")
+	}
+
+	// 构造新的完整路径
+	sourceName := filepath.Base(fullSourcePath)
+	newFullPath := filepath.Join(fullDestFolderPath, sourceName)
+
+	// 检查目标位置是否已存在同名文件
+	if _, err := os.Stat(newFullPath); err == nil {
+		return fmt.Errorf("目标位置已存在同名文件: %s", sourceName)
+	}
+
+	// 执行移动
+	if sourceInfo.IsDir() {
+		// 移动文件夹
+		err = os.Rename(fullSourcePath, newFullPath)
+	} else {
+		// 移动文件
+		err = os.Rename(fullSourcePath, newFullPath)
+	}
+
+	if err != nil {
+		return fmt.Errorf("移动失败: %v", err)
+	}
+
+	return nil
+}

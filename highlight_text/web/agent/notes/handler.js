@@ -299,8 +299,17 @@ JSON格式：
         if (!bubble) return;
 
         const container = bubble.querySelector('.copilot-trace-content');
+
+        // 折叠所有之前的步骤（除了final类型）
+        const previousSteps = container.querySelectorAll('.agent-trace-step:not(.collapsed):not(.final-step)');
+        previousSteps.forEach(step => {
+            if (!step.classList.contains('collapsed')) {
+                this.collapseTraceStep(step);
+            }
+        });
+
         const stepDiv = document.createElement('div');
-        stepDiv.className = 'agent-trace-step border rounded-lg p-3 mb-2';
+        stepDiv.className = 'agent-trace-step border rounded-lg p-3 mb-2 cursor-pointer';
 
         let iconName = 'circle';
         let titleColor = 'text-gray-400';
@@ -329,18 +338,33 @@ JSON格式：
                 iconName = 'check-circle';
                 titleColor = 'text-purple-400';
                 title = '最终答案';
-                stepDiv.classList.add('bg-purple-900', 'bg-opacity-20', 'border-purple-500');
+                stepDiv.classList.add('bg-purple-900', 'bg-opacity-20', 'border-purple-500', 'final-step');
                 break;
         }
+
+        // 获取内容预览（前50个字符）
+        const preview = content.length > 50 ? content.substring(0, 50) + '...' : content;
 
         stepDiv.innerHTML = `
             <div class="flex items-center gap-2 mb-2">
                 <i data-lucide="${iconName}" class="w-4 h-4 ${titleColor}"></i>
                 <span class="font-bold ${titleColor}">${title}</span>
+                <i data-lucide="chevron-down" class="w-4 h-4 ml-auto collapse-indicator"></i>
             </div>
-            <div class="text-sm text-gray-200 whitespace-pre-wrap">${this.escapeHtml(content)}</div>
-            ${data ? `<div class="mt-2 text-xs text-gray-400">${this.escapeHtml(JSON.stringify(data, null, 2))}</div>` : ''}
+            <div class="step-preview text-xs text-gray-400 hidden">${this.escapeHtml(preview)}</div>
+            <div class="step-content text-sm text-gray-200 whitespace-pre-wrap">${this.escapeHtml(content)}</div>
+            ${data ? `<div class="step-data mt-2 text-xs text-gray-400">${this.escapeHtml(JSON.stringify(data, null, 2))}</div>` : ''}
         `;
+
+        // 添加点击事件切换展开/折叠
+        stepDiv.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (stepDiv.classList.contains('collapsed')) {
+                this.expandTraceStep(stepDiv);
+            } else {
+                this.collapseTraceStep(stepDiv);
+            }
+        });
 
         container.appendChild(stepDiv);
 
@@ -349,6 +373,50 @@ JSON格式：
         }
 
         stepDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+
+    /**
+     * 折叠追踪步骤
+     */
+    collapseTraceStep(stepDiv) {
+        stepDiv.classList.add('collapsed');
+        stepDiv.classList.remove('p-3');
+        stepDiv.classList.add('p-2');
+
+        const preview = stepDiv.querySelector('.step-preview');
+        const content = stepDiv.querySelector('.step-content');
+        const data = stepDiv.querySelector('.step-data');
+        const indicator = stepDiv.querySelector('.collapse-indicator');
+
+        if (preview) preview.classList.remove('hidden');
+        if (content) content.classList.add('hidden');
+        if (data) data.classList.add('hidden');
+        if (indicator) {
+            indicator.setAttribute('data-lucide', 'chevron-right');
+            if (window.lucide) lucide.createIcons();
+        }
+    }
+
+    /**
+     * 展开追踪步骤
+     */
+    expandTraceStep(stepDiv) {
+        stepDiv.classList.remove('collapsed');
+        stepDiv.classList.remove('p-2');
+        stepDiv.classList.add('p-3');
+
+        const preview = stepDiv.querySelector('.step-preview');
+        const content = stepDiv.querySelector('.step-content');
+        const data = stepDiv.querySelector('.step-data');
+        const indicator = stepDiv.querySelector('.collapse-indicator');
+
+        if (preview) preview.classList.add('hidden');
+        if (content) content.classList.remove('hidden');
+        if (data) data.classList.remove('hidden');
+        if (indicator) {
+            indicator.setAttribute('data-lucide', 'chevron-down');
+            if (window.lucide) lucide.createIcons();
+        }
     }
 
     escapeHtml(text) {
@@ -367,8 +435,51 @@ JSON格式：
 
         await this.fetchAvailableTools();
 
+        // 读取上下文文件内容
+        let contextFilesContent = '';
+        const contextFiles = this.mainApp.copilotContextFiles || [];
+
+        if (contextFiles.length > 0) {
+            contextFilesContent = '用户提供了以下文件作为上下文参考：\n\n';
+
+            for (const noteId of contextFiles) {
+                try {
+                    const result = await this.executeToolOnBackend('read_note', { note_id: noteId });
+
+                    if (result.success) {
+                        // 解析返回的JSON
+                        const noteData = JSON.parse(result.output);
+                        const content = noteData.content || '';
+
+                        // 分行处理
+                        const lines = content.split('\n');
+                        const previewLines = lines.slice(0, 200);
+                        const hasMore = lines.length > 200;
+
+                        contextFilesContent += `--- 文件: ${noteId} ---\n`;
+                        contextFilesContent += previewLines.join('\n');
+                        if (hasMore) {
+                            contextFilesContent += `\n\n...(文件总共 ${lines.length} 行，仅显示前200行)\n`;
+                        }
+                        contextFilesContent += '\n\n';
+                    }
+                } catch (error) {
+                    console.error(`读取上下文文件 ${noteId} 失败:`, error);
+                    contextFilesContent += `--- 文件: ${noteId} (读取失败) ---\n\n`;
+                }
+            }
+        }
+
         // 构建包含编辑器上下文的初始消息
-        let contextMessage = `用户请求: ${initialTask}\n\n`;
+        let contextMessage = '';
+
+        // 优先添加上下文文件内容
+        if (contextFilesContent) {
+            contextMessage += contextFilesContent;
+        }
+
+        contextMessage += `用户请求: ${initialTask}\n\n`;
+
         if (editorContext) {
             contextMessage += `当前编辑的笔记: ${editorContext.noteId || '新笔记'}\n`;
             if (editorContext.selectedText) {
