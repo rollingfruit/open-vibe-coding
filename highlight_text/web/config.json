@@ -1,4 +1,11 @@
 {
+  "apiSettings": {
+    "defaultEndpoint": "https://api.openai.com/v1/chat/completions",
+    "maxContextTokens": 20000,
+    "maxTokens": 10000,
+    "model": "gpt-4.1-mini",
+    "temperature": 0.7
+  },
   "commands": [
     {
       "label": "大白话解释",
@@ -17,18 +24,67 @@
       "prompt": "请根据你的知识，对以下内容进行自定义的深入解读：\n"
     }
   ],
-  "apiSettings": {
-    "defaultEndpoint": "https://api.openai.com/v1/chat/completions",
-    "model": "gpt-4.1-mini",
-    "temperature": 0.7,
-    "maxTokens": 10000,
-    "maxContextTokens": 20000
-  },
   "knowledgeBase": {
     "imageStorage": {
-      "mode": "relative", 
       "fixedPath": "/uploads/nodes",
+      "mode": "relative",
       "relativePath": "/imgs"
     }
-  }
+  },
+  "shortcuts": [
+    {
+      "description": "粗体",
+      "key": "Ctrl+B",
+      "template": "**{}**",
+      "type": "markdown"
+    },
+    {
+      "description": "斜体",
+      "key": "Ctrl+I",
+      "template": "*{}*",
+      "type": "markdown"
+    },
+    {
+      "description": "超链接",
+      "key": "Ctrl+K",
+      "template": "[{}]()",
+      "type": "markdown"
+    },
+    {
+      "description": "插入图片",
+      "key": "Ctrl+Shift+I",
+      "template": "![]({})",
+      "type": "markdown"
+    },
+    {
+      "description": "N级标题（1-6）",
+      "key": "Ctrl+N",
+      "template": "#N {}",
+      "type": "markdown"
+    },
+    {
+      "description": "行内代码",
+      "key": "Ctrl+E",
+      "template": "`{}`",
+      "type": "markdown"
+    },
+    {
+      "description": "代码块",
+      "key": "Ctrl+Shift+E",
+      "template": "```{}```",
+      "type": "markdown"
+    },
+    {
+      "action": "saveNote",
+      "description": "保存笔记",
+      "key": "Ctrl+S",
+      "type": "action"
+    },
+    {
+      "action": "togglePreview",
+      "description": "切换预览",
+      "key": "Ctrl+P",
+      "type": "action"
+    }
+  ]
 }

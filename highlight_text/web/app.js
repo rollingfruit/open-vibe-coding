@@ -29,6 +29,7 @@ class AIAssistant {
         this.approvedFolders = new Set(); // 已授权的文件夹路径集合
         this.activeNoteOriginalContent = null; // 笔记的原始内容（用于手动编辑diff）
         this.copilotContextFiles = []; // Copilot上下文文件列表
+        this.shortcutManager = null; // 快捷键管理器
 
         // 初始化代码存储
         if (!window.codeStorage) {
@@ -45,6 +46,12 @@ class AIAssistant {
         await this.loadConfig();
         this.agentHandler = new AgentHandler(this); // 初始化Agent处理器
         this.knowledgeAgentHandler = new KnowledgeAgentHandler(this); // 初始化知识库Agent
+
+        // 初始化快捷键管理器
+        const noteEditor = document.getElementById('noteEditor');
+        this.shortcutManager = new ShortcutManager(noteEditor, this.config.shortcuts || [], this);
+        this.shortcutManager.init();
+
         this.bindEvents();
         this.loadThemePreference();
         this.checkUrlParams();
@@ -1342,6 +1349,9 @@ class AIAssistant {
         // 加载划词指令配置
         this.renderCommandsList();
 
+        // 加载快捷键配置
+        this.renderShortcutsSettings();
+
         // 绑定标签页切换事件
         this.bindSettingsTabEvents();
 
@@ -1449,6 +1459,312 @@ class AIAssistant {
         }
     }
 
+    renderShortcutsSettings() {
+        const shortcutsList = document.getElementById('shortcutsList');
+        shortcutsList.innerHTML = '';
+
+        const shortcuts = this.config?.shortcuts || [];
+
+        shortcuts.forEach((shortcut, index) => {
+            const shortcutItem = document.createElement('div');
+            shortcutItem.className = 'shortcut-item bg-gray-700 p-3 rounded border border-gray-600';
+
+            const isMarkdown = shortcut.type === 'markdown';
+            const isAction = shortcut.type === 'action';
+
+            shortcutItem.innerHTML = `
+                <div class="grid grid-cols-2 gap-3 mb-2">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">快捷键</label>
+                        <div class="relative">
+                            <input
+                                type="text"
+                                value="${this.escapeHtml(shortcut.key)}"
+                                class="shortcut-key w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm pr-16"
+                                placeholder="按下快捷键..."
+                                readonly
+                                data-index="${index}"
+                            >
+                            <span class="absolute right-1 top-1/2 -translate-y-1/2 text-xs text-gray-500 pointer-events-none">按键设置</span>
+                        </div>
+                        <div class="shortcut-conflict-warning hidden mt-1 text-xs text-red-400 flex items-center gap-1">
+                            <i data-lucide="alert-triangle" class="w-3 h-3"></i>
+                            <span></span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">说明</label>
+                        <input
+                            type="text"
+                            value="${this.escapeHtml(shortcut.description)}"
+                            class="shortcut-description w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm"
+                            placeholder="粗体"
+                            data-index="${index}"
+                        >
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">类型</label>
+                        <select class="shortcut-type w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" data-index="${index}">
+                            <option value="markdown" ${isMarkdown ? 'selected' : ''}>Markdown格式</option>
+                            <option value="action" ${isAction ? 'selected' : ''}>执行动作</option>
+                        </select>
+                    </div>
+                    <div class="shortcut-value-container">
+                        ${isMarkdown ? `
+                            <label class="block text-xs text-gray-400 mb-1">Markdown模板</label>
+                            <input
+                                type="text"
+                                value="${this.escapeHtml(shortcut.template || '')}"
+                                class="shortcut-template w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm"
+                                placeholder="**{}**"
+                                data-index="${index}"
+                            >
+                        ` : `
+                            <label class="block text-xs text-gray-400 mb-1">动作名称</label>
+                            <select class="shortcut-action w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" data-index="${index}">
+                                <option value="saveNote" ${shortcut.action === 'saveNote' ? 'selected' : ''}>保存笔记</option>
+                                <option value="togglePreview" ${shortcut.action === 'togglePreview' ? 'selected' : ''}>切换预览</option>
+                                <option value="backToChat" ${shortcut.action === 'backToChat' ? 'selected' : ''}>返回聊天</option>
+                            </select>
+                        `}
+                    </div>
+                </div>
+                <div class="mt-2 flex justify-end">
+                    <button class="delete-shortcut-btn px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-xs flex items-center gap-1" data-index="${index}">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        <span>删除</span>
+                    </button>
+                </div>
+            `;
+            shortcutsList.appendChild(shortcutItem);
+        });
+
+        // 添加新增快捷键按钮
+        const addButtonContainer = document.createElement('div');
+        addButtonContainer.className = 'mt-3';
+        addButtonContainer.innerHTML = `
+            <button id="addShortcutBtn" class="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm flex items-center justify-center gap-2">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>添加快捷键</span>
+            </button>
+        `;
+        shortcutsList.appendChild(addButtonContainer);
+
+        // 绑定类型切换事件
+        document.querySelectorAll('.shortcut-type').forEach(select => {
+            select.addEventListener('change', (e) => {
+                const index = parseInt(e.target.dataset.index);
+                this.config.shortcuts[index].type = e.target.value;
+                this.renderShortcutsSettings();
+            });
+        });
+
+        // 绑定快捷键输入框事件
+        document.querySelectorAll('.shortcut-key').forEach(input => {
+            input.addEventListener('keydown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const index = parseInt(input.dataset.index);
+                let keyString = this.buildShortcutKeyString(e);
+
+                // 检查当前快捷键是否用于N级标题（模板包含 #N）
+                const currentShortcut = this.config.shortcuts[index];
+                const isNLevelHeading = currentShortcut.template && currentShortcut.template.includes('#N');
+
+                // 如果是N级标题，且用户只按了修饰键（没有主键），自动添加 +N
+                if (isNLevelHeading && !keyString.match(/\+[A-Z0-9]$/)) {
+                    keyString += '+N';
+                }
+
+                // 更新输入框显示
+                input.value = keyString;
+
+                // 检查冲突
+                const conflict = this.checkShortcutConflict(keyString, index);
+                const warningDiv = input.parentElement.nextElementSibling;
+
+                if (conflict) {
+                    warningDiv.classList.remove('hidden');
+                    warningDiv.querySelector('span').textContent = `与 "${conflict.description}" 冲突`;
+                    input.classList.add('border-red-500');
+                } else {
+                    warningDiv.classList.add('hidden');
+                    input.classList.remove('border-red-500');
+                }
+
+                // 更新配置
+                this.config.shortcuts[index].key = keyString;
+            });
+
+            // 点击获得焦点时，清空输入框并提示
+            input.addEventListener('focus', (e) => {
+                const index = parseInt(input.dataset.index);
+                const currentShortcut = this.config.shortcuts[index];
+                const isNLevelHeading = currentShortcut.template && currentShortcut.template.includes('#N');
+
+                if (isNLevelHeading) {
+                    input.placeholder = '按下修饰键（如 Ctrl+Shift）...';
+                } else {
+                    input.placeholder = '按下快捷键...';
+                }
+            });
+
+            input.addEventListener('blur', (e) => {
+                if (!input.value) {
+                    const index = parseInt(input.dataset.index);
+                    input.value = this.config.shortcuts[index].key || '';
+                }
+            });
+        });
+
+        // 绑定删除按钮事件
+        document.querySelectorAll('.delete-shortcut-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt(e.currentTarget.dataset.index);
+                this.deleteShortcut(index);
+            });
+        });
+
+        // 绑定添加按钮事件
+        const addBtn = document.getElementById('addShortcutBtn');
+        if (addBtn) {
+            addBtn.replaceWith(addBtn.cloneNode(true));
+            document.getElementById('addShortcutBtn').addEventListener('click', () => {
+                this.addShortcut();
+            });
+        }
+
+        // 重新初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    /**
+     * 构建快捷键字符串（用于设置界面）
+     * @param {KeyboardEvent} event
+     * @returns {string} 例如 "Ctrl+B", "Ctrl+Shift+N"
+     */
+    buildShortcutKeyString(event) {
+        const parts = [];
+
+        // 修饰键
+        if (event.ctrlKey || event.metaKey) {
+            parts.push('Ctrl');
+        }
+        if (event.shiftKey) {
+            parts.push('Shift');
+        }
+        if (event.altKey) {
+            parts.push('Alt');
+        }
+
+        // 使用 event.code 获取物理按键，避免 Alt 键影响字符
+        const code = event.code;
+
+        // 排除修饰键本身
+        if (!['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(code)) {
+            let mainKey = '';
+
+            // 处理字母键 KeyA-KeyZ
+            if (code.startsWith('Key')) {
+                mainKey = code.substring(3); // KeyA -> A
+            }
+            // 处理数字键 Digit0-Digit9
+            else if (code.startsWith('Digit')) {
+                mainKey = code.substring(5); // Digit1 -> 1
+            }
+            // 处理其他常用键
+            else if (code === 'Space') {
+                mainKey = 'Space';
+            } else if (code === 'Enter') {
+                mainKey = 'Enter';
+            } else if (code === 'Backspace') {
+                mainKey = 'Backspace';
+            } else {
+                // 其他情况使用 event.key
+                const key = event.key;
+                if (key.length === 1) {
+                    mainKey = key.toUpperCase();
+                } else {
+                    mainKey = key;
+                }
+            }
+
+            if (mainKey) {
+                parts.push(mainKey);
+            }
+        }
+
+        return parts.join('+');
+    }
+
+    /**
+     * 检查快捷键冲突
+     * @param {string} keyString - 快捷键字符串
+     * @param {number} currentIndex - 当前编辑的快捷键索引
+     * @returns {object|null} 冲突的快捷键对象，或null
+     */
+    checkShortcutConflict(keyString, currentIndex) {
+        const shortcuts = this.config?.shortcuts || [];
+
+        for (let i = 0; i < shortcuts.length; i++) {
+            if (i === currentIndex) continue; // 跳过自己
+
+            const shortcut = shortcuts[i];
+            const configKey = shortcut.key.replace(/Command/g, 'Ctrl');
+
+            // 精确匹配
+            if (configKey === keyString) {
+                return shortcut;
+            }
+
+            // 检查通配符冲突
+            // 如果配置中有 Ctrl+Shift+N，而用户输入 Ctrl+Shift+1，会冲突
+            if (configKey.includes('+N')) {
+                const pattern = configKey.replace('+N', '\\+[1-9]');
+                const regex = new RegExp(`^${pattern}$`);
+                if (regex.test(keyString)) {
+                    return shortcut;
+                }
+            }
+
+            // 反向检查：如果用户输入 Ctrl+Shift+N，检查是否与现有的数字键冲突
+            if (keyString.includes('+N')) {
+                const pattern = keyString.replace('+N', '\\+[1-9]');
+                const regex = new RegExp(`^${pattern}$`);
+                if (regex.test(configKey)) {
+                    return shortcut;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    addShortcut() {
+        if (!this.config.shortcuts) {
+            this.config.shortcuts = [];
+        }
+        this.config.shortcuts.push({
+            key: 'Ctrl+',
+            type: 'markdown',
+            template: '{}',
+            description: '新快捷键'
+        });
+        this.renderShortcutsSettings();
+    }
+
+    deleteShortcut(index) {
+        if (confirm('确定要删除这个快捷键吗？')) {
+            this.config.shortcuts.splice(index, 1);
+            this.renderShortcutsSettings();
+        }
+    }
+
     async saveSettingsFromModal() {
         // 保存LLM配置到localStorage
         this.settings.apiKey = document.getElementById('apiKeyInput').value;
@@ -1474,6 +1790,24 @@ class AIAssistant {
         }
         this.config.knowledgeBase.imageStorage.mode = document.getElementById('imageStorageModeSelect').value;
 
+        // 保存快捷键配置
+        const shortcutItems = document.querySelectorAll('.shortcut-item');
+        this.config.shortcuts = Array.from(shortcutItems).map(item => {
+            const key = item.querySelector('.shortcut-key').value;
+            const description = item.querySelector('.shortcut-description').value;
+            const type = item.querySelector('.shortcut-type').value;
+            const template = item.querySelector('.shortcut-template')?.value;
+            const action = item.querySelector('.shortcut-action')?.value;
+
+            return {
+                key,
+                description,
+                type,
+                template: type === 'markdown' ? template : undefined,
+                action: type === 'action' ? action : undefined
+            };
+        }).filter(s => s.key && s.description); // 过滤掉空项
+
         // 将配置保存到config.json
         try {
             const response = await fetch('http://localhost:8080/api/save-config', {
@@ -1486,6 +1820,11 @@ class AIAssistant {
 
             if (!response.ok) {
                 throw new Error('保存配置失败');
+            }
+
+            // 更新快捷键管理器
+            if (this.shortcutManager) {
+                this.shortcutManager.loadSettings(this.config.shortcuts);
             }
 
             this.hideSettings();
