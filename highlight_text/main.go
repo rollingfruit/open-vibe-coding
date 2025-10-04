@@ -90,6 +90,7 @@ func main() {
 	http.HandleFunc("/api/notes/", handleNoteByID)
 	http.HandleFunc("/api/search", handleSearchNotes)
 	http.HandleFunc("/agent/knowledge/tools", handleKnowledgeAgentTools)
+	http.HandleFunc("/agent/knowledge/write-log", handleKnowledgeAgentWriteLog)
 
 	// 配置API端点
 	http.HandleFunc("/api/save-config", handleSaveConfig)
@@ -863,6 +864,70 @@ func handleKnowledgeAgentTools(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"tools": knowledgeTools,
+	})
+}
+
+// handleKnowledgeAgentWriteLog 处理日志写入请求
+func handleKnowledgeAgentWriteLog(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 解析请求体
+	var req struct {
+		Filename string                 `json:"filename"`
+		LogEntry map[string]interface{} `json:"logEntry"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// 确保日志目录存在
+	logDir := "./logs/notes"
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create log directory: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// 日志文件路径
+	logFilePath := filepath.Join(logDir, req.Filename)
+
+	// 读取现有日志（如果存在）
+	var logs []map[string]interface{}
+	if data, err := ioutil.ReadFile(logFilePath); err == nil {
+		json.Unmarshal(data, &logs)
+	}
+
+	// 追加新日志
+	logs = append(logs, req.LogEntry)
+
+	// 写入文件
+	logData, err := json.MarshalIndent(logs, "", "  ")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to marshal log data: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if err := ioutil.WriteFile(logFilePath, logData, 0644); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to write log file: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Log written successfully",
 	})
 }
 

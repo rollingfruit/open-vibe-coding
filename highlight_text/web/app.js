@@ -5089,18 +5089,20 @@ tags: []
                 } else if (line.type === 'modified') {
                     // 修改的行：先显示旧内容（红），再显示新内容（绿）
                     const oldLineDiv = document.createElement('div');
-                    oldLineDiv.className = 'leading-6 py-1 px-3 bg-red-900 bg-opacity-20 border-l-4 border-red-500';
+                    oldLineDiv.className = 'leading-6 py-1 px-3 inline-diff-old-line';
                     oldLineDiv.dataset.blockIndex = blockIndex;
                     oldLineDiv.dataset.lineType = 'removed';
-                    oldLineDiv.innerHTML = `<span class="text-red-300 opacity-80">${this.escapeHtml(line.oldContent)}</span>`;
+
+                    // 红色边框：显示完整的旧内容（可选：带删除标记）
+                    oldLineDiv.innerHTML = `<span class="text-red-300">${this.escapeHtml(line.oldContent)}</span>`;
 
                     const newLineDiv = document.createElement('div');
-                    newLineDiv.className = 'leading-6 py-1 px-3 bg-green-900 bg-opacity-20 border-l-4 border-green-500';
+                    newLineDiv.className = 'leading-6 py-1 px-3 inline-diff-new-line';
                     newLineDiv.dataset.blockIndex = blockIndex;
                     newLineDiv.dataset.lineType = 'added';
 
-                    // 使用行内diff显示差异
-                    const inlineDiff = this.computeInlineDiff(line.oldContent, line.content);
+                    // 绿色边框：只显示新内容，高亮新增部分（不显示删除部分）
+                    const inlineDiff = this.computeInlineDiff(line.oldContent, line.content, true);
                     newLineDiv.innerHTML = inlineDiff;
 
                     // 添加操作按钮
@@ -5264,10 +5266,16 @@ tags: []
 
     /**
      * 计算行内diff（高亮变更部分）
+     * @param {string} oldText - 旧文本
+     * @param {string} newText - 新文本
+     * @param {boolean} showOnlyNew - 是否只显示新内容（用于绿色边框）
      */
-    computeInlineDiff(oldText, newText) {
+    computeInlineDiff(oldText, newText, showOnlyNew = false) {
         if (typeof diff_match_patch === 'undefined') {
             console.warn('diff_match_patch未加载，使用简单对比');
+            if (showOnlyNew) {
+                return `<span class="text-gray-100">${this.escapeHtml(newText)}</span>`;
+            }
             return `<span class="diff-removed-text">${this.escapeHtml(oldText)}</span> → <span class="diff-added-text">${this.escapeHtml(newText)}</span>`;
         }
 
@@ -5279,11 +5287,14 @@ tags: []
         diffs.forEach(([type, text]) => {
             const escaped = this.escapeHtml(text);
             if (type === 1) { // 添加
-                html += `<span class="diff-added-text">${escaped}</span>`;
+                html += `<span class="inline-diff-added">${escaped}</span>`;
             } else if (type === -1) { // 删除
-                html += `<span class="diff-removed-text">${escaped}</span>`;
+                // 如果只显示新内容，跳过删除部分
+                if (!showOnlyNew) {
+                    html += `<span class="inline-diff-removed">${escaped}</span>`;
+                }
             } else { // 不变
-                html += escaped;
+                html += `<span class="text-gray-100">${escaped}</span>`;
             }
         });
 

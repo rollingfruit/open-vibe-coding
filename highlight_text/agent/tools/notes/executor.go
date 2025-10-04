@@ -66,7 +66,7 @@ func GetKnowledgeTools() []ToolDefinition {
 		},
 		{
 			Name:        "read_note",
-			Description: "读取指定笔记的完整内容。通过笔记ID或标题获取笔记全文。",
+			Description: "读取指定笔记的完整内容。通过笔记ID或标题获取笔记全文。用于需要全文上下文的场景。",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -79,8 +79,30 @@ func GetKnowledgeTools() []ToolDefinition {
 			},
 		},
 		{
+			Name:        "read_lines",
+			Description: "精确读取笔记的指定行范围。这是进行精细操作的基础工具，可以准确获取需要修改的内容。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"note_id": map[string]interface{}{
+						"type":        "string",
+						"description": "笔记的唯一标识符（文件名，不含扩展名）",
+					},
+					"start_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "起始行号（从1开始）",
+					},
+					"end_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "结束行号（包含该行）",
+					},
+				},
+				"required": []string{"note_id", "start_line", "end_line"},
+			},
+		},
+		{
 			Name:        "update_note",
-			Description: "更新或覆写整篇笔记的内容。可以修改已有笔记的全部内容。",
+			Description: "【高风险操作】完全覆写整篇笔记的内容。建议优先使用 replace_lines 进行精细修改。",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -94,6 +116,76 @@ func GetKnowledgeTools() []ToolDefinition {
 					},
 				},
 				"required": []string{"note_id", "content"},
+			},
+		},
+		{
+			Name:        "replace_lines",
+			Description: "【核心工具】替换笔记中指定行范围的内容。这是最常用的精细修改工具，会自动计算并返回diff。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"note_id": map[string]interface{}{
+						"type":        "string",
+						"description": "笔记的唯一标识符",
+					},
+					"start_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "起始行号（从1开始）",
+					},
+					"end_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "结束行号（包含该行）",
+					},
+					"new_content": map[string]interface{}{
+						"type":        "string",
+						"description": "替换后的新内容",
+					},
+				},
+				"required": []string{"note_id", "start_line", "end_line", "new_content"},
+			},
+		},
+		{
+			Name:        "insert_lines",
+			Description: "在笔记的指定行之后插入新内容。会自动计算并返回diff。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"note_id": map[string]interface{}{
+						"type":        "string",
+						"description": "笔记的唯一标识符",
+					},
+					"after_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "在此行号之后插入（0表示在文件开头插入）",
+					},
+					"content_to_insert": map[string]interface{}{
+						"type":        "string",
+						"description": "要插入的内容",
+					},
+				},
+				"required": []string{"note_id", "after_line", "content_to_insert"},
+			},
+		},
+		{
+			Name:        "delete_lines",
+			Description: "删除笔记中指定行范围的内容。会自动计算并返回diff。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"note_id": map[string]interface{}{
+						"type":        "string",
+						"description": "笔记的唯一标识符",
+					},
+					"start_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "起始行号（从1开始）",
+					},
+					"end_line": map[string]interface{}{
+						"type":        "integer",
+						"description": "结束行号（包含该行）",
+					},
+				},
+				"required": []string{"note_id", "start_line", "end_line"},
 			},
 		},
 		{
@@ -122,6 +214,53 @@ func GetKnowledgeTools() []ToolDefinition {
 				"properties": map[string]interface{}{},
 			},
 		},
+		{
+			Name:        "create_todo_list",
+			Description: "【规划工具】创建任务计划列表。在处理复杂任务时，先列出行动计划，让用户看到你的思路。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"note_id": map[string]interface{}{
+						"type":        "string",
+						"description": "任务关联的笔记ID（可选）",
+					},
+					"todo_list": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "string",
+						},
+						"description": "任务列表，每项一个字符串",
+					},
+				},
+				"required": []string{"todo_list"},
+			},
+		},
+		{
+			Name:        "update_todo_list",
+			Description: "【规划工具】更新任务列表的状态。标记已完成的任务，添加新发现的任务。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"todo_list": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"task": map[string]interface{}{
+									"type": "string",
+								},
+								"status": map[string]interface{}{
+									"type": "string",
+									"enum": []string{"pending", "in_progress", "completed"},
+								},
+							},
+						},
+						"description": "任务列表，包含任务内容和状态",
+					},
+				},
+				"required": []string{"todo_list"},
+			},
+		},
 	}
 }
 
@@ -132,12 +271,24 @@ func ExecuteKnowledgeTool(toolName string, args map[string]interface{}, knowledg
 		return searchNotes(args, knowledgeBasePath)
 	case "read_note":
 		return readNote(args, knowledgeBasePath)
+	case "read_lines":
+		return readLines(args, knowledgeBasePath)
 	case "update_note":
 		return updateNote(args, knowledgeBasePath)
+	case "replace_lines":
+		return replaceLines(args, knowledgeBasePath)
+	case "insert_lines":
+		return insertLines(args, knowledgeBasePath)
+	case "delete_lines":
+		return deleteLines(args, knowledgeBasePath)
 	case "create_note":
 		return createNote(args, knowledgeBasePath)
 	case "list_notes":
 		return listNotes(knowledgeBasePath)
+	case "create_todo_list":
+		return createTodoList(args)
+	case "update_todo_list":
+		return updateTodoList(args)
 	default:
 		return "", fmt.Errorf("未知的知识库工具: %s", toolName)
 	}
@@ -979,4 +1130,485 @@ func MoveNote(sourcePath, destFolderPath, basePath string) error {
 	}
 
 	return nil
+}
+
+// readLines 精确读取笔记的指定行范围
+func readLines(args map[string]interface{}, basePath string) (string, error) {
+	noteID, ok := args["note_id"].(string)
+	if !ok || noteID == "" {
+		return "", fmt.Errorf("缺少必需参数: note_id")
+	}
+
+	startLine, ok := extractInt(args, "start_line")
+	if !ok || startLine < 1 {
+		return "", fmt.Errorf("缺少必需参数: start_line (必须 >= 1)")
+	}
+
+	endLine, ok := extractInt(args, "end_line")
+	if !ok || endLine < startLine {
+		return "", fmt.Errorf("缺少必需参数: end_line (必须 >= start_line)")
+	}
+
+	// 添加 .md 扩展名
+	if !strings.HasSuffix(noteID, ".md") {
+		noteID += ".md"
+	}
+
+	// 安全路径检查
+	notePath, err := sanitizePath(basePath, noteID)
+	if err != nil {
+		return "", err
+	}
+
+	// 读取文件
+	content, err := os.ReadFile(notePath)
+	if err != nil {
+		return "", fmt.Errorf("读取笔记失败: %v", err)
+	}
+
+	// 解析并跳过 Front Matter
+	_, plainContent, _ := parseFrontMatter(string(content))
+	lines := strings.Split(plainContent, "\n")
+
+	// 验证行号范围
+	if startLine > len(lines) {
+		return "", fmt.Errorf("start_line (%d) 超出文件范围（总共 %d 行）", startLine, len(lines))
+	}
+
+	// 调整 endLine 以不超过文件范围
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+
+	// 提取指定范围的行
+	selectedLines := lines[startLine-1 : endLine]
+
+	// 构建返回结果
+	result := map[string]interface{}{
+		"note_id":    strings.TrimSuffix(noteID, ".md"),
+		"start_line": startLine,
+		"end_line":   endLine,
+		"lines":      []map[string]interface{}{},
+	}
+
+	linesData := []map[string]interface{}{}
+	for i, line := range selectedLines {
+		linesData = append(linesData, map[string]interface{}{
+			"line":    startLine + i,
+			"content": line,
+		})
+	}
+	result["lines"] = linesData
+
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	return string(resultJSON), nil
+}
+
+// extractInt 从参数中提取整数
+func extractInt(args map[string]interface{}, key string) (int, bool) {
+	if val, ok := args[key].(float64); ok {
+		return int(val), true
+	}
+	if val, ok := args[key].(int); ok {
+		return val, true
+	}
+	return 0, false
+}
+
+// replaceLines 替换指定行范围的内容
+func replaceLines(args map[string]interface{}, basePath string) (string, error) {
+	noteID, ok := args["note_id"].(string)
+	if !ok || noteID == "" {
+		return "", fmt.Errorf("缺少必需参数: note_id")
+	}
+
+	startLine, ok := extractInt(args, "start_line")
+	if !ok || startLine < 1 {
+		return "", fmt.Errorf("缺少必需参数: start_line (必须 >= 1)")
+	}
+
+	endLine, ok := extractInt(args, "end_line")
+	if !ok || endLine < startLine {
+		return "", fmt.Errorf("缺少必需参数: end_line (必须 >= start_line)")
+	}
+
+	newContent, ok := args["new_content"].(string)
+	if !ok {
+		return "", fmt.Errorf("缺少必需参数: new_content")
+	}
+
+	// 添加 .md 扩展名
+	if !strings.HasSuffix(noteID, ".md") {
+		noteID += ".md"
+	}
+
+	// 安全路径检查
+	notePath, err := sanitizePath(basePath, noteID)
+	if err != nil {
+		return "", err
+	}
+
+	// 读取原文件
+	originalFileContent, err := os.ReadFile(notePath)
+	if err != nil {
+		return "", fmt.Errorf("读取笔记失败: %v", err)
+	}
+
+	originalStr := string(originalFileContent)
+	metadata, plainContent, _ := parseFrontMatter(originalStr)
+
+	// 分割内容为行
+	lines := strings.Split(plainContent, "\n")
+
+	// 验证行号范围
+	if startLine > len(lines) {
+		return "", fmt.Errorf("start_line (%d) 超出文件范围（总共 %d 行）", startLine, len(lines))
+	}
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+
+	// 保存原始内容（用于计算diff）
+	originalPlainContent := plainContent
+
+	// 执行替换
+	newLines := strings.Split(newContent, "\n")
+	resultLines := append(lines[:startLine-1], newLines...)
+	if endLine < len(lines) {
+		resultLines = append(resultLines, lines[endLine:]...)
+	}
+
+	newPlainContent := strings.Join(resultLines, "\n")
+
+	// 重建完整内容（包含Front Matter）
+	finalContent := rebuildContentWithFrontMatter(originalStr, metadata, newPlainContent)
+
+	// 写回文件
+	err = os.WriteFile(notePath, []byte(finalContent), 0644)
+	if err != nil {
+		return "", fmt.Errorf("写入笔记失败: %v", err)
+	}
+
+	// 计算diff
+	diffData := computeDiff(originalPlainContent, newPlainContent)
+
+	// 构造返回结果
+	result := DiffResult{
+		Success:         true,
+		NoteID:          strings.TrimSuffix(noteID, ".md"),
+		Message:         fmt.Sprintf("已成功替换笔记 '%s' 的第 %d-%d 行", strings.TrimSuffix(noteID, ".md"), startLine, endLine),
+		DiffData:        diffData,
+		OriginalContent: originalPlainContent,
+		NewContent:      newPlainContent,
+	}
+
+	resultJSON, _ := json.Marshal(result)
+	return string(resultJSON), nil
+}
+
+// insertLines 在指定行之后插入新内容
+func insertLines(args map[string]interface{}, basePath string) (string, error) {
+	noteID, ok := args["note_id"].(string)
+	if !ok || noteID == "" {
+		return "", fmt.Errorf("缺少必需参数: note_id")
+	}
+
+	afterLine, ok := extractInt(args, "after_line")
+	if !ok || afterLine < 0 {
+		return "", fmt.Errorf("缺少必需参数: after_line (必须 >= 0，0表示在文件开头插入)")
+	}
+
+	contentToInsert, ok := args["content_to_insert"].(string)
+	if !ok {
+		return "", fmt.Errorf("缺少必需参数: content_to_insert")
+	}
+
+	// 添加 .md 扩展名
+	if !strings.HasSuffix(noteID, ".md") {
+		noteID += ".md"
+	}
+
+	// 安全路径检查
+	notePath, err := sanitizePath(basePath, noteID)
+	if err != nil {
+		return "", err
+	}
+
+	// 读取原文件
+	originalFileContent, err := os.ReadFile(notePath)
+	if err != nil {
+		return "", fmt.Errorf("读取笔记失败: %v", err)
+	}
+
+	originalStr := string(originalFileContent)
+	metadata, plainContent, _ := parseFrontMatter(originalStr)
+
+	// 分割内容为行
+	lines := strings.Split(plainContent, "\n")
+
+	// 验证行号
+	if afterLine > len(lines) {
+		return "", fmt.Errorf("after_line (%d) 超出文件范围（总共 %d 行）", afterLine, len(lines))
+	}
+
+	// 保存原始内容
+	originalPlainContent := plainContent
+
+	// 执行插入
+	insertLines := strings.Split(contentToInsert, "\n")
+	var resultLines []string
+	if afterLine == 0 {
+		// 在文件开头插入
+		resultLines = append(insertLines, lines...)
+	} else {
+		// 在指定行之后插入
+		resultLines = append(lines[:afterLine], insertLines...)
+		resultLines = append(resultLines, lines[afterLine:]...)
+	}
+
+	newPlainContent := strings.Join(resultLines, "\n")
+
+	// 重建完整内容
+	finalContent := rebuildContentWithFrontMatter(originalStr, metadata, newPlainContent)
+
+	// 写回文件
+	err = os.WriteFile(notePath, []byte(finalContent), 0644)
+	if err != nil {
+		return "", fmt.Errorf("写入笔记失败: %v", err)
+	}
+
+	// 计算diff
+	diffData := computeDiff(originalPlainContent, newPlainContent)
+
+	// 构造返回结果
+	result := DiffResult{
+		Success:         true,
+		NoteID:          strings.TrimSuffix(noteID, ".md"),
+		Message:         fmt.Sprintf("已成功在笔记 '%s' 的第 %d 行之后插入内容", strings.TrimSuffix(noteID, ".md"), afterLine),
+		DiffData:        diffData,
+		OriginalContent: originalPlainContent,
+		NewContent:      newPlainContent,
+	}
+
+	resultJSON, _ := json.Marshal(result)
+	return string(resultJSON), nil
+}
+
+// deleteLines 删除指定行范围的内容
+func deleteLines(args map[string]interface{}, basePath string) (string, error) {
+	noteID, ok := args["note_id"].(string)
+	if !ok || noteID == "" {
+		return "", fmt.Errorf("缺少必需参数: note_id")
+	}
+
+	startLine, ok := extractInt(args, "start_line")
+	if !ok || startLine < 1 {
+		return "", fmt.Errorf("缺少必需参数: start_line (必须 >= 1)")
+	}
+
+	endLine, ok := extractInt(args, "end_line")
+	if !ok || endLine < startLine {
+		return "", fmt.Errorf("缺少必需参数: end_line (必须 >= start_line)")
+	}
+
+	// 添加 .md 扩展名
+	if !strings.HasSuffix(noteID, ".md") {
+		noteID += ".md"
+	}
+
+	// 安全路径检查
+	notePath, err := sanitizePath(basePath, noteID)
+	if err != nil {
+		return "", err
+	}
+
+	// 读取原文件
+	originalFileContent, err := os.ReadFile(notePath)
+	if err != nil {
+		return "", fmt.Errorf("读取笔记失败: %v", err)
+	}
+
+	originalStr := string(originalFileContent)
+	metadata, plainContent, _ := parseFrontMatter(originalStr)
+
+	// 分割内容为行
+	lines := strings.Split(plainContent, "\n")
+
+	// 验证行号范围
+	if startLine > len(lines) {
+		return "", fmt.Errorf("start_line (%d) 超出文件范围（总共 %d 行）", startLine, len(lines))
+	}
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+
+	// 保存原始内容
+	originalPlainContent := plainContent
+
+	// 执行删除
+	var resultLines []string
+	if startLine > 1 {
+		resultLines = append(resultLines, lines[:startLine-1]...)
+	}
+	if endLine < len(lines) {
+		resultLines = append(resultLines, lines[endLine:]...)
+	}
+
+	newPlainContent := strings.Join(resultLines, "\n")
+
+	// 重建完整内容
+	finalContent := rebuildContentWithFrontMatter(originalStr, metadata, newPlainContent)
+
+	// 写回文件
+	err = os.WriteFile(notePath, []byte(finalContent), 0644)
+	if err != nil {
+		return "", fmt.Errorf("写入笔记失败: %v", err)
+	}
+
+	// 计算diff
+	diffData := computeDiff(originalPlainContent, newPlainContent)
+
+	// 构造返回结果
+	result := DiffResult{
+		Success:         true,
+		NoteID:          strings.TrimSuffix(noteID, ".md"),
+		Message:         fmt.Sprintf("已成功删除笔记 '%s' 的第 %d-%d 行", strings.TrimSuffix(noteID, ".md"), startLine, endLine),
+		DiffData:        diffData,
+		OriginalContent: originalPlainContent,
+		NewContent:      newPlainContent,
+	}
+
+	resultJSON, _ := json.Marshal(result)
+	return string(resultJSON), nil
+}
+
+// rebuildContentWithFrontMatter 重建包含Front Matter的完整内容
+func rebuildContentWithFrontMatter(originalContent string, metadata map[string]interface{}, newPlainContent string) string {
+	// 检查是否有YAML Front Matter
+	if strings.HasPrefix(originalContent, "---\n") {
+		parts := strings.SplitN(originalContent, "---\n", 3)
+		if len(parts) >= 3 {
+			frontMatter := parts[1]
+
+			// 更新 updated_at 时间戳
+			now := time.Now().Format(time.RFC3339)
+			lines := strings.Split(frontMatter, "\n")
+			updatedLines := []string{}
+			hasUpdatedAt := false
+
+			for _, line := range lines {
+				if strings.HasPrefix(line, "updated_at:") {
+					updatedLines = append(updatedLines, fmt.Sprintf("updated_at: %s", now))
+					hasUpdatedAt = true
+				} else {
+					updatedLines = append(updatedLines, line)
+				}
+			}
+
+			// 如果没有updated_at字段，添加它
+			if !hasUpdatedAt {
+				updatedLines = append(updatedLines, fmt.Sprintf("updated_at: %s", now))
+			}
+
+			return fmt.Sprintf("---\n%s\n---\n%s", strings.Join(updatedLines, "\n"), newPlainContent)
+		}
+	}
+
+	// 没有Front Matter，直接返回新内容
+	return newPlainContent
+}
+
+// createTodoList 创建任务列表（状态管理工具）
+func createTodoList(args map[string]interface{}) (string, error) {
+	todoList, ok := args["todo_list"].([]interface{})
+	if !ok {
+		return "", fmt.Errorf("缺少必需参数: todo_list")
+	}
+
+	noteID := ""
+	if nid, ok := args["note_id"].(string); ok {
+		noteID = nid
+	}
+
+	// 构建返回结果
+	tasks := []map[string]interface{}{}
+	for i, item := range todoList {
+		if task, ok := item.(string); ok {
+			tasks = append(tasks, map[string]interface{}{
+				"index":  i + 1,
+				"task":   task,
+				"status": "pending",
+			})
+		}
+	}
+
+	result := map[string]interface{}{
+		"success":   true,
+		"note_id":   noteID,
+		"todo_list": tasks,
+		"message":   fmt.Sprintf("已创建包含 %d 个任务的计划列表", len(tasks)),
+	}
+
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	return string(resultJSON), nil
+}
+
+// updateTodoList 更新任务列表状态
+func updateTodoList(args map[string]interface{}) (string, error) {
+	todoList, ok := args["todo_list"].([]interface{})
+	if !ok {
+		return "", fmt.Errorf("缺少必需参数: todo_list")
+	}
+
+	// 解析任务列表
+	tasks := []map[string]interface{}{}
+	for i, item := range todoList {
+		if taskMap, ok := item.(map[string]interface{}); ok {
+			task := ""
+			status := "pending"
+
+			if t, ok := taskMap["task"].(string); ok {
+				task = t
+			}
+			if s, ok := taskMap["status"].(string); ok {
+				status = s
+			}
+
+			tasks = append(tasks, map[string]interface{}{
+				"index":  i + 1,
+				"task":   task,
+				"status": status,
+			})
+		}
+	}
+
+	// 统计状态
+	completed := 0
+	inProgress := 0
+	pending := 0
+	for _, task := range tasks {
+		switch task["status"] {
+		case "completed":
+			completed++
+		case "in_progress":
+			inProgress++
+		case "pending":
+			pending++
+		}
+	}
+
+	result := map[string]interface{}{
+		"success":     true,
+		"todo_list":   tasks,
+		"stats": map[string]interface{}{
+			"total":       len(tasks),
+			"completed":   completed,
+			"in_progress": inProgress,
+			"pending":     pending,
+		},
+		"message": fmt.Sprintf("任务列表已更新：%d 已完成, %d 进行中, %d 待处理", completed, inProgress, pending),
+	}
+
+	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	return string(resultJSON), nil
 }

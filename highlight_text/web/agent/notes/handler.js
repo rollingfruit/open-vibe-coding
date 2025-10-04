@@ -10,10 +10,48 @@ class KnowledgeAgentHandler {
         this.maxIterations = 10;
         this.availableTools = [];
         this.conversationHistory = [];
+        this.currentTodoList = [];
+        this.sessionLogFile = null; // 当前会话的日志文件名
     }
 
     generateSessionId() {
         return `knowledge_agent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    /**
+     * 写入调试日志到 logs/notes 文件夹
+     */
+    async writeDebugLog(logData) {
+        try {
+            // 如果没有日志文件，创建一个
+            if (!this.sessionLogFile) {
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                this.sessionLogFile = `session_${timestamp}.json`;
+            }
+
+            // 准备日志条目
+            const logEntry = {
+                timestamp: new Date().toISOString(),
+                sessionId: this.sessionId,
+                ...logData
+            };
+
+            // 调用后端API写入日志
+            const response = await fetch('http://localhost:8080/agent/knowledge/write-log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: this.sessionLogFile,
+                    logEntry: logEntry
+                })
+            });
+
+            if (!response.ok) {
+                console.error('写入日志失败:', await response.text());
+            }
+        } catch (error) {
+            console.error('写入调试日志失败:', error);
+        }
     }
 
     /**
@@ -34,7 +72,7 @@ class KnowledgeAgentHandler {
     /**
      * 构建知识库专用的系统提示
      */
-    buildSystemPrompt() {
+    buildSystemPrompt(isComplexTask = false) {
         const toolsDescription = this.availableTools.map(tool => {
             const params = tool.parameters?.properties || {};
             const required = tool.parameters?.required || [];
@@ -46,21 +84,51 @@ class KnowledgeAgentHandler {
             return `- ${tool.name}: ${tool.description}\n  参数:\n${paramsDesc}`;
         }).join('\n\n');
 
-        return `你是一个专业的写作和研究助理(Copilot)。你的任务是：
+        // 根据任务复杂度动态构建提示
+        const planningGuidance = isComplexTask ? `
 
+**【重要】任务规划模式**：
+对于复杂任务（如重构段落、批量修改、多步骤操作），你必须先制定计划：
+
+1. **第一步：使用 create_todo_list 工具创建任务计划**
+   - 将复杂任务分解为清晰的步骤
+   - 例如：["阅读第2段内容和相关参考笔记", "搜索相关数据支撑", "生成新段落", "使用replace_lines替换原内容"]
+
+2. **后续步骤：按照计划逐步执行**
+   - 执行每一步时使用 update_todo_list 更新状态
+   - 使用精细化工具（read_lines, replace_lines, insert_lines, delete_lines）而不是粗暴的update_note
+
+3. **并行化读取**：
+   - 在信息收集阶段，同时发起多个读取操作（read_lines, search_notes）
+   - 例如：同时读取目标段落和搜索相关笔记
+
+**精细化工具优先级**：
+- read_lines > read_note (精确读取指定行，避免加载整个文件)
+- replace_lines > update_note (仅替换需要修改的行)
+- insert_lines/delete_lines (更精确的内容操作)
+
+` : `
+
+**工作模式**：
+- 优先使用 \`search_notes\` 在知识库中查找相关信息（支持 tag:标签名 格式搜索标签）
+- 使用 \`read_note\` 或 \`read_lines\` 获取笔记内容
+- 使用精细化工具修改笔记：\`replace_lines\`, \`insert_lines\`, \`delete_lines\`
+- 避免使用 \`update_note\`（高风险的全文覆写操作）
+
+`;
+
+        return `你是一个专业的智能写作伙伴(Copilot)。你从"工具执行者"进化为具备规划、执行、反思能力的助手。
+
+**核心能力**：
 1. 根据用户正在编辑的笔记内容和整个知识库的上下文来回答问题
 2. 提供写作建议和内容扩展
 3. 在知识库中查找相关信息
 4. 帮助用户组织和连接知识
+5. 智能规划和分解复杂任务
 
 **可用工具**：
 ${toolsDescription}
-
-**工作模式**：
-- 优先使用 \`search_notes\` 在知识库中查找相关信息（支持 tag:标签名 格式搜索标签）
-- 使用 \`read_note\` 获取完整笔记内容
-- 使用 \`update_note\` 将生成的内容写回笔记
-- 使用 \`create_note\` 创建新的笔记
+${planningGuidance}
 
 **知识库特性**：
 - 每篇笔记可能包含YAML Front Matter元数据（位于文件开头，由---包围）
@@ -97,10 +165,10 @@ JSON格式：
     /**
      * 调用LLM
      */
-    async callLLM(userMessage) {
+    async callLLM(userMessage, isComplexTask = false) {
         const settings = this.mainApp.settings;
         const messages = [
-            { role: 'system', content: this.buildSystemPrompt() },
+            { role: 'system', content: this.buildSystemPrompt(isComplexTask) },
             ...this.conversationHistory,
             { role: 'user', content: userMessage }
         ];
@@ -135,11 +203,30 @@ JSON格式：
     }
 
     /**
+     * 检测任务复杂度
+     */
+    detectTaskComplexity(task) {
+        const complexKeywords = [
+            '重构', '修改', '批量', '多个', '全部', '所有',
+            '扩展', '增加数据', '改写', '润色', '优化',
+            '段落', '章节', '修正', '调整', '更新多'
+        ];
+
+        return complexKeywords.some(keyword => task.includes(keyword));
+    }
+
+    /**
      * 执行知识库工具
      */
     async executeToolOnBackend(toolName, args) {
+        // 特殊处理：TODO 列表工具（前端管理状态）
+        if (toolName === 'create_todo_list' || toolName === 'update_todo_list') {
+            return await this.handleTodoListTool(toolName, args);
+        }
+
         // 检查是否是修改文件的工具
-        if (toolName === 'update_note' || toolName === 'create_note') {
+        const modifyTools = ['update_note', 'create_note', 'replace_lines', 'insert_lines', 'delete_lines'];
+        if (modifyTools.includes(toolName)) {
             // 提取文件夹路径
             const noteId = args.note_id || args.title || '';
             const folderPath = noteId.includes('/') ? noteId.substring(0, noteId.lastIndexOf('/')) : '';
@@ -175,8 +262,9 @@ JSON格式：
 
             const result = await response.json();
 
-            // 如果是update_note或create_note，处理diff显示
-            if (result.success && (toolName === 'update_note' || toolName === 'create_note')) {
+            // 处理带diff的工具执行结果
+            const diffTools = ['update_note', 'create_note', 'replace_lines', 'insert_lines', 'delete_lines'];
+            if (result.success && diffTools.includes(toolName)) {
                 console.log('🔍 工具执行成功，开始处理diff:', toolName);
                 console.log('📦 后端返回结果:', result);
 
@@ -220,6 +308,278 @@ JSON格式：
                 error: error.message
             };
         }
+    }
+
+    /**
+     * 处理TODO列表工具（前端状态管理）
+     */
+    async handleTodoListTool(toolName, args) {
+        try {
+            if (toolName === 'create_todo_list') {
+                const todoList = args.todo_list || [];
+                this.currentTodoList = todoList.map((task, index) => ({
+                    index: index + 1,
+                    task: task,
+                    status: 'pending'
+                }));
+
+                // 记录日志
+                await this.writeDebugLog({
+                    type: 'create_todo_list',
+                    inputArgs: args,
+                    currentTodoList: JSON.parse(JSON.stringify(this.currentTodoList))
+                });
+
+                // 在 Copilot 面板显示 TODO 列表
+                this.displayTodoList();
+
+                // 强制浏览器渲染UI，并提供一个短暂的视觉停留
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                return {
+                    success: true,
+                    output: JSON.stringify({
+                        success: true,
+                        note_id: args.note_id || '',
+                        todo_list: this.currentTodoList,
+                        message: `已创建包含 ${this.currentTodoList.length} 个任务的计划列表`
+                    })
+                };
+            } else if (toolName === 'update_todo_list') {
+                const todoList = args.todo_list || [];
+
+                // 记录更新前的状态
+                const beforeUpdate = JSON.parse(JSON.stringify(this.currentTodoList));
+
+                this.currentTodoList = todoList.map((item, index) => ({
+                    index: index + 1,
+                    task: item.task || '',
+                    status: item.status || 'pending'
+                }));
+
+                // 统计状态
+                const stats = {
+                    total: this.currentTodoList.length,
+                    completed: this.currentTodoList.filter(t => t.status === 'completed').length,
+                    in_progress: this.currentTodoList.filter(t => t.status === 'in_progress').length,
+                    pending: this.currentTodoList.filter(t => t.status === 'pending').length
+                };
+
+                // 记录日志
+                await this.writeDebugLog({
+                    type: 'update_todo_list',
+                    inputArgs: args,
+                    beforeUpdate: beforeUpdate,
+                    afterUpdate: JSON.parse(JSON.stringify(this.currentTodoList)),
+                    stats: stats
+                });
+
+                // 更新 Copilot 面板中的 TODO 列表
+                this.displayTodoList();
+
+                // 强制浏览器渲染UI，并提供一个短暂的视觉停留
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                return {
+                    success: true,
+                    output: JSON.stringify({
+                        success: true,
+                        todo_list: this.currentTodoList,
+                        stats: stats,
+                        message: `任务列表已更新：${stats.completed} 已完成, ${stats.in_progress} 进行中, ${stats.pending} 待处理`
+                    })
+                };
+            }
+        } catch (error) {
+            console.error('处理TODO列表失败:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * 在 Copilot 输入区域上方显示 TODO 列表（独立容器）
+     */
+    displayTodoList() {
+        const copilotInputArea = document.getElementById('copilotInputArea');
+        if (!copilotInputArea) {
+            console.error('copilotInputArea 未找到');
+            return;
+        }
+
+        // 查找或创建 TODO 列表容器（在 copilotInputArea 上方）
+        let todoContainer = document.getElementById('copilotTodoContainer');
+        const isFirstRender = !todoContainer;
+
+        if (!todoContainer) {
+            todoContainer = document.createElement('div');
+            todoContainer.id = 'copilotTodoContainer';
+            todoContainer.className = 'copilot-todo-container';
+
+            // 插入到 copilotInputArea 之前
+            copilotInputArea.parentNode.insertBefore(todoContainer, copilotInputArea);
+        }
+
+        // 如果没有任务，隐藏容器
+        if (!this.currentTodoList || this.currentTodoList.length === 0) {
+            todoContainer.classList.add('hidden');
+            return;
+        }
+
+        // 显示容器
+        todoContainer.classList.remove('hidden');
+
+        // 统计任务状态
+        const stats = {
+            total: this.currentTodoList.length,
+            completed: this.currentTodoList.filter(t => t.status === 'completed').length,
+            in_progress: this.currentTodoList.filter(t => t.status === 'in_progress').length,
+            pending: this.currentTodoList.filter(t => t.status === 'pending').length
+        };
+
+        const progress = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+
+        // 如果是首次渲染，完整渲染整个容器
+        if (isFirstRender) {
+            this.renderFullTodoList(todoContainer, stats, progress);
+        } else {
+            // 否则，只更新变化的部分
+            this.updateTodoListItems(todoContainer, stats, progress);
+        }
+    }
+
+    /**
+     * 完整渲染 TODO 列表
+     */
+    renderFullTodoList(todoContainer, stats, progress) {
+        const todoHTML = `
+            <div class="todo-header">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="list-checks" class="w-5 h-5 text-purple-400"></i>
+                        <span class="font-bold text-purple-400 text-base">任务计划</span>
+                        <span id="todoStatsText" class="text-xs text-gray-400">${stats.completed}/${stats.total} 已完成</span>
+                    </div>
+                    <button id="closeTodoBtn" class="text-gray-400 hover:text-gray-200 transition" title="关闭任务列表">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- 进度条 -->
+                <div class="todo-progress-bar">
+                    <div id="todoProgressFill" class="todo-progress-fill" style="width: ${progress}%"></div>
+                </div>
+            </div>
+
+            <ul id="todoItemsList" class="todo-list">
+                ${this.renderTodoItems()}
+            </ul>
+        `;
+
+        todoContainer.innerHTML = todoHTML;
+
+        // 绑定关闭按钮事件
+        const closeBtn = todoContainer.querySelector('#closeTodoBtn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                todoContainer.classList.add('hidden');
+            });
+        }
+
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        // 滚动到进行中的任务
+        this.scrollToActiveTask(todoContainer);
+    }
+
+    /**
+     * 增量更新 TODO 列表项
+     */
+    updateTodoListItems(todoContainer, stats, progress) {
+        // 更新统计信息
+        const statsText = todoContainer.querySelector('#todoStatsText');
+        if (statsText) {
+            statsText.textContent = `${stats.completed}/${stats.total} 已完成`;
+        }
+
+        // 更新进度条
+        const progressFill = todoContainer.querySelector('#todoProgressFill');
+        if (progressFill) {
+            progressFill.style.width = `${progress}%`;
+        }
+
+        // 更新每个任务项
+        const todoItemsList = todoContainer.querySelector('#todoItemsList');
+        if (!todoItemsList) {
+            // 如果列表不存在，完整重新渲染
+            this.renderFullTodoList(todoContainer, stats, progress);
+            return;
+        }
+
+        // 重新渲染所有任务项（简单高效，避免复杂的增量更新逻辑）
+        todoItemsList.innerHTML = this.renderTodoItems();
+
+        // 滚动到进行中的任务
+        this.scrollToActiveTask(todoContainer);
+    }
+
+    /**
+     * 渲染 TODO 项 HTML
+     */
+    renderTodoItems() {
+        return this.currentTodoList.map((item, index) => {
+            const { circleClass, textClass, iconColor, itemClass } = this.getTodoItemClasses(item.status);
+
+            return `
+                <li class="todo-item ${itemClass}" data-index="${index}">
+                    <span class="${circleClass} ${iconColor}"></span>
+                    <span class="${textClass}">${this.escapeHtml(item.task)}</span>
+                </li>
+            `;
+        }).join('');
+    }
+
+    /**
+     * 根据状态获取 TODO 项的样式类
+     */
+    getTodoItemClasses(status) {
+        let circleClass = 'todo-circle-empty';
+        let textClass = 'todo-text-pending';
+        let iconColor = 'text-gray-400';
+        let itemClass = 'todo-item-pending';
+
+        if (status === 'completed') {
+            circleClass = 'todo-circle-filled';
+            textClass = 'todo-text-completed';
+            iconColor = 'text-green-400';
+            itemClass = 'todo-item-completed';
+        } else if (status === 'in_progress') {
+            circleClass = 'todo-circle-progress';
+            textClass = 'todo-text-progress';
+            iconColor = 'text-blue-400';
+            itemClass = 'todo-item-progress';
+        }
+
+        return { circleClass, textClass, iconColor, itemClass };
+    }
+
+    /**
+     * 滚动到当前活动的任务
+     */
+    scrollToActiveTask(todoContainer) {
+        setTimeout(() => {
+            const progressItem = todoContainer.querySelector('.todo-item-progress');
+            const firstPendingItem = todoContainer.querySelector('.todo-item-pending');
+            const targetItem = progressItem || firstPendingItem;
+
+            if (targetItem) {
+                targetItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }, 100);
     }
 
     /**
@@ -300,8 +660,24 @@ JSON格式：
 
         const container = bubble.querySelector('.copilot-trace-content');
 
-        // 折叠所有之前的步骤（除了final类型）
-        const previousSteps = container.querySelectorAll('.agent-trace-step:not(.collapsed):not(.final-step)');
+        // 检查是否是 TODO 工具（不折叠）
+        const isTodoTool = data && (data.action === 'create_todo_list' || data.action === 'update_todo_list');
+        const actionName = data?.action || '';
+        const isTodoAction = actionName === 'create_todo_list' || actionName === 'update_todo_list';
+
+        // 记录 TraceStep 日志
+        this.writeDebugLog({
+            type: 'trace_step',
+            traceType: type,
+            content: content,
+            data: data,
+            isTodoTool: isTodoTool,
+            isTodoAction: isTodoAction,
+            currentTodoList: JSON.parse(JSON.stringify(this.currentTodoList))
+        });
+
+        // 折叠所有之前的步骤（除了final类型和TODO工具）
+        const previousSteps = container.querySelectorAll('.agent-trace-step:not(.collapsed):not(.final-step):not(.no-auto-collapse)');
         previousSteps.forEach(step => {
             if (!step.classList.contains('collapsed')) {
                 this.collapseTraceStep(step);
@@ -310,6 +686,11 @@ JSON格式：
 
         const stepDiv = document.createElement('div');
         stepDiv.className = 'agent-trace-step border rounded-lg p-3 mb-2 cursor-pointer';
+
+        // 标记 TODO 工具相关步骤，防止自动折叠
+        if (isTodoTool || isTodoAction) {
+            stepDiv.classList.add('no-auto-collapse');
+        }
 
         let iconName = 'circle';
         let titleColor = 'text-gray-400';
@@ -432,8 +813,12 @@ JSON格式：
         this.sessionId = this.generateSessionId();
         this.isActive = true;
         this.conversationHistory = [];
+        this.currentTodoList = [];
 
         await this.fetchAvailableTools();
+
+        // 检测任务复杂度
+        const isComplexTask = this.detectTaskComplexity(initialTask);
 
         // 读取上下文文件内容
         let contextFilesContent = '';
@@ -503,7 +888,7 @@ JSON格式：
 
                 this.addTraceStep('thought', `第 ${iteration} 轮思考中...`);
 
-                const llmResult = await this.callLLM(currentMessage);
+                const llmResult = await this.callLLM(currentMessage, isComplexTask);
                 const llmResponse = llmResult.content;
                 const parsed = this.parseLLMResponse(llmResponse);
 
