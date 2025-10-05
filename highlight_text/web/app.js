@@ -28,6 +28,7 @@ class AIAssistant {
         this.notesWebSocket = null; // WebSocket连接
         this.approvedFolders = new Set(); // 已授权的文件夹路径集合
         this.activeNoteOriginalContent = null; // 笔记的原始内容（用于手动编辑diff）
+        this.contentBeforeLLMUpdate = null; // LLM修改前的内容（用于全部回退）
         this.copilotContextFiles = []; // Copilot上下文文件列表
         this.shortcutManager = null; // 快捷键管理器
 
@@ -2756,17 +2757,33 @@ ${selectedText}`;
                 modifiedText +
                 originalFullContent.substring(selectionEnd);
 
-            // 计算diff
-            const diffData = this.computeClientDiff(this.activeNoteOriginalContent || originalFullContent, newFullContent);
+            console.log('🎯 右键修改完成，准备显示Diff');
 
-            // 临时更新编辑器内容（用于diff显示）
+            // ✨ 保存初始内容作为Diff基准（如果还没保存）
+            if (this.contentBeforeLLMUpdate === null || this.contentBeforeLLMUpdate === undefined) {
+                this.contentBeforeLLMUpdate = originalFullContent;
+                console.log('📌 保存初始内容作为 Diff 基准');
+            }
+
+            // ✨ 计算累积diff（从初始状态到当前状态）
+            const cumulativeDiffData = this.computeClientDiff(this.contentBeforeLLMUpdate, newFullContent);
+            console.log(`📊 计算累积 Diff: ${cumulativeDiffData.filter(l => l.type !== 'unchanged').length} 处变更`);
+
+            // ✨ 显示专业Diff视图
+            if (cumulativeDiffData && cumulativeDiffData.length > 0) {
+                this.showInlineDiffInEditorAutoApply(textarea, cumulativeDiffData, newFullContent);
+            }
+
+            // 更新编辑器内容
             textarea.value = newFullContent;
+            this.activeNoteOriginalContent = newFullContent;
 
-            // 显示diff视图
-            await this.displayDiff(this.activeNoteId, diffData, false);
+            // 保存到后端
+            if (this.activeNoteId) {
+                await this.saveNote(this.activeNoteId);
+            }
 
-            this.showNotification('修改完成，请审查变更', 'success');
-
+            this.showNotification('修改完成', 'success');
         } catch (error) {
             console.error('LLM处理失败:', error);
             this.showNotification('处理失败: ' + error.message, 'error');
@@ -4986,159 +5003,7 @@ tags: []
         });
     }
 
-    /**
-     * 显示Diff视图
-     * @param {string} noteId - 笔记ID
-     * @param {Array} diffData - Diff数据数组
-     * @param {boolean} showConfirmButton - 是否显示确认保存按钮（手动编辑时为true）
-     */
-    async displayDiff(noteId, diffData, showConfirmButton = false) {
-        console.log('🎨 displayDiff 被调用 - 原地替换模式');
-        console.log('📝 NoteID:', noteId);
-        console.log('📊 DiffData:', diffData);
 
-        // 确保在编辑器模式
-        if (this.viewMode !== 'editor' || this.activeNoteId !== noteId) {
-            await this.switchToEditorMode(noteId);
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        const noteEditor = document.getElementById('noteEditor');
-        if (!noteEditor) {
-            console.error('❌ 编辑器未找到');
-            return;
-        }
-
-        if (!diffData || diffData.length === 0) {
-            console.warn('⚠️ 没有diff数据');
-            return;
-        }
-
-        // 保存当前diff数据供后续使用
-        this.currentDiffData = diffData;
-        this.currentDiffBlocks = this.groupDiffChanges(diffData);
-
-        // 重新加载后端文件内容（已被Agent修改）
-        await this.reloadNoteContent(noteId);
-
-        // 隐藏textarea编辑器
-        noteEditor.classList.add('hidden');
-
-        // 查找或创建内联diff容器（直接替换noteEditor）
-        let inlineDiffContainer = document.getElementById('inlineDiffContainer');
-        const editorParent = noteEditor.parentElement;
-
-        if (!inlineDiffContainer) {
-            inlineDiffContainer = document.createElement('div');
-            inlineDiffContainer.id = 'inlineDiffContainer';
-            inlineDiffContainer.className = noteEditor.className; // 继承noteEditor的所有class
-            // 插入到noteEditor之后
-            noteEditor.parentNode.insertBefore(inlineDiffContainer, noteEditor.nextSibling);
-        }
-        inlineDiffContainer.classList.remove('hidden');
-        inlineDiffContainer.innerHTML = '';
-
-        // 显示顶部diff审查按钮，隐藏保存按钮
-        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
-        const finishDiffReviewBtn = document.getElementById('finishDiffReviewBtn');
-        const saveNoteBtn = document.getElementById('saveNoteBtn');
-        const togglePreviewBtn = document.getElementById('togglePreviewBtn');
-
-        if (rejectAllChangesBtn) rejectAllChangesBtn.classList.remove('hidden');
-        if (finishDiffReviewBtn) finishDiffReviewBtn.classList.remove('hidden');
-        if (saveNoteBtn) saveNoteBtn.classList.add('hidden');
-        if (togglePreviewBtn) togglePreviewBtn.classList.add('hidden');
-
-        // 初始化图标
-        if (window.lucide) {
-            lucide.createIcons();
-        }
-
-        // 渲染diff内容（逐行显示）
-        this.currentDiffBlocks.forEach((block, blockIndex) => {
-            block.lines.forEach((line, lineIndex) => {
-                const lineDiv = document.createElement('div');
-                lineDiv.className = 'leading-6 py-1 px-3 transition-all duration-200';
-                lineDiv.dataset.blockIndex = blockIndex;
-                lineDiv.dataset.lineIndex = lineIndex;
-                lineDiv.dataset.lineType = line.type;
-
-                if (line.type === 'removed') {
-                    // 删除的行：红色背景
-                    lineDiv.classList.add('bg-red-900', 'bg-opacity-20', 'border-l-4', 'border-red-500');
-                    lineDiv.innerHTML = `<span class="text-red-300 opacity-80">${this.escapeHtml(line.content)}</span>`;
-
-                    // 在删除行后面添加操作按钮（如果下一行是added/modified）
-                    const nextLine = block.lines[lineIndex + 1];
-                    if (nextLine && (nextLine.type === 'added' || nextLine.type === 'modified')) {
-                        const btnDiv = document.createElement('div');
-                        btnDiv.className = 'flex gap-2 justify-end py-1 px-3 bg-gray-700 bg-opacity-30';
-                        btnDiv.innerHTML = `
-                            <button class="diff-reject-change-btn px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-xs transition" data-block="${blockIndex}" data-line="${lineIndex}">
-                                ↶ 回退修改
-                            </button>
-                        `;
-                        inlineDiffContainer.appendChild(lineDiv);
-                        inlineDiffContainer.appendChild(btnDiv);
-                        return; // 跳过后面的appendChild
-                    }
-                } else if (line.type === 'added') {
-                    // 新增的行：绿色背景
-                    lineDiv.classList.add('bg-green-900', 'bg-opacity-20', 'border-l-4', 'border-green-500');
-                    lineDiv.innerHTML = `<span class="text-green-300">${this.escapeHtml(line.content)}</span>`;
-                } else if (line.type === 'modified') {
-                    // 修改的行：先显示旧内容（红），再显示新内容（绿）
-                    const oldLineDiv = document.createElement('div');
-                    oldLineDiv.className = 'leading-6 py-1 px-3 inline-diff-old-line';
-                    oldLineDiv.dataset.blockIndex = blockIndex;
-                    oldLineDiv.dataset.lineType = 'removed';
-
-                    // 红色边框：显示完整的旧内容（可选：带删除标记）
-                    oldLineDiv.innerHTML = `<span class="text-red-300">${this.escapeHtml(line.oldContent)}</span>`;
-
-                    const newLineDiv = document.createElement('div');
-                    newLineDiv.className = 'leading-6 py-1 px-3 inline-diff-new-line';
-                    newLineDiv.dataset.blockIndex = blockIndex;
-                    newLineDiv.dataset.lineType = 'added';
-
-                    // 绿色边框：只显示新内容，高亮新增部分（不显示删除部分）
-                    const inlineDiff = this.computeInlineDiff(line.oldContent, line.content, true);
-                    newLineDiv.innerHTML = inlineDiff;
-
-                    // 添加操作按钮
-                    const btnDiv = document.createElement('div');
-                    btnDiv.className = 'flex gap-2 justify-end py-1 px-3 bg-gray-700 bg-opacity-30';
-                    btnDiv.innerHTML = `
-                        <button class="diff-reject-change-btn px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-xs transition" data-block="${blockIndex}" data-line="${lineIndex}">
-                            ↶ 回退修改
-                        </button>
-                    `;
-
-                    inlineDiffContainer.appendChild(oldLineDiv);
-                    inlineDiffContainer.appendChild(newLineDiv);
-                    inlineDiffContainer.appendChild(btnDiv);
-                    return; // 跳过后面的appendChild
-                } else {
-                    // 未改变的行：正常显示
-                    lineDiv.classList.add('bg-gray-800', 'bg-opacity-10');
-                    lineDiv.innerHTML = `<span class="text-gray-300">${this.escapeHtml(line.content)}</span>`;
-                }
-
-                inlineDiffContainer.appendChild(lineDiv);
-            });
-        });
-
-        // 绑定回退按钮事件
-        inlineDiffContainer.querySelectorAll('.diff-reject-change-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const blockIndex = parseInt(e.currentTarget.dataset.block);
-                const lineIndex = parseInt(e.currentTarget.dataset.line);
-                this.rejectLineChange(blockIndex, lineIndex);
-            });
-        });
-
-        console.log('✅ 原地diff视图渲染完成');
-    }
 
     /**
      * 重新加载笔记内容（从后端）
@@ -5161,6 +5026,408 @@ tags: []
     }
 
     /**
+     * 准备流式Diff渲染（隐藏编辑器，显示Diff容器）
+     * @param {string} originalContent - 原始内容
+     */
+    async prepareForStreaming(originalContent) {
+        console.log('🎬 准备流式Diff渲染');
+
+        const noteEditor = document.getElementById('noteEditor');
+        const notePreview = document.getElementById('notePreview');
+
+        if (!noteEditor) {
+            console.error('编辑器未找到');
+            return;
+        }
+
+        // ✨ 保存原始内容作为Diff基准（如果还没保存的话）
+        if (this.contentBeforeLLMUpdate === null || this.contentBeforeLLMUpdate === undefined) {
+            this.contentBeforeLLMUpdate = originalContent;
+            console.log('📌 保存初始内容作为 Diff 基准');
+        }
+
+        // 隐藏编辑器和预览
+        noteEditor.classList.add('hidden');
+        if (notePreview) {
+            notePreview.classList.add('hidden');
+        }
+
+        // 查找或创建流式Diff容器
+        let streamingDiffContainer = document.getElementById('streamingDiffContainer');
+        if (!streamingDiffContainer) {
+            streamingDiffContainer = document.createElement('div');
+            streamingDiffContainer.id = 'streamingDiffContainer';
+            streamingDiffContainer.className = noteEditor.className.replace('hidden', ''); // 继承编辑器样式
+            streamingDiffContainer.style.overflowY = 'auto';
+            streamingDiffContainer.style.fontFamily = "'JetBrains Mono', 'Courier New', monospace";
+            streamingDiffContainer.style.fontSize = '13px';
+            noteEditor.parentNode.insertBefore(streamingDiffContainer, noteEditor.nextSibling);
+        }
+
+        streamingDiffContainer.classList.remove('hidden');
+        streamingDiffContainer.innerHTML = '<div class="p-4 text-gray-400">🌊 正在流式生成内容...</div>';
+
+        console.log('✅ 流式Diff容器准备完成');
+    }
+
+    /**
+     * 完成流式Diff渲染（更新编辑器，隐藏Diff容器）
+     * @param {string} noteId - 笔记ID
+     * @param {string} finalContent - 最终内容
+     * @param {string} originalContent - 原始内容
+     */
+    async finalizeStreaming(noteId, finalContent, originalContent) {
+        console.log('🏁 完成流式Diff渲染');
+
+        const noteEditor = document.getElementById('noteEditor');
+        const streamingDiffContainer = document.getElementById('streamingDiffContainer');
+
+        if (!noteEditor) {
+            console.error('编辑器未找到');
+            return;
+        }
+
+        // 更新编辑器内容
+        noteEditor.value = finalContent;
+        this.activeNoteOriginalContent = finalContent;
+
+        // 保存到后端
+        try {
+            const response = await fetch(`http://localhost:8080/api/notes/${noteId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content: finalContent })
+            });
+
+            if (!response.ok) {
+                throw new Error('保存失败');
+            }
+
+            console.log('✅ 内容已保存到后端');
+        } catch (error) {
+            console.error('保存失败:', error);
+            this.showNotification('保存失败: ' + error.message, 'error');
+        }
+
+        // 隐藏Diff容器，显示编辑器
+        if (streamingDiffContainer) {
+            streamingDiffContainer.classList.add('hidden');
+        }
+        noteEditor.classList.remove('hidden');
+
+        // 如果在预览模式，更新预览
+        if (this.isEditorPreview) {
+            this.updateEditorPreview();
+            const notePreview = document.getElementById('notePreview');
+            if (notePreview) {
+                notePreview.classList.remove('hidden');
+            }
+        }
+
+        // 显示回退按钮
+        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
+        if (rejectAllChangesBtn) {
+            rejectAllChangesBtn.classList.remove('hidden');
+        }
+
+        this.showNotification('内容改写完成', 'success');
+        console.log('✅ 流式Diff渲染完成');
+    }
+
+    /**
+     * 直接更新编辑器内容（在 noteEditor 位置内联显示 Diff）
+     * @param {string} noteId - 笔记ID
+     * @param {string} newContent - 新内容
+     * @param {Array} diffData - Diff数据（用于回退功能）
+     */
+    async updateEditorContentDirectly(noteId, newContent, diffData) {
+        console.log('✨ 累积 Diff 模式：更新编辑器内容', { noteId, newContentLength: newContent?.length });
+
+        // 确保在编辑器模式
+        if (this.viewMode !== 'editor' || this.activeNoteId !== noteId) {
+            console.log('🔄 切换到编辑器模式');
+            await this.switchToEditorMode(noteId);
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        const noteEditor = document.getElementById('noteEditor');
+        if (!noteEditor) {
+            console.error('❌ 编辑器未找到');
+            return;
+        }
+
+        // ✨ 关键：如果这是 Agent 的第一次修改，保存初始内容
+        if (this.contentBeforeLLMUpdate === null || this.contentBeforeLLMUpdate === undefined) {
+            this.contentBeforeLLMUpdate = noteEditor.value;
+            console.log('📌 保存初始内容作为 Diff 基准', {
+                length: this.contentBeforeLLMUpdate.length
+            });
+        }
+
+        // ✨ 关键：计算从初始状态到当前新内容的累积 Diff
+        console.log('🔍 开始计算累积Diff...', {
+            原始长度: this.contentBeforeLLMUpdate.length,
+            新内容长度: newContent.length
+        });
+        const cumulativeDiffData = this.computeClientDiff(this.contentBeforeLLMUpdate, newContent);
+        console.log(`📊 累积Diff计算完成:`, {
+            总行数: cumulativeDiffData.length,
+            变更数: cumulativeDiffData.filter(l => l.type !== 'unchanged').length,
+            前3行示例: cumulativeDiffData.slice(0, 3)
+        });
+
+        // 保存局部 diffData（虽然现在不直接使用，但保留以备将来需要）
+        this.currentDiffData = diffData;
+
+        // 使用累积 Diff 显示视图
+        if (cumulativeDiffData && cumulativeDiffData.length > 0) {
+            console.log('✅ 准备显示Diff视图...');
+            // 显示累积 diff 视图
+            this.showInlineDiffInEditorAutoApply(noteEditor, cumulativeDiffData, newContent);
+
+            // 直接应用更改（不阻塞）
+            noteEditor.value = newContent;
+            this.activeNoteOriginalContent = newContent;
+        } else {
+            console.warn('⚠️ 没有Diff数据，直接更新编辑器');
+            // 没有 diffData，直接更新
+            noteEditor.value = newContent;
+            this.activeNoteOriginalContent = newContent;
+        }
+
+        // 如果在预览模式，更新预览
+        if (this.isEditorPreview) {
+            this.updateEditorPreview();
+        }
+
+        // 显示"全部回退"按钮
+        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
+        if (rejectAllChangesBtn) {
+            rejectAllChangesBtn.classList.remove('hidden');
+        }
+
+        // 隐藏"完成审查"按钮（不再需要）
+        const finishDiffReviewBtn = document.getElementById('finishDiffReviewBtn');
+        if (finishDiffReviewBtn) {
+            finishDiffReviewBtn.classList.add('hidden');
+        }
+
+        console.log('✅ 编辑器内容已直接更新');
+    }
+
+    /**
+     * 在编辑器位置显示内联 Diff 视图（自动应用，2秒后自动关闭）
+     * @param {HTMLElement} noteEditor - 编辑器元素
+     * @param {Array} diffData - Diff 数据
+     * @param {string} newContent - 新内容
+     */
+    showInlineDiffInEditorAutoApply(noteEditor, diffData, newContent) {
+        console.log('📊 显示内联 Diff（自动应用模式）', {
+            diffDataLength: diffData?.length,
+            编辑器存在: !!noteEditor
+        });
+
+        // 隐藏编辑器
+        noteEditor.classList.add('hidden');
+        console.log('✅ 编辑器已隐藏');
+
+        // 查找或创建内联 Diff 容器
+        let inlineDiffContainer = document.getElementById('inlineDiffContainer');
+        if (!inlineDiffContainer) {
+            console.log('🆕 创建新的inlineDiffContainer');
+            inlineDiffContainer = document.createElement('div');
+            inlineDiffContainer.id = 'inlineDiffContainer';
+            inlineDiffContainer.className = noteEditor.className.replace('hidden', '');
+            noteEditor.parentNode.insertBefore(inlineDiffContainer, noteEditor.nextSibling);
+        } else {
+            console.log('♻️ 复用现有的inlineDiffContainer');
+        }
+
+        inlineDiffContainer.classList.remove('hidden');
+        inlineDiffContainer.style.fontFamily = "'JetBrains Mono', 'Courier New', monospace";
+        inlineDiffContainer.style.fontSize = '13px';
+        inlineDiffContainer.style.position = 'relative';
+        inlineDiffContainer.innerHTML = '';
+        console.log('✅ Diff容器已配置');
+
+        // 添加顶部信息栏（自动应用提示）
+        const actionBar = document.createElement('div');
+        actionBar.className = 'sticky top-0 z-10 bg-blue-900 border-b border-blue-700 p-3 flex items-center justify-between';
+        const changeCount = diffData.filter(l => l.type !== 'unchanged').length;
+        actionBar.innerHTML = `
+            <div class="flex items-center gap-2">
+                <i data-lucide="check-circle" class="w-5 h-5 text-blue-300"></i>
+                <span class="text-sm font-semibold text-blue-300">已应用更改</span>
+                <span class="text-xs text-blue-400">(${changeCount} 处修改)</span>
+            </div>
+            <button id="closeDiffViewBtn" class="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded transition">
+                <i data-lucide="x" class="w-3 h-3 inline mr-1"></i>
+                关闭
+            </button>
+        `;
+        inlineDiffContainer.appendChild(actionBar);
+        console.log(`✅ 顶部信息栏已添加 (${changeCount}处修改)`);
+
+        // 创建滚动容器
+        const scrollContainer = document.createElement('div');
+        scrollContainer.className = 'overflow-y-auto';
+        scrollContainer.style.maxHeight = 'calc(100vh - 200px)';
+        console.log('✅ 滚动容器已创建');
+
+        // ✨ 使用统一的专业Diff渲染引擎
+        console.log('🎨 调用renderProfessionalDiff...');
+        this.renderProfessionalDiff(scrollContainer, diffData, {
+            showRevertButton: true,
+            onRevert: (blockIndex, diffBlocks) => {
+                this.revertChangeBlock(blockIndex, diffBlocks);
+            }
+        });
+
+        inlineDiffContainer.appendChild(scrollContainer);
+        console.log('✅ 滚动容器已添加到Diff容器');
+
+        // 绑定关闭按钮事件
+        const closeBtn = document.getElementById('closeDiffViewBtn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                inlineDiffContainer.classList.add('hidden');
+                noteEditor.classList.remove('hidden');
+                console.log('✅ 用户手动关闭 Diff 视图');
+            });
+        }
+
+        console.log('✅ 内联 Diff 已显示（持续显示，等待用户关闭或下次更新）');
+    }
+
+    /**
+     * 在编辑器位置显示内联 Diff 视图（带手动应用按钮）
+     * @param {HTMLElement} noteEditor - 编辑器元素
+     * @param {Array} diffData - Diff 数据
+     * @param {string} newContent - 新内容
+     * @returns {Promise<boolean>} - 是否应用更改
+     */
+    async showInlineDiffInEditor(noteEditor, diffData, newContent) {
+        console.log('📊 在编辑器位置显示内联 Diff');
+
+        return new Promise((resolve) => {
+            // 隐藏编辑器
+            noteEditor.classList.add('hidden');
+
+            // 查找或创建内联 Diff 容器
+            let inlineDiffContainer = document.getElementById('inlineDiffContainer');
+            if (!inlineDiffContainer) {
+                inlineDiffContainer = document.createElement('div');
+                inlineDiffContainer.id = 'inlineDiffContainer';
+                inlineDiffContainer.className = noteEditor.className.replace('hidden', '');
+                noteEditor.parentNode.insertBefore(inlineDiffContainer, noteEditor.nextSibling);
+            }
+
+            inlineDiffContainer.classList.remove('hidden');
+            inlineDiffContainer.style.fontFamily = "'JetBrains Mono', 'Courier New', monospace";
+            inlineDiffContainer.style.fontSize = '13px';
+            inlineDiffContainer.style.position = 'relative';
+            inlineDiffContainer.innerHTML = '';
+
+            // 添加顶部操作栏
+            const actionBar = document.createElement('div');
+            actionBar.className = 'sticky top-0 z-10 bg-gray-800 border-b border-gray-700 p-3 flex items-center justify-between';
+            actionBar.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <i data-lucide="git-compare" class="w-5 h-5 text-blue-400"></i>
+                    <span class="text-sm font-semibold text-blue-400">正在查看更改</span>
+                    <span class="text-xs text-gray-400">(${diffData.filter(l => l.type !== 'unchanged').length} 处修改)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="applyDiffBtn" class="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded transition">
+                        <i data-lucide="check" class="w-4 h-4 inline mr-1"></i>
+                        应用更改
+                    </button>
+                    <button id="cancelDiffBtn" class="px-4 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded transition">
+                        <i data-lucide="x" class="w-4 h-4 inline mr-1"></i>
+                        取消
+                    </button>
+                </div>
+            `;
+            inlineDiffContainer.appendChild(actionBar);
+
+            // 创建滚动容器
+            const scrollContainer = document.createElement('div');
+            scrollContainer.className = 'overflow-y-auto';
+            scrollContainer.style.maxHeight = 'calc(100vh - 200px)';
+
+            // 渲染 Diff 内容
+            diffData.forEach(line => {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = 'leading-6 py-1 px-3';
+
+                if (line.type === 'removed') {
+                    lineDiv.classList.add('bg-red-900', 'bg-opacity-20', 'border-l-4', 'border-red-500');
+                    lineDiv.innerHTML = `<span class="text-red-300 line-through opacity-80">${this.escapeHtml(line.content)}</span>`;
+                } else if (line.type === 'added') {
+                    lineDiv.classList.add('bg-green-900', 'bg-opacity-20', 'border-l-4', 'border-green-500');
+                    lineDiv.innerHTML = `<span class="text-green-300">${this.escapeHtml(line.content)}</span>`;
+                } else if (line.type === 'modified') {
+                    // 修改的行显示为旧内容（红色）+ 新内容（绿色），并高亮字符级差异
+                    const oldContent = line.oldContent || '';
+                    const newContent = line.content || '';
+
+                    const oldLineDiv = document.createElement('div');
+                    oldLineDiv.className = 'leading-6 py-1 px-3 bg-red-900 bg-opacity-20 border-l-4 border-red-500';
+                    // 使用字符级diff，只显示删除部分
+                    const oldDiff = this.computeInlineDiffWithDeepHighlight(oldContent, newContent, 'old');
+                    oldLineDiv.innerHTML = oldDiff;
+                    scrollContainer.appendChild(oldLineDiv);
+
+                    const newLineDiv = document.createElement('div');
+                    newLineDiv.className = 'leading-6 py-1 px-3 bg-green-900 bg-opacity-20 border-l-4 border-green-500';
+                    // 使用字符级diff，只显示新增部分
+                    const newDiff = this.computeInlineDiffWithDeepHighlight(oldContent, newContent, 'new');
+                    newLineDiv.innerHTML = newDiff;
+                    scrollContainer.appendChild(newLineDiv);
+                    return; // 已经添加了两行，跳过后面的 appendChild
+                } else {
+                    lineDiv.classList.add('bg-gray-800', 'bg-opacity-10');
+                    lineDiv.innerHTML = `<span class="text-gray-300">${this.escapeHtml(line.content)}</span>`;
+                }
+
+                scrollContainer.appendChild(lineDiv);
+            });
+
+            inlineDiffContainer.appendChild(scrollContainer);
+
+            // 初始化图标
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+
+            // 绑定按钮事件
+            const applyBtn = document.getElementById('applyDiffBtn');
+            const cancelBtn = document.getElementById('cancelDiffBtn');
+
+            const cleanupAndResolve = (shouldApply) => {
+                // 隐藏 Diff 容器，显示编辑器
+                inlineDiffContainer.classList.add('hidden');
+                noteEditor.classList.remove('hidden');
+
+                if (shouldApply) {
+                    // 应用更改
+                    noteEditor.value = newContent;
+                    this.activeNoteOriginalContent = newContent;
+                }
+
+                resolve(shouldApply);
+            };
+
+            applyBtn.addEventListener('click', () => cleanupAndResolve(true));
+            cancelBtn.addEventListener('click', () => cleanupAndResolve(false));
+
+            console.log('✅ 内联 Diff 已显示，等待用户操作');
+        });
+    }
+
+    /**
      * 完成diff审查
      */
     async finishDiffReview() {
@@ -5179,18 +5446,27 @@ tags: []
 
         console.log('🔄 全部回退变更');
 
-        // 从diffData中提取原始内容
-        const originalLines = [];
-        this.currentDiffData.forEach(line => {
-            if (line.type === 'removed' || line.type === 'unchanged') {
-                originalLines.push(line.content);
-            } else if (line.type === 'modified') {
-                originalLines.push(line.oldContent);
-            }
-            // added类型的行不包含在原始内容中
-        });
+        // 优先使用保存的修改前内容
+        let originalContent = this.contentBeforeLLMUpdate;
 
-        const originalContent = originalLines.join('\n');
+        // 如果没有保存的内容，从diffData中提取原始内容
+        if (!originalContent && this.currentDiffData) {
+            const originalLines = [];
+            this.currentDiffData.forEach(line => {
+                if (line.type === 'removed' || line.type === 'unchanged') {
+                    originalLines.push(line.content);
+                } else if (line.type === 'modified') {
+                    originalLines.push(line.oldContent);
+                }
+                // added类型的行不包含在原始内容中
+            });
+            originalContent = originalLines.join('\n');
+        }
+
+        if (!originalContent) {
+            this.showNotification('无法找到原始内容', 'error');
+            return;
+        }
 
         // 保存回后端
         try {
@@ -5212,6 +5488,16 @@ tags: []
                 noteEditor.value = originalContent;
                 this.activeNoteOriginalContent = originalContent;
             }
+
+            // 隐藏回退按钮
+            const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
+            if (rejectAllChangesBtn) {
+                rejectAllChangesBtn.classList.add('hidden');
+            }
+
+            // 清除保存的状态
+            this.contentBeforeLLMUpdate = null;
+            this.currentDiffData = null;
 
             this.showNotification('已回退所有变更', 'success');
             this.closeDiffView();
@@ -5299,6 +5585,548 @@ tags: []
         });
 
         return html;
+    }
+
+    /**
+     * 计算字符级diff，使用更深的颜色高亮差异部分
+     * @param {string} oldText - 旧文本
+     * @param {string} newText - 新文本
+     * @param {string} mode - 'old' 显示旧版本（红色行），'new' 显示新版本（绿色行）
+     */
+    computeInlineDiffWithDeepHighlight(oldText, newText, mode = 'new') {
+        // 防御性编程：确保输入不为 null 或 undefined
+        const safeOldText = oldText || '';
+        const safeNewText = newText || '';
+
+        if (typeof diff_match_patch === 'undefined') {
+            console.warn('diff_match_patch未加载，使用简单显示');
+            const text = mode === 'old' ? safeOldText : safeNewText;
+            const color = mode === 'old' ? 'text-red-300' : 'text-green-300';
+            return `<span class="${color}">${this.escapeHtml(text)}</span>`;
+        }
+
+        const dmp = new diff_match_patch();
+        const diffs = dmp.diff_main(safeOldText, safeNewText);
+        dmp.diff_cleanupSemantic(diffs);
+
+        let html = '';
+
+        if (mode === 'old') {
+            // 红色行：显示旧内容，用深红色背景高亮被删除的字符
+            diffs.forEach(([type, text]) => {
+                const escaped = this.escapeHtml(text);
+                if (type === -1) {
+                    // 被删除的字符：深红色背景 + 删除线 + 更亮的文字
+                    html += `<span class="line-through" style="background-color: rgba(239, 68, 68, 0.5); color: #fecaca; font-weight: 700; text-shadow: 0 0 1px rgba(254, 202, 202, 0.5);">${escaped}</span>`;
+                } else if (type === 0) {
+                    // 不变的字符：更亮的红色
+                    html += `<span style="color: #fca5a5;">${escaped}</span>`;
+                }
+                // type === 1 (新增) 在旧版本行中不显示
+            });
+        } else {
+            // 绿色行：显示新内容，用深绿色背景高亮新增的字符
+            diffs.forEach(([type, text]) => {
+                const escaped = this.escapeHtml(text);
+                if (type === 1) {
+                    // 新增的字符：深绿色背景 + 加粗 + 更亮的文字
+                    html += `<span style="background-color: rgba(34, 197, 94, 0.5); color: #bbf7d0; font-weight: 700; text-shadow: 0 0 1px rgba(187, 247, 208, 0.5);">${escaped}</span>`;
+                } else if (type === 0) {
+                    // 不变的字符：更亮的绿色
+                    html += `<span style="color: #86efac;">${escaped}</span>`;
+                }
+                // type === -1 (删除) 在新版本行中不显示
+            });
+        }
+
+        return html;
+    }
+
+    /**
+     * 渲染行内字符级 Diff，支持双层高亮
+     * @param {string} oldText - 旧文本
+     * @param {string} newText - 新文本
+     * @param {'old'|'new'} mode - 'old' 渲染旧行（只显示删除和不变的），'new' 渲染新行（只显示新增和不变的）
+     * @returns {string} - 包含高亮 span 的 HTML 字符串
+     */
+    renderIntraLineDiff(oldText, newText, mode) {
+        if (typeof diff_match_patch === 'undefined') {
+            console.warn('diff_match_patch 未加载，使用简单显示');
+            return this.escapeHtml(mode === 'old' ? oldText : newText);
+        }
+
+        const dmp = new diff_match_patch();
+        const diffs = dmp.diff_main(oldText, newText);
+        dmp.diff_cleanupSemantic(diffs);
+
+        let html = '';
+
+        diffs.forEach(([type, text]) => {
+            const escaped = this.escapeHtml(text);
+            if (type === 0) { // 相等 (DIFF_EQUAL)
+                // 未变化的文字，保持原本的白底黑字
+                html += `<span style="color: #e5e7eb;">${escaped}</span>`;
+            } else if (type === -1) { // 删除 (DIFF_DELETE)
+                if (mode === 'old') {
+                    // 在旧行中，用深红色背景高亮被删除的文字
+                    html += `<span style="background-color: rgb(220, 38, 38); color: #ffffff; border-radius: 2px; padding: 1px 3px;">${escaped}</span>`;
+                }
+                // 在新行中，被删除的文字不显示
+            } else if (type === 1) { // 插入 (DIFF_INSERT)
+                if (mode === 'new') {
+                    // 在新行中，用深绿色背景高亮新增的文字
+                    html += `<span style="background-color: rgb(34, 197, 94); color: #ffffff; border-radius: 2px; padding: 1px 3px;">${escaped}</span>`;
+                }
+                // 在旧行中，新增的文字不显示
+            }
+        });
+        return html;
+    }
+
+    /**
+     * 核心Diff渲染引擎（统一的、专业的Diff视图渲染）
+     * 供流式和非流式共用
+     * @param {HTMLElement} container - 渲染容器
+     * @param {Array} diffData - Diff数据
+     * @param {Object} options - 渲染选项
+     */
+    renderProfessionalDiff(container, diffData, options = {}) {
+        if (!container || !diffData) {
+            console.error('❌ renderProfessionalDiff: 缺少必要参数', { container, diffData });
+            return;
+        }
+
+        console.log('🎨 renderProfessionalDiff 开始渲染', {
+            diffDataLength: diffData.length,
+            changesCount: diffData.filter(l => l.type !== 'unchanged').length,
+            options
+        });
+
+        container.innerHTML = '';
+        container.style.fontFamily = "'JetBrains Mono', 'Courier New', monospace";
+        container.style.fontSize = '13px';
+
+        const diffBlocks = this.groupDiffBlocks(diffData);
+        console.log(`📦 Diff分组完成: ${diffBlocks.length} 个块`);
+
+        diffBlocks.forEach((block, blockIndex) => {
+            const blockContainer = document.createElement('div');
+            blockContainer.className = block.hasChanges ? 'diff-block relative group my-1' : 'diff-block';
+            blockContainer.dataset.blockIndex = blockIndex;
+
+            // 渲染块中的每一行
+            block.lines.forEach(line => {
+                if (line.type === 'modified') {
+                    // ✨ 专业Diff：将修改行拆分为红色（旧）和绿色（新）两行
+                    const oldContent = line.oldContent || '';
+                    const newContent = line.content || '';
+
+                    // 1. 渲染旧行（红色竖线标记）
+                    const oldLineDiv = document.createElement('div');
+                    oldLineDiv.className = 'leading-6 py-0.5 flex items-start';
+                    oldLineDiv.style.borderLeft = '3px solid rgb(239, 68, 68)';
+                    oldLineDiv.style.paddingLeft = '0.5rem';
+                    oldLineDiv.innerHTML = `
+                        <span class="inline-block w-12 text-right mr-3 text-red-400 text-xs select-none flex-shrink-0 pt-1">${line.oldLineNumber || '-'}</span>
+                        <span class="flex-1">${this.renderIntraLineDiff(oldContent, newContent, 'old')}</span>
+                    `;
+                    blockContainer.appendChild(oldLineDiv);
+
+                    // 2. 渲染新行（绿色竖线标记）
+                    const newLineDiv = document.createElement('div');
+                    newLineDiv.className = 'leading-6 py-0.5 flex items-start';
+                    newLineDiv.style.borderLeft = '3px solid rgb(34, 197, 94)';
+                    newLineDiv.style.paddingLeft = '0.5rem';
+                    newLineDiv.innerHTML = `
+                        <span class="inline-block w-12 text-right mr-3 text-green-400 text-xs select-none flex-shrink-0 pt-1">${line.lineNumber || '+'}</span>
+                        <span class="flex-1">${this.renderIntraLineDiff(oldContent, newContent, 'new')}</span>
+                    `;
+                    blockContainer.appendChild(newLineDiv);
+
+                } else {
+                    // 对于 added, removed, unchanged，使用统一渲染
+                    const lineDiv = this.createSingleDiffLineElement(line);
+                    blockContainer.appendChild(lineDiv);
+                }
+            });
+
+            // 如果是变更块且需要撤销按钮
+            if (block.hasChanges && options.showRevertButton) {
+                const revertButton = document.createElement('button');
+                revertButton.className = 'absolute top-1/2 -translate-y-1/2 right-4 p-1.5 rounded-full bg-gray-700 hover:bg-red-600 text-gray-400 hover:text-white transition opacity-0 group-hover:opacity-100 z-10';
+                revertButton.title = '撤销此项修改';
+                revertButton.dataset.blockIndex = blockIndex;
+                revertButton.innerHTML = `<i data-lucide="rotate-ccw" class="w-4 h-4 pointer-events-none"></i>`;
+                revertButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (options.onRevert) {
+                        options.onRevert(blockIndex, diffBlocks);
+                    }
+                });
+                blockContainer.appendChild(revertButton);
+            }
+
+            container.appendChild(blockContainer);
+        });
+
+        // 初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    /**
+     * 在客户端计算累积 Diff（从初始内容到当前内容）
+     * @param {string} originalText - 初始文本
+     * @param {string} newText - 当前文本
+     * @returns {Array} - Diff 数据数组
+     */
+    computeClientDiff(originalText, newText) {
+        const originalLines = originalText.split('\n');
+        const newLines = newText.split('\n');
+
+        // 使用简单的 LCS 算法进行行级 diff
+        const lcsMatrix = this.computeLCS(originalLines, newLines);
+
+        // 回溯生成 diff
+        let i = originalLines.length;
+        let j = newLines.length;
+        let newLineNum = newLines.length;
+        let oldLineNum = originalLines.length;
+
+        const tempResult = [];
+
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && originalLines[i - 1] === newLines[j - 1]) {
+                // 相同行
+                tempResult.unshift({
+                    type: 'unchanged',
+                    content: newLines[j - 1],
+                    lineNumber: newLineNum
+                });
+                i--;
+                j--;
+                newLineNum--;
+                oldLineNum--;
+            } else if (j > 0 && (i === 0 || lcsMatrix[i][j - 1] >= lcsMatrix[i - 1][j])) {
+                // 添加行
+                tempResult.unshift({
+                    type: 'added',
+                    content: newLines[j - 1],
+                    lineNumber: newLineNum
+                });
+                j--;
+                newLineNum--;
+            } else if (i > 0) {
+                // 删除行
+                tempResult.unshift({
+                    type: 'removed',
+                    content: originalLines[i - 1],
+                    lineNumber: 0,
+                    oldLineNumber: oldLineNum
+                });
+                i--;
+                oldLineNum--;
+            }
+        }
+
+        // 重新计算新行号
+        let currentLineNum = 1;
+        tempResult.forEach(line => {
+            if (line.type !== 'removed') {
+                line.lineNumber = currentLineNum;
+                currentLineNum++;
+            }
+        });
+
+        // 合并相邻的删除和添加为修改
+        return this.mergeModifications(tempResult);
+    }
+
+    /**
+     * 计算 LCS 矩阵
+     * @param {Array} a - 第一个数组
+     * @param {Array} b - 第二个数组
+     * @returns {Array} - LCS 矩阵
+     */
+    computeLCS(a, b) {
+        const m = a.length;
+        const n = b.length;
+        const lcs = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+        for (let i = 1; i <= m; i++) {
+            for (let j = 1; j <= n; j++) {
+                if (a[i - 1] === b[j - 1]) {
+                    lcs[i][j] = lcs[i - 1][j - 1] + 1;
+                } else {
+                    lcs[i][j] = Math.max(lcs[i - 1][j], lcs[i][j - 1]);
+                }
+            }
+        }
+
+        return lcs;
+    }
+
+    /**
+     * 合并相邻的删除和添加为修改（改进版：支持多对一合并）
+     * @param {Array} diffs - Diff 数组
+     * @returns {Array} - 合并后的 Diff 数组
+     */
+    mergeModifications(diffs) {
+        const result = [];
+        let i = 0;
+
+        while (i < diffs.length) {
+            const current = diffs[i];
+
+            if (current.type === 'removed') {
+                // 收集连续的 removed 行
+                const removedLines = [current];
+                let j = i + 1;
+                while (j < diffs.length && diffs[j].type === 'removed') {
+                    removedLines.push(diffs[j]);
+                    j++;
+                }
+
+                // 收集紧随其后的连续 added 行
+                const addedLines = [];
+                while (j < diffs.length && diffs[j].type === 'added') {
+                    addedLines.push(diffs[j]);
+                    j++;
+                }
+
+                // 如果有 added 行，进行配对合并
+                if (addedLines.length > 0) {
+                    const pairCount = Math.min(removedLines.length, addedLines.length);
+
+                    // 配对的行合并为 modified
+                    for (let k = 0; k < pairCount; k++) {
+                        result.push({
+                            type: 'modified',
+                            content: addedLines[k].content,
+                            oldContent: removedLines[k].content,
+                            lineNumber: addedLines[k].lineNumber,
+                            oldLineNumber: removedLines[k].oldLineNumber
+                        });
+                    }
+
+                    // 多余的 removed 行保持为 removed
+                    for (let k = pairCount; k < removedLines.length; k++) {
+                        result.push(removedLines[k]);
+                    }
+
+                    // 多余的 added 行保持为 added
+                    for (let k = pairCount; k < addedLines.length; k++) {
+                        result.push(addedLines[k]);
+                    }
+
+                    i = j;
+                } else {
+                    // 没有 added 行，保持所有 removed 行
+                    removedLines.forEach(line => result.push(line));
+                    i = j;
+                }
+            } else {
+                // 非 removed 行直接添加
+                result.push(current);
+                i++;
+            }
+        }
+
+        console.log(`🔄 合并结果: ${result.filter(l => l.type === 'modified').length} 个修改行`);
+        return result;
+    }
+
+    /**
+     * 将 Diff 数据分组为变更块
+     * @param {Array} diffData - Diff 数据数组
+     * @returns {Array} - 变更块数组
+     */
+    groupDiffBlocks(diffData) {
+        const blocks = [];
+        let currentBlock = null;
+
+        diffData.forEach((line, index) => {
+            const isChange = line.type !== 'unchanged';
+
+            if (isChange) {
+                if (!currentBlock || !currentBlock.hasChanges) {
+                    // 开始一个新的变更块
+                    currentBlock = {
+                        hasChanges: true,
+                        lines: [line],
+                        startIndex: index
+                    };
+                    blocks.push(currentBlock);
+                } else {
+                    // 添加到当前变更块
+                    currentBlock.lines.push(line);
+                }
+            } else {
+                // 未变更的行
+                if (!currentBlock || currentBlock.hasChanges) {
+                    // 开始一个新的未变更块
+                    currentBlock = {
+                        hasChanges: false,
+                        lines: [line],
+                        startIndex: index
+                    };
+                    blocks.push(currentBlock);
+                } else {
+                    // 添加到当前未变更块
+                    currentBlock.lines.push(line);
+                }
+            }
+        });
+
+        return blocks;
+    }
+
+    /**
+     * 创建单个 Diff 行的 DOM 元素（优化版：无整行背景，只高亮差异文字）
+     * @deprecated 此函数已被 createSingleDiffLineElement 替代
+     * @param {object} line - Diff 行数据
+     * @returns {HTMLElement}
+     */
+    createDiffLineElement(line) {
+        const lineDiv = document.createElement('div');
+        lineDiv.className = 'leading-6 py-1 px-3 flex items-start';
+
+        // 创建行号区域
+        const lineNumberSpan = document.createElement('span');
+        lineNumberSpan.className = 'inline-block w-12 text-right mr-3 text-gray-500 text-xs select-none flex-shrink-0';
+
+        // 创建内容区域
+        const contentSpan = document.createElement('span');
+        contentSpan.className = 'flex-1';
+
+        // 根据类型设置样式和内容
+        if (line.type === 'removed') {
+            // removed 行：左侧红色边框，内容全部删除线
+            lineDiv.classList.add('border-l-2', 'border-red-500');
+            lineNumberSpan.textContent = line.oldLineNumber || '-';
+            lineNumberSpan.classList.add('text-red-400');
+            contentSpan.innerHTML = `<span style="color: #fca5a5; text-decoration: line-through;">${this.escapeHtml(line.content)}</span>`;
+        } else if (line.type === 'added') {
+            // added 行：左侧绿色边框，内容加粗显示
+            lineDiv.classList.add('border-l-2', 'border-green-500');
+            lineNumberSpan.textContent = line.lineNumber || '+';
+            contentSpan.innerHTML = `<span style="color: #86efac; font-weight: 600;">${this.escapeHtml(line.content)}</span>`;
+        } else if (line.type === 'modified') {
+            // modified 行：左侧黄色边框，使用行内 diff（只高亮差异文字）
+            lineDiv.classList.add('border-l-2', 'border-yellow-500');
+            lineNumberSpan.textContent = line.lineNumber || '~';
+            contentSpan.innerHTML = this.renderIntraLineDiff(line.oldContent || '', line.content || '');
+        } else { // unchanged
+            // unchanged 行：无边框，普通灰色文字
+            lineNumberSpan.textContent = line.lineNumber || ' ';
+            contentSpan.innerHTML = `<span class="text-gray-400">${this.escapeHtml(line.content)}</span>`;
+        }
+
+        lineDiv.appendChild(lineNumberSpan);
+        lineDiv.appendChild(contentSpan);
+        return lineDiv;
+    }
+
+    /**
+     * 创建单个（非 modified）Diff 行的 DOM 元素
+     * @param {object} line - Diff 行数据 ('added', 'removed', 'unchanged')
+     * @returns {HTMLElement}
+     */
+    createSingleDiffLineElement(line) {
+        const lineDiv = document.createElement('div');
+        lineDiv.className = 'leading-6 py-0.5 px-3 flex items-start';
+
+        const lineNumberSpan = document.createElement('span');
+        lineNumberSpan.className = 'inline-block w-12 text-right mr-3 text-gray-500 text-xs select-none flex-shrink-0 pt-1';
+
+        const contentSpan = document.createElement('span');
+        contentSpan.className = 'flex-1';
+
+        switch (line.type) {
+            case 'removed':
+                // 使用左侧红色竖线标记，而不是整行背景色
+                lineDiv.style.borderLeft = '3px solid rgb(239, 68, 68)';
+                lineDiv.style.paddingLeft = '0.5rem';
+                lineNumberSpan.textContent = line.oldLineNumber || '-';
+                lineNumberSpan.classList.add('text-red-400');
+                contentSpan.innerHTML = `<span style="color: #e5e7eb; text-decoration: line-through;">${this.escapeHtml(line.content)}</span>`;
+                break;
+            case 'added':
+                // 使用左侧绿色竖线标记，而不是整行背景色
+                lineDiv.style.borderLeft = '3px solid rgb(34, 197, 94)';
+                lineDiv.style.paddingLeft = '0.5rem';
+                lineNumberSpan.textContent = line.lineNumber || '+';
+                lineNumberSpan.classList.add('text-green-400');
+                contentSpan.innerHTML = `<span style="color: #e5e7eb;">${this.escapeHtml(line.content)}</span>`;
+                break;
+            default: // unchanged
+                lineNumberSpan.textContent = line.lineNumber || ' ';
+                contentSpan.innerHTML = `<span style="color: #9ca3af;">${this.escapeHtml(line.content)}</span>`;
+                break;
+        }
+
+        lineDiv.appendChild(lineNumberSpan);
+        lineDiv.appendChild(contentSpan);
+        return lineDiv;
+    }
+
+    /**
+     * 撤销单个变更块的修改
+     * @param {number} blockIndex - 要撤销的块的索引
+     * @param {Array} allBlocks - 完整的 diff 块数组
+     */
+    async revertChangeBlock(blockIndex, allBlocks) {
+        console.log('🔄 撤销变更块:', blockIndex);
+
+        const blockToRevert = allBlocks[blockIndex];
+        if (!blockToRevert || !blockToRevert.hasChanges) {
+            console.warn('无效的变更块');
+            return;
+        }
+
+        // 从所有块中重建文档内容，但在目标块上使用原始内容
+        const revertedLines = [];
+
+        allBlocks.forEach((block, index) => {
+            if (index === blockIndex) {
+                // 这是要撤销的块，恢复到原始内容
+                block.lines.forEach(line => {
+                    if (line.type === 'removed') {
+                        // 删除的行要恢复回来
+                        revertedLines.push(line.content);
+                    } else if (line.type === 'modified') {
+                        // 修改的行要恢复到旧内容
+                        revertedLines.push(line.oldContent);
+                    }
+                    // 'added' 类型的行不添加（即撤销新增）
+                });
+            } else {
+                // 其他块，保留其当前（修改后）的内容
+                block.lines.forEach(line => {
+                    if (line.type !== 'removed') {
+                        // 非删除的行都要保留
+                        revertedLines.push(line.content);
+                    }
+                    // 'removed' 类型的行不添加
+                });
+            }
+        });
+
+        const newContent = revertedLines.join('\n');
+
+        // 更新编辑器
+        const noteEditor = document.getElementById('noteEditor');
+        if (noteEditor) {
+            noteEditor.value = newContent;
+            this.activeNoteOriginalContent = newContent;
+
+            // 重新计算并显示累积 Diff
+            const cumulativeDiffData = this.computeClientDiff(this.contentBeforeLLMUpdate, newContent);
+            this.showInlineDiffInEditorAutoApply(noteEditor, cumulativeDiffData, newContent);
+
+            this.showNotification('已撤销该项修改', 'success');
+        }
     }
 
     /**

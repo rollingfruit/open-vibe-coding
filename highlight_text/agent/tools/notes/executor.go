@@ -856,11 +856,11 @@ func buildFileTree(basePath string, currentPath string) (*FileNode, error) {
 
 // DiffLine 表示差异的一行
 type DiffLine struct {
-	Type         string `json:"type"`                   // "added", "removed", "unchanged", "modified"
-	Content      string `json:"content"`                // 行内容
-	OldContent   string `json:"oldContent,omitempty"`   // 修改前的内容（仅modified类型）
-	LineNumber   int    `json:"lineNumber"`             // 行号
-	OldLineNumber int   `json:"oldLineNumber,omitempty"` // 旧行号（仅modified类型）
+	Type         string  `json:"type"`                   // "added", "removed", "unchanged", "modified"
+	Content      string  `json:"content"`                // 行内容
+	OldContent   *string `json:"oldContent,omitempty"`   // 修改前的内容（仅modified类型，使用指针确保空字符串也能序列化）
+	LineNumber   int     `json:"lineNumber"`             // 行号
+	OldLineNumber int    `json:"oldLineNumber,omitempty"` // 旧行号（仅modified类型）
 }
 
 // DiffResult 表示差异结果
@@ -984,10 +984,11 @@ func mergeModifications(diffs []DiffLine) []DiffLine {
 		// 检查是否是删除行，且下一行是添加行
 		if current.Type == "removed" && i+1 < len(diffs) && diffs[i+1].Type == "added" {
 			// 合并为修改行
+			oldContent := current.Content // 旧内容（可能是空字符串）
 			result = append(result, DiffLine{
 				Type:          "modified",
 				Content:       diffs[i+1].Content,  // 新内容
-				OldContent:    current.Content,      // 旧内容
+				OldContent:    &oldContent,         // 旧内容（使用指针，即使是空字符串也会被序列化）
 				LineNumber:    diffs[i+1].LineNumber,
 				OldLineNumber: current.OldLineNumber,
 			})

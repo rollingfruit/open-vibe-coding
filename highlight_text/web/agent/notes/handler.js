@@ -94,9 +94,35 @@ class KnowledgeAgentHandler {
    - 将复杂任务分解为清晰的步骤
    - 例如：["阅读第2段内容和相关参考笔记", "搜索相关数据支撑", "生成新段落", "使用replace_lines替换原内容"]
 
-2. **后续步骤：按照计划逐步执行**
-   - 执行每一步时使用 update_todo_list 更新状态
-   - 使用精细化工具（read_lines, replace_lines, insert_lines, delete_lines）而不是粗暴的update_note
+2. **后续步骤：高效执行，合理更新TODO**
+   - 💡 **核心原则**：将多个小操作组合成一个逻辑单元，完成后再更新TODO状态
+
+   - **什么是"逻辑单元"？**
+     * ✅ 好的逻辑单元：搜索资料 → 阅读段落 → 重构内容 → 写入文件 = **1个任务**
+     * ❌ 错误拆分：每个小操作（读、写）都算一个任务
+
+   - **TODO更新时机（重要）**：
+     * 开始一个有实质性产出的任务时：**必须**调用 update_todo_list 标记为 in_progress
+     * 完成该任务的核心产出后（例如执行完 replace_lines）：**必须**调用 update_todo_list 标记为 completed
+     * ⚠️ **强制要求**：每执行一次 replace_lines/insert_lines/delete_lines，必须调用一次 update_todo_list
+     * ℹ️ **提示**：不需要为 read_lines、search_notes 这样的辅助操作单独更新TODO
+
+   - **文件写入要求**：
+     * ✅ 必须立即写入：涉及文件修改的任务，完成后立即使用 replace_lines/insert_lines/delete_lines 写入
+     * ❌ 禁止延迟：不要在内存中积累多个修改，等所有任务完成后才一次性写入
+
+   - **高效流程示例**（重构3个段落）：
+     第1轮迭代：
+       - 开始任务1：update_todo_list: 任务1（重构段落1）→ in_progress
+       - 执行：read_lines(段落1) → 思考重构方案 → replace_lines(写入新内容)
+       - 完成任务1：update_todo_list: 任务1 → completed
+     第2轮迭代：
+       - 开始任务2：update_todo_list: 任务2（重构段落2）→ in_progress
+       - 执行：read_lines(段落2) → 思考重构方案 → replace_lines(写入新内容)
+       - 完成任务2：update_todo_list: 任务2 → completed
+     ...依此类推
+
+   - **使用精细化工具**：read_lines, replace_lines, insert_lines, delete_lines（而不是update_note）
 
 3. **并行化读取**：
    - 在信息收集阶段，同时发起多个读取操作（read_lines, search_notes）
@@ -203,6 +229,79 @@ JSON格式：
     }
 
     /**
+     * 流式调用LLM（用于内容改写任务）
+     * @param {string} userMessage - 用户消息
+     * @param {Function} onChunk - 接收数据块的回调函数
+     * @returns {Promise<string>} - 完整的响应内容
+     */
+    async callLLMStreaming(userMessage, onChunk) {
+        const settings = this.mainApp.settings;
+        const messages = [
+            { role: 'system', content: userMessage }, // 直接使用用户消息作为系统提示
+        ];
+
+        try {
+            const response = await fetch(settings.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${settings.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: settings.model,
+                    messages: messages,
+                    temperature: 0.7,
+                    stream: true // 启用流式输出
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`API请求失败: ${response.statusText}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let fullContent = '';
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // 保留最后不完整的行
+
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') continue;
+
+                        try {
+                            const parsed = JSON.parse(data);
+                            const content = parsed.choices[0]?.delta?.content || '';
+                            if (content) {
+                                fullContent += content;
+                                if (onChunk) {
+                                    await onChunk(content, fullContent);
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('解析流式数据失败:', e);
+                        }
+                    }
+                }
+            }
+
+            return fullContent;
+        } catch (error) {
+            console.error('流式LLM调用失败:', error);
+            throw error;
+        }
+    }
+
+    /**
      * 检测任务复杂度
      */
     detectTaskComplexity(task) {
@@ -213,6 +312,18 @@ JSON格式：
         ];
 
         return complexKeywords.some(keyword => task.includes(keyword));
+    }
+
+    /**
+     * 检测是否是内容改写任务
+     */
+    detectContentRewriteTask(task) {
+        const rewriteKeywords = [
+            '改写', '重写', '润色', '优化', '调整语气', '修改风格',
+            '扩展内容', '精简内容', '调整表述', '优化表达'
+        ];
+
+        return rewriteKeywords.some(keyword => task.includes(keyword));
     }
 
     /**
@@ -246,6 +357,7 @@ JSON格式：
         }
 
         try {
+            console.log('🚀 执行后端工具:', toolName, 'args:', args);
             const response = await fetch('http://localhost:8080/agent/execute', {
                 method: 'POST',
                 headers: {
@@ -261,11 +373,18 @@ JSON格式：
             });
 
             const result = await response.json();
+            console.log('📥 后端返回:', { success: result.success, toolName });
 
             // 处理带diff的工具执行结果
             const diffTools = ['update_note', 'create_note', 'replace_lines', 'insert_lines', 'delete_lines'];
+            console.log('🔍 检查是否为Diff工具:', {
+                isDiffTool: diffTools.includes(toolName),
+                success: result.success,
+                toolName
+            });
+
             if (result.success && diffTools.includes(toolName)) {
-                console.log('🔍 工具执行成功，开始处理diff:', toolName);
+                console.log('✅ 工具执行成功，开始处理diff:', toolName);
                 console.log('📦 后端返回结果:', result);
 
                 try {
@@ -273,10 +392,9 @@ JSON格式：
                     const diffResult = JSON.parse(result.output);
                     console.log('📊 解析后的diff结果:', diffResult);
 
-                    if (diffResult.diffData && diffResult.diffData.length > 0) {
-                        console.log('✅ 找到diff数据，准备显示视图');
-                        console.log('📝 NoteID:', diffResult.noteId);
-                        console.log('📈 Diff行数:', diffResult.diffData.length);
+                    // 注意：后端返回的字段是 newContent（小写开头）
+                    if (diffResult.newContent !== undefined) {
+                        console.log('✅ 找到新内容，直接更新编辑器');
 
                         // 先刷新笔记列表（如果是新创建的笔记）
                         if (toolName === 'create_note') {
@@ -286,12 +404,17 @@ JSON格式：
                             await new Promise(resolve => setTimeout(resolve, 200));
                         }
 
-                        // 显示diff视图
-                        console.log('🎨 准备调用displayDiff...');
-                        await this.mainApp.displayDiff(diffResult.noteId, diffResult.diffData, false);
-                        console.log('✨ Diff视图显示完成');
+                        // 直接更新编辑器内容，不显示Diff审查页面
+                        console.log('🎨 准备直接更新编辑器内容...');
+                        await this.mainApp.updateEditorContentDirectly(
+                            diffResult.noteId,
+                            diffResult.newContent,  // 使用小写的 newContent
+                            diffResult.diffData
+                        );
+                        console.log('✨ 编辑器内容更新完成');
                     } else {
-                        console.warn('⚠️ 没有diff数据或数据为空');
+                        console.warn('⚠️ 没有新内容数据');
+                        console.log('完整的diffResult:', JSON.stringify(diffResult, null, 2));
                     }
                 } catch (parseError) {
                     console.error('❌ 无法解析diff结果:', parseError);
@@ -346,16 +469,50 @@ JSON格式：
                     })
                 };
             } else if (toolName === 'update_todo_list') {
-                const todoList = args.todo_list || [];
+                const updatedTasks = args.todo_list || [];
 
                 // 记录更新前的状态
                 const beforeUpdate = JSON.parse(JSON.stringify(this.currentTodoList));
 
-                this.currentTodoList = todoList.map((item, index) => ({
-                    index: index + 1,
-                    task: item.task || '',
-                    status: item.status || 'pending'
-                }));
+                // ✅ 正确的更新逻辑：遍历收到的更新，修改现有列表中对应的任务
+                // 不要替换整个列表，而是更新匹配的任务
+                updatedTasks.forEach(updatedTask => {
+                    // 尝试通过任务内容（task）来匹配，因为LLM可能不会返回正确的索引
+                    const taskToUpdate = this.currentTodoList.find(t => {
+                        // 精确匹配或模糊匹配（处理任务描述可能略有变化的情况）
+                        return t.task === updatedTask.task ||
+                               t.task.includes(updatedTask.task) ||
+                               updatedTask.task.includes(t.task);
+                    });
+
+                    if (taskToUpdate) {
+                        let newStatus = updatedTask.status || 'pending';
+                        // 状态标准化
+                        if (newStatus === 'done') {
+                            newStatus = 'completed';
+                        }
+                        taskToUpdate.status = newStatus;
+                        console.log(`✅ 更新任务: "${taskToUpdate.task}" -> ${newStatus}`);
+                    } else {
+                        // 如果在现有列表中找不到，可能是新任务，添加到列表末尾
+                        let newStatus = updatedTask.status || 'pending';
+                        if (newStatus === 'done') {
+                            newStatus = 'completed';
+                        }
+                        const newTask = {
+                            index: this.currentTodoList.length + 1,
+                            task: updatedTask.task || '',
+                            status: newStatus
+                        };
+                        this.currentTodoList.push(newTask);
+                        console.warn(`⚠️ 添加新任务: "${newTask.task}" (原列表中未找到)`);
+                    }
+                });
+
+                // 重新计算索引，确保连续
+                this.currentTodoList.forEach((task, index) => {
+                    task.index = index + 1;
+                });
 
                 // 统计状态
                 const stats = {
@@ -375,6 +532,13 @@ JSON格式：
                 });
 
                 // 更新 Copilot 面板中的 TODO 列表
+                console.log('🔄 调用 displayTodoList 更新 UI，当前状态:', {
+                    total: stats.total,
+                    completed: stats.completed,
+                    in_progress: stats.in_progress,
+                    pending: stats.pending,
+                    tasks: this.currentTodoList.map(t => ({ task: t.task, status: t.status }))
+                });
                 this.displayTodoList();
 
                 // 强制浏览器渲染UI，并提供一个短暂的视觉停留
@@ -807,6 +971,94 @@ JSON格式：
     }
 
     /**
+     * 处理内容改写任务（流式Diff视图）
+     */
+    async handleContentRewriteStreaming(task, editorContext) {
+        const originalContent = editorContext.fullText;
+        const noteId = editorContext.noteId;
+
+        // 构建改写提示
+        const prompt = `你是一个专业的内容改写助手。用户的要求是："${task}"
+
+原始内容如下：
+${originalContent}
+
+请根据用户的要求，输出改写后的完整内容。注意：
+1. 直接输出改写后的完整文本，不要有任何解释或说明
+2. 保持原文的格式和结构
+3. 只输出文本内容本身`;
+
+        try {
+            // 创建Copilot消息气泡
+            this.createCopilotBubble();
+            this.addTraceStep('thought', '正在流式改写内容，请稍候...');
+
+            // 准备流式渲染UI
+            await this.mainApp.prepareForStreaming(originalContent);
+
+            // 调用流式LLM并实时渲染Diff
+            const finalContent = await this.renderStreamingDiff(originalContent, prompt);
+
+            // 完成流式渲染
+            await this.mainApp.finalizeStreaming(noteId, finalContent, originalContent);
+
+            this.addTraceStep('final', '内容改写完成');
+        } catch (error) {
+            console.error('流式内容改写失败:', error);
+            this.addTraceStep('final', `改写失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 流式渲染Diff视图（使用统一的专业Diff引擎）
+     * @param {string} originalContent - 原始内容
+     * @param {string} prompt - LLM提示
+     * @returns {Promise<string>} - 完整的新内容
+     */
+    async renderStreamingDiff(originalContent, prompt) {
+        let streamedContent = '';
+
+        // 获取diff容器
+        const diffContainer = document.getElementById('streamingDiffContainer');
+        if (!diffContainer) {
+            console.error('流式Diff容器未找到');
+            return '';
+        }
+
+        // 流式接收内容并实时渲染
+        await this.callLLMStreaming(prompt, async (chunk, fullContent) => {
+            streamedContent = fullContent;
+
+            // ✨ 使用 app.js 的统一Diff计算引擎（累积Diff）
+            const cumulativeDiffData = this.mainApp.computeClientDiff(originalContent, streamedContent);
+
+            // ✨ 使用 app.js 的统一专业Diff渲染引擎
+            this.mainApp.renderProfessionalDiff(diffContainer, cumulativeDiffData, {
+                showRevertButton: false // 流式渲染时不显示撤销按钮
+            });
+
+            // 自动滚动到底部（显示最新内容）
+            diffContainer.scrollTop = diffContainer.scrollHeight;
+
+            // 小延迟让浏览器渲染
+            await new Promise(resolve => setTimeout(resolve, 10));
+        });
+
+        return streamedContent;
+    }
+
+    /**
+     * @deprecated 此方法已废弃，使用 mainApp.computeClientDiff 替代（基于LCS算法，更精确）
+     */
+    computeLineDiff(originalLines, newLines) {
+        console.warn('⚠️ computeLineDiff 已废弃，应使用 mainApp.computeClientDiff');
+        // 为了兼容性暂时保留，但建议重构调用处
+        const originalText = originalLines.join('\n');
+        const newText = newLines.join('\n');
+        return this.mainApp.computeClientDiff(originalText, newText);
+    }
+
+    /**
      * 启动ReAct循环（带编辑器上下文）
      */
     async startReActLoop(initialTask, editorContext) {
@@ -816,6 +1068,14 @@ JSON格式：
         this.currentTodoList = [];
 
         await this.fetchAvailableTools();
+
+        // 检测是否是内容改写任务（优先使用流式Diff视图）
+        const isContentRewrite = this.detectContentRewriteTask(initialTask);
+        if (isContentRewrite && editorContext && editorContext.fullText) {
+            console.log('🌊 检测到内容改写任务，启用流式Diff视图');
+            await this.handleContentRewriteStreaming(initialTask, editorContext);
+            return;
+        }
 
         // 检测任务复杂度
         const isComplexTask = this.detectTaskComplexity(initialTask);
@@ -913,12 +1173,24 @@ JSON格式：
                             role: 'assistant',
                             content: JSON.stringify(parsed)
                         });
+
+                        // 检查是否需要提醒更新 TODO
+                        const isModifyTool = ['replace_lines', 'insert_lines', 'delete_lines', 'update_note'].includes(parsed.action);
+                        const hasTodoList = this.currentTodoList && this.currentTodoList.length > 0;
+
+                        let userMessage = `工具执行结果:\n${result.output}`;
+
+                        // 如果执行了修改工具且有 TODO 列表，强制提醒更新
+                        if (isModifyTool && hasTodoList && parsed.action !== 'update_todo_list') {
+                            userMessage += `\n\n⚠️ 提醒：你刚刚执行了 ${parsed.action}，请立即调用 update_todo_list 更新任务状态！`;
+                        }
+
                         this.conversationHistory.push({
                             role: 'user',
-                            content: `工具执行结果:\n${result.output}`
+                            content: userMessage
                         });
 
-                        currentMessage = `工具执行结果:\n${result.output}`;
+                        currentMessage = userMessage;
                     } else {
                         this.addTraceStep('observation', `错误: ${result.error || '工具执行失败'}`);
                         currentMessage = `工具执行失败: ${result.error}`;
