@@ -622,15 +622,15 @@
 
     <!-- 追问模态框模板 -->
     <template id="followupModalTemplate">
-        <div class="fixed inset-0 bg-black bg-opacity-50 modal followup-modal">
+        <div class="fixed inset-0 bg-black bg-opacity-50 modal followup-modal" onclick="this.remove()">
             <div class="flex items-start justify-center h-full pt-10">
-                <div class="bg-gray-800 rounded-lg p-6 w-2/3 max-w-4xl max-h-[80vh] overflow-y-auto">
+                <div class="bg-gray-800 rounded-lg p-6 w-2/3 max-w-4xl max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()">
                     <div class="flex justify-between items-start mb-4">
                         <h2 class="text-lg font-bold flex items-center gap-2">
                             <i data-lucide="message-circle" class="w-5 h-5"></i>
                             <span>追问结果</span>
                         </h2>
-                        <button class="close-followup text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors">
+                        <button class="close-followup text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors" onclick="this.closest('.followup-modal').remove()">
                             <i data-lucide="x" class="w-5 h-5"></i>
                         </button>
                     </div>
