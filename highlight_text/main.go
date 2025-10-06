@@ -16,6 +16,7 @@ import (
 	"highlight_text/agent/terminal"
 	"highlight_text/agent/tools"
 	"highlight_text/agent/tools/notes"
+	"highlight_text/agent/tools/tasks"
 
 	"github.com/gorilla/websocket"
 )
@@ -92,6 +93,11 @@ func main() {
 	http.HandleFunc("/agent/knowledge/tools", handleKnowledgeAgentTools)
 	http.HandleFunc("/agent/knowledge/write-log", handleKnowledgeAgentWriteLog)
 
+	// 任务管理API端点
+	http.HandleFunc("/api/tasks", handleTasks)
+	http.HandleFunc("/agent/tasks/tools", handleTaskAgentTools)
+	http.HandleFunc("/agent/tasks/execute", handleTaskAgentExecute)
+
 	// 配置API端点
 	http.HandleFunc("/api/save-config", handleSaveConfig)
 
@@ -121,6 +127,11 @@ func main() {
 	// 确保知识库目录存在
 	if err := os.MkdirAll("./KnowledgeBase", 0755); err != nil {
 		log.Printf("创建知识库目录失败: %v", err)
+	}
+
+	// 确保任务目录存在
+	if err := os.MkdirAll("./KnowledgeBase/_tasks", 0755); err != nil {
+		log.Printf("创建任务目录失败: %v", err)
 	}
 
 	fmt.Println("🚀 AI助手Web服务启动成功!")
@@ -1334,4 +1345,100 @@ func monitorKnowledgeBase() {
 			broadcastNotesUpdate()
 		}
 	}
+}
+
+// handleTaskAgentTools 返回任务管理专用工具列表
+func handleTaskAgentTools(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	taskTools := tasks.GetTaskTools()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"tools": taskTools,
+	})
+}
+
+// handleTaskAgentExecute 处理任务Agent工具执行
+func handleTaskAgentExecute(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 读取请求体
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Tool string                 `json:"tool"`
+		Args map[string]interface{} `json:"args"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 执行任务工具
+	result, err := tasks.ExecuteTaskTool(req.Tool, req.Args, "./KnowledgeBase/_tasks")
+	if err != nil {
+		log.Printf("Failed to execute task tool: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Failed to execute task tool: %v", err),
+		})
+		return
+	}
+
+	// 返回成功响应
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(result))
+}
+
+// handleTasks 处理任务列表请求
+func handleTasks(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	result, err := tasks.ExecuteTaskTool("list_tasks", map[string]interface{}{}, "./KnowledgeBase/_tasks")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(result))
 }

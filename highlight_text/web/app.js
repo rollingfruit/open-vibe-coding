@@ -35,6 +35,10 @@ class AIAssistant {
         this.shortcutManager = null; // 快捷键管理器
         this.diffViewer = null; // Diff视图组件
 
+        // 工作台相关
+        this.isWorkspaceMode = false; // 是否处于工作台模式
+        this.workspaceView = null; // 工作台视图实例
+
         // 初始化代码存储
         if (!window.codeStorage) {
             window.codeStorage = new Map();
@@ -854,6 +858,11 @@ class AIAssistant {
         // 折叠状态的新建按钮
         document.getElementById('newSessionCollapsedBtn').addEventListener('click', () => {
             this.createNewSession();
+        });
+
+        // 工作台按钮
+        document.getElementById('workspaceBtn').addEventListener('click', () => {
+            this.enterWorkspaceMode();
         });
 
         // 折叠抽屉按钮
@@ -5999,6 +6008,52 @@ tags: []
         };
 
         connectWebSocket();
+    }
+
+    // ==================== 工作台模式 ====================
+    async enterWorkspaceMode() {
+        this.isWorkspaceMode = true;
+
+        // 隐藏主应用容器
+        document.getElementById('app').style.display = 'none';
+
+        // 显示工作台容器
+        const workspaceContainer = document.getElementById('workspace-container');
+        workspaceContainer.style.display = 'block';
+
+        // 动态导入 WorkspaceView
+        const { WorkspaceView } = await import('./views/workspace/WorkspaceView.js');
+
+        // 创建工作台视图
+        this.workspaceView = new WorkspaceView('#workspace-container', this);
+        await this.workspaceView.init();
+
+        console.log('Entered workspace mode');
+    }
+
+    exitWorkspaceMode() {
+        this.isWorkspaceMode = false;
+
+        // 隐藏工作台容器
+        const workspaceContainer = document.getElementById('workspace-container');
+        workspaceContainer.style.display = 'none';
+        workspaceContainer.innerHTML = ''; // 清空内容
+
+        // 显示主应用容器
+        document.getElementById('app').style.display = 'flex';
+
+        // 销毁工作台视图
+        this.workspaceView = null;
+
+        console.log('Exited workspace mode');
+    }
+
+    get apiSettings() {
+        return {
+            endpoint: this.settings?.apiEndpoint || 'https://api.openai.com/v1/chat/completions',
+            apiKey: this.settings?.apiKey || '',
+            model: this.settings?.model || 'gpt-4'
+        };
     }
 }
 

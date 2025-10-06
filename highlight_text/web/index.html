@@ -22,6 +22,14 @@
     <!-- Marked.js for Markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
+    <!-- FullCalendar CSS and JS -->
+    <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css' rel='stylesheet' />
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+
+    <!-- Frappe Gantt CSS and JS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
+
     <!-- Theme System -->
     <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="style.css">
@@ -216,6 +224,10 @@
                             </button>
                         </div>
                         <!-- 主题切换按钮 -->
+                        <button id="workspaceBtn" class="px-3 py-1 bg-indigo-600 rounded hover:bg-indigo-500 text-sm flex items-center gap-1 transition-colors" title="工作管理">
+                            <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                            <span>工作管理</span>
+                        </button>
                         <button id="themeToggleBtn" class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm flex items-center gap-1 transition-colors" title="切换主题">
                             <i data-lucide="sun" id="sunIcon" class="w-4 h-4 hidden"></i>
                             <i data-lucide="moon" id="moonIcon" class="w-4 h-4"></i>
@@ -669,5 +681,8 @@
             lucide.createIcons();
         }
     </script>
+
+    <!-- 工作台容器 (隐藏,由app.js动态控制显示) -->
+    <div id="workspace-container" style="display: none;"></div>
 </body>
 </html>

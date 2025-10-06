@@ -1,155 +1,192 @@
-# AI助手 - Web版
 
-🤖 一个基于Go后端和Web前端的本地AI助手应用，支持对话交互和智能划词追问功能。
 
-## ✨ 主要特性
+# 智能 Agent Web 终端 (Intelligent Agent Web Terminal)
 
-- **💬 智能对话**: 支持与大语言模型进行实时对话，流式响应显示
-- **🎯 划词追问**: 选中AI回答中的任意文字，弹出快捷操作菜单进行深度追问
-- **📋 代码高亮**: 自动识别代码块并提供语法高亮和一键复制功能
-- **💾 对话记录**: 自动保存对话历史，支持本地存储和日志记录
-- **⚙️ 灵活配置**: 支持自定义API端点、模型选择和快捷指令
-- **🌓 现代界面**: 采用TailwindCSS构建的现代化深色主题界面
+一个功能强大的、本地部署的 AI 助手 Web 界面。它不仅仅是一个聊天机器人，更是一个集成了 **Agent 模式** (与本地文件系统交互) 和 **知识库 Copilot 模式** (智能笔记管理与编辑) 的综合性 AI 工作台。
+
+
+
+-----
+
+## ✨ 核心功能
+
+### 聊天界面 (Chat Interface)
+
+  - **多会话管理**: 支持创建、切换、搜索和删除多个对话，所有会话记录存储在本地浏览器。
+  - **富文本渲染**: 全面支持 Markdown 格式，包括代码块、列表、表格等，并自动应用语法高亮。
+  - **流式响应**: AI 的回答以打字机效果流式输出，提供即时反馈。
+  - **划词交互**: 选中 AI 回答的任何文本，即可弹出快捷操作菜单（如解释、翻译、自定义指令）。
+  - **会话节点轴**: 左侧提供当前对话的树状可视化节点图，清晰展示对话分支与追问。
+  - **上下文管理**: 智能显示当前会話的 Token 占用率，并在上下文过长时提供一键压缩摘要功能。
+  - **多模态支持**: 支持上传图片进行对话。
+
+### 🤖 Agent 模式 (Agent Mode)
+
+  - **本地系统交互**: 通过向 AI 发出 `Agent: <你的任务>` 格式的指令，激活 Agent 模式。
+  - **工具使用**: Agent 能够自主调用后端提供的一系列工具（如`读写文件`、`列出目录`、`grep搜索`、`切换路径`）来完成复杂任务。
+  - **实时追踪**: UI 会实时展示 Agent 的完整思考链（Thought）、执行的动作（Action）和观察到的结果（Observation），过程完全透明。
+  - **安全确认**: 对于写入文件等敏感操作，Agent 会在执行前请求用户确认。
+  - **跨平台支持**: 后端为 macOS/Linux (Bash) 和 Windows (CMD) 提供了独立的终端实现。
+
+### 📚 知识库 Copilot (Knowledge Base Copilot)
+
+  - **双模式切换**: 应用可在“聊天模式”和“编辑器模式”之间无缝切换。
+  - **文件树管理**: 右侧边栏提供对本地 `./KnowledgeBase` 目录的完整文件树视图，支持创建、删除、移动文件和文件夹。
+  - **强大的 Markdown 编辑器**:
+      - 支持实时预览 (Preview)。
+      - 支持可配置的 Markdown 快捷键 (如 `Ctrl+B` 加粗)。
+      - 支持拖拽或粘贴上传图片，并自动生成 Markdown 引用。
+  - **Copilot 智能编辑**:
+      - 在编辑器模式下，可以向 Copilot 发出指令，让 AI 智能地修改笔记内容。
+      - Copilot 使用 **精细化工具** (`read_lines`, `replace_lines`, `insert_lines`, `delete_lines`) 对文件进行精准的行级别操作，而非全文覆盖。
+  - **可视化 Diff 审查**:
+      - Copilot 的每一次修改都会生成一个清晰、专业的可视化差异（Diff）视图。
+      - 支持**累积 Diff**，Agent 的多次连续修改会合并显示在一个 Diff 视图中。
+      - 用户可以逐块审查、**撤销单次修改**，或**一键回退所有变更**。
+  - **WebSocket 实时同步**: 当你在外部编辑器修改了 `./KnowledgeBase` 目录中的文件时，Web 界面会自动收到通知并刷新文件列表。
+
+-----
+
+## 🛠️ 技术栈
+
+  - **后端 (Backend)**:
+      - **语言**: Go
+      - **Web框架**: `net/http` (标准库)
+      - **WebSocket**: `github.com/gorilla/websocket`
+  - **前端 (Frontend)**:
+      - **语言**: HTML, CSS, JavaScript (ES Modules)
+      - **UI/CSS**: Tailwind CSS
+      - **Markdown渲染**: Marked.js
+      - **代码高亮**: Highlight.js
+      - **图标**: Lucide Icons
+      - **文本差异比较**: `diff-match-patch` & 自定义 `DiffViewer.js`
+
+-----
+
+## 📂 项目结构
+
+```
+Directory structure:
+└── /./
+    ├── go.mod
+    ├── web/
+    │   ├── theme.css
+    │   ├── index.html
+    │   ├── js/
+    │   │   └── diff/
+    │   │       └── DiffViewer.js
+    │   ├── config.json
+    │   ├── shortcuts.js
+    │   ├── agent/
+    │   │   ├── agent.css
+    │   │   ├── notes/
+    │   │   │   ├── knowledge-base.css
+    │   │   │   └── handler.js
+    │   │   └── agent.js
+    │   ├── style.css
+    │   └── app.js
+    ├── .claude/
+    ├── uploads/
+    ├── agent/
+    │   ├── tools/
+    │   │   ├── notes/
+    │   │   │   └── executor.go
+    │   │   └── executor.go
+    │   └── terminal/
+    │       ├── terminal.go
+    │       ├── terminal_darwin.go
+    │       └── terminal_windows.go
+    ├── go.sum
+    ├── README.md
+    ├── KnowledgeBase/
+    ├── logs/
+    ├── package.json
+    ├── .playwright-mcp/
+    ├── main.go
+    └── highlight_text
+
+```
+
+-----
 
 ## 🚀 快速开始
 
-### 环境要求
+### 1\. 先决条件
 
-- Go 1.18+
-- 现代浏览器 (Chrome, Firefox, Edge等)
-- LLM API密钥 (OpenAI, Claude等)
+  - 已安装 [Go](https://golang.org/dl/) (版本 \>= 1.21)。
 
-### 安装步骤
+### 2\. 克隆项目
 
-1. **克隆项目**
-   ```bash
-   git clone <项目地址>
-   cd ai-helper-web
-   ```
+```bash
+git clone <your-repository-url>
+cd <project-directory>
+```
 
-2. **编译项目**
-   ```bash
-   go build -o ai-helper-web main.go
-   ```
+### 3\. 配置
 
-3. **启动服务**
-   ```bash
-   ./ai-helper-web
-   ```
+1.  进入 `web` 目录，复制或重命名 `config.json.example` (如果提供) 为 `config.json`。
+2.  打开 `web/config.json` 文件，填入你的 LLM API 密钥和模型信息。
+    ```json
+    {
+      "apiSettings": {
+        "defaultEndpoint": "https://api.openai.com/v1/chat/completions",
+        "model": "gpt-4.1-mini"
+      },
+      // ... 其他配置
+    }
+    ```
+    *你也可以在启动应用后，通过点击界面右上角的 "设置" 按钮来完成此项配置。*
 
-4. **访问应用**
-   打开浏览器访问: http://localhost:8080
+### 4\. 运行后端服务
 
-### Windows一键启动
+在项目根目录运行以下命令：
 
-直接双击 `launch.bat` 脚本即可自动编译、启动服务并打开浏览器。
+```bash
+go mod tidy
+go run main.go
+```
+
+服务启动后，你将看到类似以下的输出：
+
+```
+🚀 AI助手Web服务启动成功!
+📱 请访问: http://localhost:8080
+...
+```
+
+### 5\. 访问应用
+
+在你的浏览器中打开 **http://localhost:8080** 即可开始使用。
+
+-----
 
 ## 📖 使用指南
 
-### 首次配置
+### 基本聊天
 
-1. 点击右上角 **⚙️ 设置** 按钮
-2. 输入你的API密钥
-3. 选择合适的API端点和模型
-4. 点击保存
+直接在输入框中输入问题，即可与 AI 进行对话。
 
-### 基本对话
+### Agent 模式
 
-在底部输入框输入问题，按回车或点击发送按钮即可开始对话。
+1.  在输入框中输入 `Agent: <你的任务>`，例如：
+    > `Agent: 在当前目录下创建一个名为 'hello_world.py' 的文件，并写入代码 print("Hello, Agent!")`
+2.  发送后，应用会自动进入 Agent 模式。
+3.  在主聊天窗口，你会看到 Agent 的实时思考和执行过程。
+4.  如果 Agent 需要执行敏感操作（如写入文件），会弹出对话框请求你的授权。
 
-### 划词追问
+### 知识库 (Copilot) 模式
 
-1. 选中AI回答中的任意文字
-2. 会自动弹出快捷操作菜单
-3. 点击相应按钮进行深度追问
-4. 追问结果会在新的模态框中显示
-
-### 自定义快捷指令
-
-编辑 `web/config.json` 文件来自定义划词菜单选项:
-
-```json
-{
-  "commands": [
-    {
-      "label": "大白话解释",
-      "prompt": "用最简单易懂的大白话解释以下内容：\n"
-    },
-    {
-      "label": "深入分析",
-      "prompt": "请深入分析以下内容：\n"
-    }
-  ]
-}
-```
-
-## 🏗️ 项目结构
-
-```
-/
-├── main.go              # Go后端服务
-├── go.mod              # Go模块文件
-├── launch.bat          # Windows启动脚本
-├── interactions.log.json # 交互日志文件
-└── web/                # 前端静态资源
-    ├── index.html      # 主页面
-    ├── app.js          # 核心JavaScript逻辑
-    ├── style.css       # 自定义样式
-    └── config.json     # 配置文件
-```
-
-## 🔧 技术架构
-
-### 后端 (Go)
-
-- **职责**: 极简设计，仅负责静态文件托管和日志记录
-- **技术栈**: Go标准库 (net/http)
-- **功能**:
-  - 静态文件服务器
-  - `/log` API端点用于记录交互日志
-
-### 前端 (Web)
-
-- **职责**: 承担所有业务逻辑和用户交互
-- **技术栈**: HTML5 + Vanilla JavaScript + TailwindCSS
-- **功能**:
-  - LLM API调用和流式响应处理
-  - 复杂UI交互逻辑
-  - 划词选择和追问功能
-  - 本地存储管理
-
-## 🛠️ 开发说明
-
-### 修改配置
-
-- API设置: 在Web界面的设置中修改
-- 快捷指令: 修改 `web/config.json` 文件
-- 样式定制: 修改 `web/style.css` 文件
-
-### 添加新功能
-
-大部分功能都在前端实现，主要修改 `web/app.js` 文件即可。
-
-### 日志查看
-
-所有对话记录都会保存在 `interactions.log.json` 文件中，包含:
-- 用户输入
-- AI响应
-- 时间戳
-- 对话类型 (主对话/追问)
-
-## ⚠️ 注意事项
-
-- **安全性**: API密钥存储在浏览器本地，仅适用于个人或内部安全环境
-- **网络**: 需要网络连接访问LLM API服务
-- **浏览器**: 建议使用现代浏览器以获得最佳体验
-- **端口**: 默认使用8080端口，请确保端口未被占用
-
-## 🤝 贡献
-
-欢迎提交Issue和Pull Request来改进这个项目!
-
-## 📄 许可证
-
-本项目采用MIT许可证。
-
+1.  **打开知识库**: 点击页面右上角的 "知识库" 按钮，展开右侧边栏。
+2.  **创建/选择笔记**: 在右侧边栏中，你可以右键单击来创建新的文件或文件夹。单击一个笔记文件，应用将切换到编辑器模式。
+3.  **编辑笔记**: 在中间的编辑器中，你可以像在普通 Markdown 编辑器中一样写作。
+4.  **使用 Copilot**:
+      - 在左侧的 Copilot 面板输入框中，输入你希望 AI 执行的修改指令，例如：
+        > `帮我重构第二段，让语言更简洁`
+        > `搜索知识库中关于 "React Hooks" 的笔记，并总结要点添加到当前笔记末尾`
+      - Copilot 会开始执行任务，并在 Copilot 面板中显示其思考过程。
+      - 当 Copilot 对文件进行修改时，编辑器区域会自动切换到 **Diff 视图**。
+5.  **审查变更**:
+      - 在 Diff 视图中，你可以清晰地看到所有增、删、改的内容。
+      - 你可以**撤销**（Revert）不想要的修改块。
+      - 如果你对所有修改都满意，可以点击 "保存" 按钮。
+      - 如果你想放弃所有修改，可以点击 "**全部回退**" (Reject All) 按钮。
