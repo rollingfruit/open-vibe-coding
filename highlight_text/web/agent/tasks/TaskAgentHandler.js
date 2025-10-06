@@ -30,26 +30,34 @@ export class TaskAgentHandler {
 - list_tasks: 查看用户现有的任务安排(了解空闲时间)
 - create_task: 创建一个新任务
 
+**任务分类:**
+为每个任务选择合适的类型,帮助用户更好地管理不同类别的事务:
+- work: 工作相关任务(会议、项目、报告等) - 蓝色
+- personal: 个人事务(锻炼、购物、娱乐等) - 绿色
+- study: 学习任务(课程、阅读、培训等) - 橙色
+- 如果无法确定类型,可以不指定(将使用默认黄色)
+
 **核心规则:**
 1. 当用户提出多个任务时,将它们分解成一个有序的**规划队列**
 2. **一次只处理队列中的一项任务**
 3. 为每个任务规划时:
    - 首先调用 list_tasks 获取最新的日程安排
+   - 分析任务性质,判断任务类型(work/personal/study)
    - 分析空闲时间段
-   - 选择合适的时间并调用 create_task
+   - 选择合适的时间并调用 create_task(包含type参数)
    - 创建成功后,**暂停并等待用户确认**
 4. 暂停时输出: "已为您安排【任务名】,您可以在日历上调整。确认后,我将继续安排下一项。"
 5. 用户确认后,重新调用 list_tasks 获取最新状态(包含用户的调整),然后处理下一个任务
 
 **示例流程:**
 用户: "我下午要开会,晚上要写报告"
-你: [内部规划队列: [{title: '下午开会'}, {title: '晚上写报告'}]]
+你: [内部规划队列: [{title: '下午开会', type: 'work'}, {title: '晚上写报告', type: 'work'}]]
 你: [调用 list_tasks 查看空闲]
-你: [为"下午开会"选择14:00-15:00, 调用 create_task]
+你: [为"下午开会"选择14:00-15:00, 调用 create_task(title='下午开会', type='work', dtstart=..., dtend=...)]
 你: "已为您安排【下午开会】,您可以在日历上调整。确认后,我将继续安排下一项。"
 [用户在UI上调整时间或点击"继续"]
 你: [重新调用 list_tasks, 获取用户调整后的最新状态]
-你: [为"晚上写报告"选择空闲时间, 调用 create_task]
+你: [为"晚上写报告"选择空闲时间, 调用 create_task(title='晚上写报告', type='work', dtstart=..., dtend=...)]
 你: "已为您安排【晚上写报告】,所有任务已规划完成!"`;
     }
 
@@ -154,6 +162,9 @@ export class TaskAgentHandler {
 
         // 调用 LLM
         await this.processWithLLM();
+
+        // 保存会话日志
+        await this.saveConversationLog();
     }
 
     async processWithLLM() {
@@ -434,6 +445,41 @@ export class TaskAgentHandler {
         this.planningQueue = [];
         this.currentTaskIndex = 0;
         this.displayWelcomeMessage();
+    }
+
+    /**
+     * 保存会话日志到后端
+     */
+    async saveConversationLog() {
+        if (this.conversationHistory.length === 0) {
+            return;
+        }
+
+        try {
+            const logData = {
+                timestamp: new Date().toISOString(),
+                conversationHistory: this.conversationHistory,
+                planningQueue: this.planningQueue,
+                currentTaskIndex: this.currentTaskIndex
+            };
+
+            const response = await fetch('/agent/tasks/log', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(logData)
+            });
+
+            if (!response.ok) {
+                console.error('Failed to save conversation log:', await response.text());
+            } else {
+                const result = await response.json();
+                console.log('Conversation log saved:', result.filename);
+            }
+        } catch (error) {
+            console.error('Error saving conversation log:', error);
+        }
     }
 
     // 提供给 WorkspaceView 调用的方法

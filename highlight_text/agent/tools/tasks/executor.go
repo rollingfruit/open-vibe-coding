@@ -13,8 +13,12 @@ import (
 type Task struct {
 	ID          string                 `json:"id"`
 	Title       string                 `json:"title"`
-	Status      string                 `json:"status"` // pending | in_progress | completed | archived
+	Type        string                 `json:"type,omitempty"`     // 任务类型: work, personal, study
+	Color       string                 `json:"color,omitempty"`    // 任务颜色
+	Status      string                 `json:"status"`             // pending | in_progress | completed | archived
 	Project     string                 `json:"project,omitempty"`
+	ParentID    string                 `json:"parent_id,omitempty"` // 父任务ID
+	Progress    int                    `json:"progress,omitempty"`  // 进度百分比 (0-100)
 	DtStart     string                 `json:"dtstart,omitempty"`
 	DtEnd       string                 `json:"dtend,omitempty"`
 	CreatedAt   string                 `json:"created_at"`
@@ -60,9 +64,17 @@ func GetTaskTools() []ToolDefinition {
 						"type":        "string",
 						"description": "任务标题",
 					},
+					"type": map[string]interface{}{
+						"type":        "string",
+						"description": "任务类型（work-工作/personal-个人/study-学习，可选）",
+					},
 					"project": map[string]interface{}{
 						"type":        "string",
 						"description": "项目名称（用于甘特图分组，可选）",
+					},
+					"parent_id": map[string]interface{}{
+						"type":        "string",
+						"description": "父任务ID（创建子任务时使用，可选）",
 					},
 					"dtstart": map[string]interface{}{
 						"type":        "string",
@@ -117,7 +129,7 @@ func GetTaskTools() []ToolDefinition {
 					},
 					"updates": map[string]interface{}{
 						"type":        "object",
-						"description": "要更新的字段（支持 title, status, project, dtstart, dtend, content, review 等）",
+						"description": "要更新的字段（支持 title, status, type, parent_id, progress, project, dtstart, dtend, content, review 等）",
 					},
 				},
 				"required": []string{"task_id", "updates"},
@@ -177,6 +189,14 @@ func createTask(args map[string]interface{}, basePath string) (string, error) {
 		return "", fmt.Errorf("缺少必需参数: title")
 	}
 
+	// 项目类型到颜色的映射
+	projectTypeColors := map[string]string{
+		"work":     "#3B82F6", // 蓝色 - 工作
+		"personal": "#10B981", // 绿色 - 个人
+		"study":    "#F97316", // 橙色 - 学习
+		"default":  "#FBBF24", // 黄色 - 默认
+	}
+
 	// 生成任务ID（时间戳 + 随机字符）
 	now := time.Now()
 	taskID := fmt.Sprintf("task_%d_%s", now.Unix(), generateRandomID(5))
@@ -190,9 +210,26 @@ func createTask(args map[string]interface{}, basePath string) (string, error) {
 		UpdatedAt: now.Format(time.RFC3339),
 	}
 
+	// 处理任务类型和颜色
+	taskType := "default"
+	if typeArg, ok := args["type"].(string); ok && typeArg != "" {
+		taskType = strings.ToLower(typeArg)
+	}
+	task.Type = taskType
+
+	// 根据类型分配颜色
+	if color, exists := projectTypeColors[taskType]; exists {
+		task.Color = color
+	} else {
+		task.Color = projectTypeColors["default"]
+	}
+
 	// 可选字段
 	if project, ok := args["project"].(string); ok && project != "" {
 		task.Project = project
+	}
+	if parentID, ok := args["parent_id"].(string); ok && parentID != "" {
+		task.ParentID = parentID
 	}
 	if dtstart, ok := args["dtstart"].(string); ok && dtstart != "" {
 		task.DtStart = dtstart
@@ -408,10 +445,21 @@ func parseTaskFile(filePath string) (Task, error) {
 						task.ID = value
 					case "title":
 						task.Title = value
+					case "type":
+						task.Type = value
+					case "color":
+						task.Color = value
 					case "status":
 						task.Status = value
 					case "project":
 						task.Project = value
+					case "parent_id":
+						task.ParentID = value
+					case "progress":
+						// 解析进度为整数
+						if progress, err := fmt.Sscanf(value, "%d", new(int)); err == nil && progress == 1 {
+							task.Progress = *new(int)
+						}
 					case "dtstart":
 						task.DtStart = value
 					case "dtend":
@@ -441,8 +489,20 @@ func buildTaskFileContent(task Task) string {
 	sb.WriteString(fmt.Sprintf("title: \"%s\"\n", task.Title))
 	sb.WriteString(fmt.Sprintf("status: \"%s\"\n", task.Status))
 
+	if task.Type != "" {
+		sb.WriteString(fmt.Sprintf("type: \"%s\"\n", task.Type))
+	}
+	if task.Color != "" {
+		sb.WriteString(fmt.Sprintf("color: \"%s\"\n", task.Color))
+	}
 	if task.Project != "" {
 		sb.WriteString(fmt.Sprintf("project: \"%s\"\n", task.Project))
+	}
+	if task.ParentID != "" {
+		sb.WriteString(fmt.Sprintf("parent_id: \"%s\"\n", task.ParentID))
+	}
+	if task.Progress > 0 {
+		sb.WriteString(fmt.Sprintf("progress: %d\n", task.Progress))
 	}
 	if task.DtStart != "" {
 		sb.WriteString(fmt.Sprintf("dtstart: \"%s\"\n", task.DtStart))

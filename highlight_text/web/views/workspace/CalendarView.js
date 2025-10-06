@@ -68,14 +68,17 @@ export class CalendarView {
 
         this.tasks = tasks;
 
+        // 预处理: 为子任务继承父任务的颜色
+        const processedTasks = this.inheritParentColors(tasks);
+
         // 转换任务数据为 FullCalendar 事件格式
-        const events = tasks.map(task => ({
+        const events = processedTasks.map(task => ({
             id: task.id,
             title: task.title,
             start: task.dtstart,
             end: task.dtend,
-            backgroundColor: this.getTaskColor(task),
-            borderColor: this.getTaskBorderColor(task),
+            backgroundColor: task.color || '#FBBF24', // 使用任务颜色，默认黄色
+            borderColor: task.color || '#FBBF24',
             extendedProps: {
                 status: task.status,
                 project: task.project,
@@ -89,6 +92,26 @@ export class CalendarView {
         this.calendar.addEventSource(events);
 
         console.log('Calendar rendered with', events.length, 'events');
+    }
+
+    /**
+     * 为子任务继承父任务的颜色和类型
+     */
+    inheritParentColors(tasks) {
+        const taskMap = new Map();
+        tasks.forEach(task => taskMap.set(task.id, task));
+
+        return tasks.map(task => {
+            if (task.parent_id && taskMap.has(task.parent_id)) {
+                const parentTask = taskMap.get(task.parent_id);
+                return {
+                    ...task,
+                    color: task.color || parentTask.color,
+                    type: task.type || parentTask.type
+                };
+            }
+            return task;
+        });
     }
 
     getTaskColor(task) {
@@ -215,6 +238,12 @@ export class CalendarView {
             <div class="menu-item" data-action="review" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>📝</span><span>任务复盘</span>
             </div>
+            <div class="menu-item" data-action="set_parent" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
+                <span>🔗</span><span>设置父项目</span>
+            </div>
+            <div class="menu-item" data-action="add_subtask" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
+                <span>➕</span><span>添加子任务</span>
+            </div>
             <div class="menu-item" data-action="complete" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>✅</span><span>标记完成</span>
             </div>
@@ -255,6 +284,12 @@ export class CalendarView {
             case 'review':
                 this.workspaceView.showReviewModal(task);
                 break;
+            case 'set_parent':
+                this.showSetParentDialog(task);
+                break;
+            case 'add_subtask':
+                this.showAddSubtaskDialog(task);
+                break;
             case 'complete':
                 this.workspaceView.updateTaskState(task.id, { status: 'completed' });
                 break;
@@ -264,6 +299,70 @@ export class CalendarView {
                 }
                 break;
         }
+    }
+
+    showSetParentDialog(task) {
+        // 获取所有可能的父任务(不包括自己和自己的子任务)
+        const availableParents = this.tasks.filter(t =>
+            t.id !== task.id && t.parent_id !== task.id
+        );
+
+        if (availableParents.length === 0) {
+            alert('没有可用的父项目');
+            return;
+        }
+
+        // 创建选择列表
+        const options = availableParents.map((t, index) =>
+            `${index + 1}. ${t.title}`
+        ).join('\n');
+
+        const selection = prompt(`请选择父项目:\n${options}\n\n输入序号 (输入0取消父项目关联):`);
+
+        if (selection === null) return;
+
+        const index = parseInt(selection) - 1;
+
+        if (selection === '0') {
+            // 取消父项目关联
+            this.workspaceView.updateTaskState(task.id, { parent_id: '' });
+        } else if (index >= 0 && index < availableParents.length) {
+            const parentTask = availableParents[index];
+            this.workspaceView.updateTaskState(task.id, {
+                parent_id: parentTask.id,
+                // 继承父任务的颜色和类型
+                color: parentTask.color,
+                type: parentTask.type
+            });
+        } else {
+            alert('无效的选择');
+        }
+    }
+
+    showAddSubtaskDialog(task) {
+        const title = prompt('请输入子任务标题:');
+        if (!title) return;
+
+        // 使用 TaskAgent 创建子任务
+        const startTime = task.dtstart || new Date().toISOString();
+        const endTime = task.dtend || new Date(Date.now() + 3600000).toISOString();
+
+        this.workspaceView.taskAgent.executeTool('create_task', {
+            title: title,
+            parent_id: task.id,
+            type: task.type,
+            dtstart: startTime,
+            dtend: endTime
+        }).then(async (result) => {
+            const data = JSON.parse(result);
+            if (data.success) {
+                await this.workspaceView.loadAndSyncTasks();
+            } else {
+                alert('创建子任务失败: ' + (data.error || '未知错误'));
+            }
+        }).catch(error => {
+            alert('创建子任务失败: ' + error.message);
+        });
     }
 
     async deleteTask(taskId) {

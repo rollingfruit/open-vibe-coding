@@ -97,6 +97,7 @@ func main() {
 	http.HandleFunc("/api/tasks", handleTasks)
 	http.HandleFunc("/agent/tasks/tools", handleTaskAgentTools)
 	http.HandleFunc("/agent/tasks/execute", handleTaskAgentExecute)
+	http.HandleFunc("/agent/tasks/log", handleTaskAgentLog)
 
 	// 配置API端点
 	http.HandleFunc("/api/save-config", handleSaveConfig)
@@ -1416,6 +1417,73 @@ func handleTaskAgentExecute(w http.ResponseWriter, r *http.Request) {
 	// 返回成功响应
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(result))
+}
+
+// handleTaskAgentLog 处理任务Agent日志写入
+func handleTaskAgentLog(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 读取请求体
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	// 解析JSON
+	var logData map[string]interface{}
+	if err := json.Unmarshal(body, &logData); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 确保 logs/tasks 目录存在
+	logsDir := "./logs/tasks"
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		log.Printf("Failed to create logs directory: %v", err)
+		http.Error(w, "Failed to create logs directory", http.StatusInternalServerError)
+		return
+	}
+
+	// 生成文件名（使用时间戳）
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("task_log_%s.json", timestamp)
+	logPath := filepath.Join(logsDir, filename)
+
+	// 将日志数据写入文件（格式化JSON）
+	formattedJSON, err := json.MarshalIndent(logData, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal log data: %v", err)
+		http.Error(w, "Failed to format log data", http.StatusInternalServerError)
+		return
+	}
+
+	if err := ioutil.WriteFile(logPath, formattedJSON, 0644); err != nil {
+		log.Printf("Failed to write log file: %v", err)
+		http.Error(w, "Failed to write log file", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Task agent log saved to: %s", logPath)
+
+	// 返回成功响应
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"filename": filename,
+		"message":  fmt.Sprintf("Log saved to %s", filename),
+	})
 }
 
 // handleTasks 处理任务列表请求

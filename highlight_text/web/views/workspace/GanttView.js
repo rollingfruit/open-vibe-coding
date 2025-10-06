@@ -58,8 +58,11 @@ export class GanttView {
             return;
         }
 
+        // 预处理: 为子任务继承父任务的颜色
+        const processedTasks = this.inheritParentColors(tasks);
+
         // 转换数据为 Frappe Gantt 格式
-        const ganttTasks = this.convertToGanttFormat(tasks);
+        const ganttTasks = this.convertToGanttFormat(processedTasks);
 
         // 初始化或更新 Gantt 图
         if (!this.gantt) {
@@ -98,6 +101,9 @@ export class GanttView {
                 // 绑定右键菜单
                 this.setupContextMenu();
 
+                // 应用自定义颜色
+                this.applyTaskColors(ganttTasks);
+
                 console.log('Frappe Gantt initialized with', ganttTasks.length, 'tasks');
             } catch (error) {
                 console.error('Failed to initialize Gantt:', error);
@@ -112,6 +118,10 @@ export class GanttView {
             try {
                 this.gantt.refresh(ganttTasks);
                 this.setupContextMenu();
+
+                // 应用自定义颜色
+                this.applyTaskColors(ganttTasks);
+
                 console.log('Gantt refreshed with', ganttTasks.length, 'tasks');
             } catch (error) {
                 console.error('Failed to refresh Gantt:', error);
@@ -119,15 +129,51 @@ export class GanttView {
         }
     }
 
+    /**
+     * 为甘特图任务条应用自定义颜色
+     */
+    applyTaskColors(ganttTasks) {
+        setTimeout(() => {
+            ganttTasks.forEach(ganttTask => {
+                if (ganttTask._color) {
+                    const bar = this.container.querySelector(`.bar-wrapper[data-id="${ganttTask.id}"] .bar`);
+                    if (bar) {
+                        bar.style.fill = ganttTask._color;
+                    }
+                    const progressBar = this.container.querySelector(`.bar-wrapper[data-id="${ganttTask.id}"] .bar-progress`);
+                    if (progressBar) {
+                        progressBar.style.fill = this.darkenColor(ganttTask._color, 20);
+                    }
+                }
+            });
+        }, 100);
+    }
+
+    /**
+     * 加深颜色
+     */
+    darkenColor(color, percent) {
+        const num = parseInt(color.replace("#",""), 16);
+        const amt = Math.round(2.55 * percent);
+        const R = (num >> 16) - amt;
+        const G = (num >> 8 & 0x00FF) - amt;
+        const B = (num & 0x0000FF) - amt;
+        return "#" + (0x1000000 + (R<255?R<1?0:R:255)*0x10000 +
+            (G<255?G<1?0:G:255)*0x100 + (B<255?B<1?0:B:255))
+            .toString(16).slice(1);
+    }
+
     convertToGanttFormat(tasks) {
         return tasks.map(task => {
             const start = task.dtstart ? new Date(task.dtstart) : new Date();
             const end = task.dtend ? new Date(task.dtend) : new Date(start.getTime() + 3600000);
 
-            // 计算进度
-            let progress = 0;
-            if (task.status === 'completed') progress = 100;
-            else if (task.status === 'in_progress') progress = 50;
+            // 使用任务的progress字段，如果没有则根据状态计算
+            let progress = task.progress || 0;
+            if (progress === 0) {
+                if (task.status === 'completed') progress = 100;
+                else if (task.status === 'in_progress') progress = 50;
+            }
 
             return {
                 id: task.id,
@@ -135,8 +181,30 @@ export class GanttView {
                 start: this.formatDate(start),
                 end: this.formatDate(end),
                 progress: progress,
-                custom_class: this.getTaskClass(task)
+                custom_class: this.getTaskClass(task),
+                // 存储颜色信息用于后续渲染
+                _color: task.color
             };
+        });
+    }
+
+    /**
+     * 为子任务继承父任务的颜色和类型
+     */
+    inheritParentColors(tasks) {
+        const taskMap = new Map();
+        tasks.forEach(task => taskMap.set(task.id, task));
+
+        return tasks.map(task => {
+            if (task.parent_id && taskMap.has(task.parent_id)) {
+                const parentTask = taskMap.get(task.parent_id);
+                return {
+                    ...task,
+                    color: task.color || parentTask.color,
+                    type: task.type || parentTask.type
+                };
+            }
+            return task;
         });
     }
 
@@ -230,6 +298,15 @@ export class GanttView {
             <div class="menu-item" data-action="review" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>📝</span><span>任务复盘</span>
             </div>
+            <div class="menu-item" data-action="set_parent" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
+                <span>🔗</span><span>设置父项目</span>
+            </div>
+            <div class="menu-item" data-action="add_subtask" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
+                <span>➕</span><span>添加子任务</span>
+            </div>
+            <div class="menu-item" data-action="set_progress" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
+                <span>🔋</span><span>设置进度</span>
+            </div>
             <div class="menu-item" data-action="complete" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>✅</span><span>标记完成</span>
             </div>
@@ -270,6 +347,15 @@ export class GanttView {
             case 'review':
                 this.workspaceView.showReviewModal(task);
                 break;
+            case 'set_parent':
+                this.showSetParentDialog(task);
+                break;
+            case 'add_subtask':
+                this.showAddSubtaskDialog(task);
+                break;
+            case 'set_progress':
+                this.showSetProgressDialog(task);
+                break;
             case 'complete':
                 this.workspaceView.updateTaskState(task.id, { status: 'completed' });
                 break;
@@ -279,6 +365,92 @@ export class GanttView {
                 }
                 break;
         }
+    }
+
+    showSetParentDialog(task) {
+        // 获取所有可能的父任务(不包括自己和自己的子任务)
+        const availableParents = this.tasks.filter(t =>
+            t.id !== task.id && t.parent_id !== task.id
+        );
+
+        if (availableParents.length === 0) {
+            alert('没有可用的父项目');
+            return;
+        }
+
+        // 创建选择列表
+        const options = availableParents.map((t, index) =>
+            `${index + 1}. ${t.title}`
+        ).join('\n');
+
+        const selection = prompt(`请选择父项目:\n${options}\n\n输入序号 (输入0取消父项目关联):`);
+
+        if (selection === null) return;
+
+        const index = parseInt(selection) - 1;
+
+        if (selection === '0') {
+            // 取消父项目关联
+            this.workspaceView.updateTaskState(task.id, { parent_id: '' });
+        } else if (index >= 0 && index < availableParents.length) {
+            const parentTask = availableParents[index];
+            this.workspaceView.updateTaskState(task.id, {
+                parent_id: parentTask.id,
+                // 继承父任务的颜色和类型
+                color: parentTask.color,
+                type: parentTask.type
+            });
+        } else {
+            alert('无效的选择');
+        }
+    }
+
+    showAddSubtaskDialog(task) {
+        const title = prompt('请输入子任务标题:');
+        if (!title) return;
+
+        // 使用 TaskAgent 创建子任务
+        const startTime = task.dtstart || new Date().toISOString();
+        const endTime = task.dtend || new Date(Date.now() + 3600000).toISOString();
+
+        this.workspaceView.taskAgent.executeTool('create_task', {
+            title: title,
+            parent_id: task.id,
+            type: task.type,
+            dtstart: startTime,
+            dtend: endTime
+        }).then(async (result) => {
+            const data = JSON.parse(result);
+            if (data.success) {
+                await this.workspaceView.loadAndSyncTasks();
+            } else {
+                alert('创建子任务失败: ' + (data.error || '未知错误'));
+            }
+        }).catch(error => {
+            alert('创建子任务失败: ' + error.message);
+        });
+    }
+
+    showSetProgressDialog(task) {
+        const currentProgress = task.progress || 0;
+        const progressOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+        const options = progressOptions.map(p =>
+            p === currentProgress ? `${p}% ✓` : `${p}%`
+        ).join('\n');
+
+        const selection = prompt(`选择任务进度(当前: ${currentProgress}%):\n\n${options}\n\n输入进度值(0-100,步长10):`);
+
+        if (selection === null) return;
+
+        const progress = parseInt(selection);
+
+        if (isNaN(progress) || progress < 0 || progress > 100) {
+            alert('请输入0-100之间的数字');
+            return;
+        }
+
+        this.workspaceView.updateTaskState(task.id, { progress: progress });
     }
 
     async deleteTask(taskId) {
