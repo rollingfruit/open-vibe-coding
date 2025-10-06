@@ -164,25 +164,13 @@ export class CalendarView {
 
     // 选择时间段创建任务
     handleSelect(info) {
-        const title = prompt('请输入任务名称:');
-        if (!title) {
-            this.calendar.unselect();
-            return;
-        }
+        // 使用新的弹窗方式创建任务
+        this.workspaceView.showCreateTaskModal({
+            start: info.start,
+            end: info.end
+        });
 
-        const startTime = info.start.toISOString();
-        const endTime = info.end.toISOString();
-
-        // 调用 TaskAgent 创建任务
-        this.workspaceView.taskAgent.createSingleTask(title, startTime, endTime)
-            .then(async () => {
-                await this.workspaceView.loadAndSyncTasks();
-                this.calendar.unselect();
-            })
-            .catch(error => {
-                alert('创建任务失败: ' + error.message);
-                this.calendar.unselect();
-            });
+        this.calendar.unselect();
     }
 
     // 单击事件

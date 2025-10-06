@@ -319,4 +319,151 @@ export class WorkspaceView {
             modal.remove();
         });
     }
+
+    /**
+     * 显示创建任务的弹窗
+     * @param {Object} options - {start: Date, end: Date, parentId?: string}
+     */
+    showCreateTaskModal({ start, end, parentId = null }) {
+        // 移除已存在的弹窗
+        const existingModal = document.querySelector('.task-create-modal');
+        if (existingModal) existingModal.remove();
+
+        // 格式化时间为本地字符串
+        const formatDateTime = (date) => {
+            const d = new Date(date);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hours = String(d.getHours()).padStart(2, '0');
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        };
+
+        // 获取所有可能的父项目
+        const availableParents = this.tasks.filter(t => !t.parent_id);
+
+        // 创建弹窗
+        const modal = document.createElement('div');
+        modal.className = 'task-create-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+
+        modal.innerHTML = `
+            <div class="modal-content" style="background: white; border-radius: 8px; padding: 24px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">创建新任务</h3>
+
+                <form id="create-task-form">
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">任务名称 *</label>
+                        <input type="text" id="task-title" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="输入任务名称">
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">任务分类</label>
+                        <select id="task-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                            <option value="">默认</option>
+                            <option value="work">工作 (蓝色)</option>
+                            <option value="personal">个人 (绿色)</option>
+                            <option value="study">学习 (橙色)</option>
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">所属项目</label>
+                        <select id="task-parent" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                            <option value="">无 (独立任务)</option>
+                            ${availableParents.map(p => `<option value="${p.id}">${p.title}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">开始时间 *</label>
+                        <input type="datetime-local" id="task-start" required value="${formatDateTime(start)}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">结束时间 *</label>
+                        <input type="datetime-local" id="task-end" required value="${formatDateTime(end)}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+
+                    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                        <button type="button" id="cancel-btn" style="padding: 8px 20px; background: #f5f5f5; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">取消</button>
+                        <button type="submit" style="padding: 8px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">创建</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // 如果有预设的父项目，选中它
+        if (parentId) {
+            const parentSelect = modal.querySelector('#task-parent');
+            parentSelect.value = parentId;
+            parentSelect.disabled = true;
+        }
+
+        // 绑定取消按钮
+        modal.querySelector('#cancel-btn').addEventListener('click', () => {
+            modal.remove();
+        });
+
+        // 绑定表单提交
+        modal.querySelector('#create-task-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const title = modal.querySelector('#task-title').value.trim();
+            const type = modal.querySelector('#task-type').value;
+            const parentIdValue = modal.querySelector('#task-parent').value;
+            const startTime = new Date(modal.querySelector('#task-start').value).toISOString();
+            const endTime = new Date(modal.querySelector('#task-end').value).toISOString();
+
+            if (!title) {
+                alert('请输入任务名称');
+                return;
+            }
+
+            // 构建任务参数
+            const taskArgs = {
+                title: title,
+                dtstart: startTime,
+                dtend: endTime
+            };
+
+            if (type) taskArgs.type = type;
+            if (parentIdValue) taskArgs.parent_id = parentIdValue;
+
+            try {
+                const result = await this.taskAgent.executeTool('create_task', taskArgs);
+                const data = JSON.parse(result);
+
+                if (data.success) {
+                    modal.remove();
+                    await this.loadAndSyncTasks();
+                } else {
+                    alert('创建任务失败: ' + (data.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('创建任务失败: ' + error.message);
+            }
+        });
+
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    }
 }

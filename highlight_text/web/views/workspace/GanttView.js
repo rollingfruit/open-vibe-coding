@@ -8,6 +8,15 @@ export class GanttView {
         this.workspaceView = workspaceView;
         this.gantt = null;
         this.tasks = [];
+        this.isSorted = false; // 排序状态
+
+        // 拖拽创建任务的状态
+        this.dragState = {
+            isDragging: false,
+            startX: 0,
+            startDate: null,
+            selectionRect: null
+        };
     }
 
     init() {
@@ -15,15 +24,20 @@ export class GanttView {
             <div class="gantt-header" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
                 <h3 style="margin: 0; font-size: 16px; font-weight: 600;">📈 任务时间线 (甘特图)</h3>
                 <div class="gantt-view-controls" style="display: flex; gap: 8px;">
+                    <button id="gantt-sort-btn" style="padding: 4px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px;">排序</button>
                     <button class="view-mode-btn" data-mode="Day" style="padding: 4px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px;">日</button>
                     <button class="view-mode-btn active" data-mode="Week" style="padding: 4px 12px; border: 1px solid #2196F3; background: #E3F2FD; color: #2196F3; border-radius: 4px; cursor: pointer; font-size: 12px;">周</button>
                     <button class="view-mode-btn" data-mode="Month" style="padding: 4px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px;">月</button>
                 </div>
             </div>
-            <div class="gantt-chart-container">
+            <div class="gantt-chart-container" style="position: relative;">
                 <svg id="gantt-chart"></svg>
             </div>
         `;
+
+        // 绑定排序按钮
+        const sortBtn = this.container.querySelector('#gantt-sort-btn');
+        sortBtn.addEventListener('click', () => this.toggleSort());
 
         // 绑定视图切换按钮
         this.container.querySelectorAll('.view-mode-btn').forEach(btn => {
@@ -42,6 +56,112 @@ export class GanttView {
                 btn.style.color = '#2196F3';
             });
         });
+
+        // 绑定拖拽创建任务的事件
+        this.setupDragToCreate();
+    }
+
+    /**
+     * 设置拖拽创建任务功能
+     */
+    setupDragToCreate() {
+        const ganttContainer = this.container.querySelector('.gantt-chart-container');
+
+        ganttContainer.addEventListener('mousedown', (e) => {
+            // 只在空白区域响应（不在任务条上）
+            if (e.target.closest('.bar-wrapper') || e.target.closest('.bar')) {
+                return;
+            }
+
+            this.dragState.isDragging = true;
+            this.dragState.startX = e.clientX;
+
+            // 创建选择矩形
+            this.dragState.selectionRect = document.createElement('div');
+            this.dragState.selectionRect.style.cssText = `
+                position: absolute;
+                background: rgba(33, 150, 243, 0.2);
+                border: 2px solid #2196F3;
+                pointer-events: none;
+                z-index: 1000;
+            `;
+            ganttContainer.appendChild(this.dragState.selectionRect);
+        });
+
+        ganttContainer.addEventListener('mousemove', (e) => {
+            if (!this.dragState.isDragging || !this.dragState.selectionRect) return;
+
+            const currentX = e.clientX;
+            const startX = this.dragState.startX;
+            const rect = ganttContainer.getBoundingClientRect();
+
+            const left = Math.min(startX, currentX) - rect.left;
+            const width = Math.abs(currentX - startX);
+
+            this.dragState.selectionRect.style.left = `${left}px`;
+            this.dragState.selectionRect.style.top = '0';
+            this.dragState.selectionRect.style.width = `${width}px`;
+            this.dragState.selectionRect.style.height = '100%';
+        });
+
+        ganttContainer.addEventListener('mouseup', (e) => {
+            if (!this.dragState.isDragging) return;
+
+            const currentX = e.clientX;
+            const startX = this.dragState.startX;
+
+            // 清理选择矩形
+            if (this.dragState.selectionRect) {
+                this.dragState.selectionRect.remove();
+                this.dragState.selectionRect = null;
+            }
+
+            this.dragState.isDragging = false;
+
+            // 如果拖拽距离太小，忽略
+            if (Math.abs(currentX - startX) < 20) {
+                return;
+            }
+
+            // 计算起止日期（这里简化处理，基于当前视图模式）
+            const now = new Date();
+            const start = new Date(now);
+            const end = new Date(now);
+            end.setHours(end.getHours() + 2); // 默认2小时
+
+            // 显示创建任务弹窗
+            this.workspaceView.showCreateTaskModal({ start, end });
+        });
+
+        ganttContainer.addEventListener('mouseleave', () => {
+            if (this.dragState.isDragging && this.dragState.selectionRect) {
+                this.dragState.selectionRect.remove();
+                this.dragState.selectionRect = null;
+                this.dragState.isDragging = false;
+            }
+        });
+    }
+
+    /**
+     * 切换排序状态
+     */
+    toggleSort() {
+        this.isSorted = !this.isSorted;
+
+        // 更新按钮样式
+        const sortBtn = this.container.querySelector('#gantt-sort-btn');
+        if (this.isSorted) {
+            sortBtn.style.border = '1px solid #2196F3';
+            sortBtn.style.background = '#E3F2FD';
+            sortBtn.style.color = '#2196F3';
+        } else {
+            sortBtn.style.border = '1px solid #ddd';
+            sortBtn.style.background = 'white';
+            sortBtn.style.color = 'inherit';
+        }
+
+        // 重新渲染
+        this.render(this.tasks);
     }
 
     render(tasks) {
@@ -58,8 +178,19 @@ export class GanttView {
             return;
         }
 
+        // 根据排序状态处理任务列表
+        let displayTasks = [...tasks];
+        if (this.isSorted) {
+            // 按持续时间降序排序（跨日程长的在上方）
+            displayTasks.sort((a, b) => {
+                const durationA = new Date(a.dtend) - new Date(a.dtstart);
+                const durationB = new Date(b.dtend) - new Date(b.dtstart);
+                return durationB - durationA; // 降序
+            });
+        }
+
         // 预处理: 为子任务继承父任务的颜色
-        const processedTasks = this.inheritParentColors(tasks);
+        const processedTasks = this.inheritParentColors(displayTasks);
 
         // 转换数据为 Frappe Gantt 格式
         const ganttTasks = this.convertToGanttFormat(processedTasks);
@@ -294,7 +425,37 @@ export class GanttView {
             overflow: hidden;
         `;
 
+        // 生成进度条HTML
+        const currentProgress = task.progress || 0;
+        const progressLevel = Math.floor(currentProgress / 10); // 0-10
+
+        let batteryIcons = '';
+        for (let i = 1; i <= 10; i++) {
+            const isFilled = i <= progressLevel;
+            const iconStyle = `
+                display: inline-block;
+                width: 16px;
+                height: 20px;
+                margin: 0 2px;
+                border: 2px solid ${isFilled ? '#4CAF50' : '#ddd'};
+                border-radius: 2px;
+                background: ${isFilled ? '#4CAF50' : 'white'};
+                cursor: pointer;
+                transition: all 0.2s;
+                position: relative;
+            `;
+            batteryIcons += `<span class="battery-icon" data-level="${i}" style="${iconStyle}"></span>`;
+        }
+
         menu.innerHTML = `
+            <div id="progress-selector" style="padding: 12px 16px; border-bottom: 1px solid #f0f0f0;">
+                <div style="font-size: 12px; margin-bottom: 8px; color: #666;">
+                    设置进度: <span id="progress-value" style="font-weight: 600; color: #4CAF50;">${currentProgress}%</span>
+                </div>
+                <div style="display: flex; gap: 2px; justify-content: space-between;">
+                    ${batteryIcons}
+                </div>
+            </div>
             <div class="menu-item" data-action="review" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>📝</span><span>任务复盘</span>
             </div>
@@ -303,9 +464,6 @@ export class GanttView {
             </div>
             <div class="menu-item" data-action="add_subtask" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>➕</span><span>添加子任务</span>
-            </div>
-            <div class="menu-item" data-action="set_progress" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
-                <span>🔋</span><span>设置进度</span>
             </div>
             <div class="menu-item" data-action="complete" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>✅</span><span>标记完成</span>
@@ -316,6 +474,45 @@ export class GanttView {
         `;
 
         document.body.appendChild(menu);
+
+        // 绑定进度条点击事件
+        const progressSelector = menu.querySelector('#progress-selector');
+        progressSelector.addEventListener('click', (e) => {
+            const batteryIcon = e.target.closest('.battery-icon');
+            if (batteryIcon) {
+                const level = parseInt(batteryIcon.getAttribute('data-level'));
+                const newProgress = level * 10;
+
+                // 更新任务进度
+                this.workspaceView.updateTaskState(task.id, { progress: newProgress });
+
+                // 更新进度值显示
+                const progressValue = menu.querySelector('#progress-value');
+                progressValue.textContent = `${newProgress}%`;
+
+                // 更新电量图标显示
+                const icons = menu.querySelectorAll('.battery-icon');
+                icons.forEach((icon, index) => {
+                    const iconLevel = index + 1;
+                    const isFilled = iconLevel <= level;
+                    icon.style.border = `2px solid ${isFilled ? '#4CAF50' : '#ddd'}`;
+                    icon.style.background = isFilled ? '#4CAF50' : 'white';
+                });
+            }
+        });
+
+        // 鼠标悬停效果
+        const batteryIconElements = menu.querySelectorAll('.battery-icon');
+        batteryIconElements.forEach(icon => {
+            icon.addEventListener('mouseenter', () => {
+                icon.style.transform = 'scale(1.1)';
+                icon.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+            });
+            icon.addEventListener('mouseleave', () => {
+                icon.style.transform = 'scale(1)';
+                icon.style.boxShadow = 'none';
+            });
+        });
 
         // 绑定菜单项事件
         menu.querySelectorAll('.menu-item').forEach(item => {
@@ -352,9 +549,6 @@ export class GanttView {
                 break;
             case 'add_subtask':
                 this.showAddSubtaskDialog(task);
-                break;
-            case 'set_progress':
-                this.showSetProgressDialog(task);
                 break;
             case 'complete':
                 this.workspaceView.updateTaskState(task.id, { status: 'completed' });
@@ -429,28 +623,6 @@ export class GanttView {
         }).catch(error => {
             alert('创建子任务失败: ' + error.message);
         });
-    }
-
-    showSetProgressDialog(task) {
-        const currentProgress = task.progress || 0;
-        const progressOptions = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-
-        const options = progressOptions.map(p =>
-            p === currentProgress ? `${p}% ✓` : `${p}%`
-        ).join('\n');
-
-        const selection = prompt(`选择任务进度(当前: ${currentProgress}%):\n\n${options}\n\n输入进度值(0-100,步长10):`);
-
-        if (selection === null) return;
-
-        const progress = parseInt(selection);
-
-        if (isNaN(progress) || progress < 0 || progress > 100) {
-            alert('请输入0-100之间的数字');
-            return;
-        }
-
-        this.workspaceView.updateTaskState(task.id, { progress: progress });
     }
 
     async deleteTask(taskId) {
