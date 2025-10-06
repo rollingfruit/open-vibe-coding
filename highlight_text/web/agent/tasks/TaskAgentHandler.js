@@ -28,7 +28,7 @@ export class TaskAgentHandler {
 **你的工具:**
 - get_current_time: 获取当前准确时间
 - list_tasks: 查看用户现有的任务安排(了解空闲时间)
-- create_task: 创建一个新任务
+- create_task: 创建一个新任务(支持 status: 'preview' 参数)
 
 **任务分类:**
 为每个任务选择合适的类型,帮助用户更好地管理不同类别的事务:
@@ -37,28 +37,39 @@ export class TaskAgentHandler {
 - study: 学习任务(课程、阅读、培训等) - 橙色
 - 如果无法确定类型,可以不指定(将使用默认黄色)
 
-**核心规则:**
-1. 当用户提出多个任务时,将它们分解成一个有序的**规划队列**
-2. **一次只处理队列中的一项任务**
-3. 为每个任务规划时:
-   - 首先调用 list_tasks 获取最新的日程安排
-   - 分析任务性质,判断任务类型(work/personal/study)
-   - 分析空闲时间段
-   - 选择合适的时间并调用 create_task(包含type参数)
-   - 创建成功后,**暂停并等待用户确认**
-4. 暂停时输出: "已为您安排【任务名】,您可以在日历上调整。确认后,我将继续安排下一项。"
-5. 用户确认后,重新调用 list_tasks 获取最新状态(包含用户的调整),然后处理下一个任务
+**核心规则 - 批量规划模式:**
+1. 当用户提出多个任务时,**一次性完成所有任务的时间规划**,不要逐个暂停等待确认
+2. 规划步骤:
+   - 首先调用 list_tasks 获取当前的日程安排
+   - 分析所有任务的性质,判断任务类型(work/personal/study)
+   - 为每个任务选择合适的时间段
+   - **批量调用 create_task,每个任务都附加 status: 'preview' 参数**
+3. 所有任务创建完成后,输出一个清晰的任务列表总结:
+   "✅ 已为您规划了以下任务:
+   1. 【任务名】- 时间段
+   2. 【任务名】- 时间段
+   ...
+
+   这些任务已在甘特图和日历上以预览模式显示(半透明状态),您可以直接在视图中拖拽调整时间。确认无误后,点击下方的'全部采纳'按钮。"
+
+**预览模式说明:**
+- 使用 status: 'preview' 创建的任务会在UI上以半透明、虚线边框显示
+- 用户可以在日历和甘特图上拖拽调整预览任务的时间
+- 用户点击"全部采纳"后,所有预览任务会自动转为 pending 状态
 
 **示例流程:**
-用户: "我下午要开会,晚上要写报告"
-你: [内部规划队列: [{title: '下午开会', type: 'work'}, {title: '晚上写报告', type: 'work'}]]
+用户: "我下午要开会,晚上要写报告,明天上午要做代码审查"
 你: [调用 list_tasks 查看空闲]
-你: [为"下午开会"选择14:00-15:00, 调用 create_task(title='下午开会', type='work', dtstart=..., dtend=...)]
-你: "已为您安排【下午开会】,您可以在日历上调整。确认后,我将继续安排下一项。"
-[用户在UI上调整时间或点击"继续"]
-你: [重新调用 list_tasks, 获取用户调整后的最新状态]
-你: [为"晚上写报告"选择空闲时间, 调用 create_task(title='晚上写报告', type='work', dtstart=..., dtend=...)]
-你: "已为您安排【晚上写报告】,所有任务已规划完成!"`;
+你: [分析三个任务,判断都是工作类型]
+你: [调用 create_task(title='下午开会', type='work', status='preview', dtstart='2025-01-06T14:00:00', dtend='2025-01-06T15:00:00')]
+你: [调用 create_task(title='晚上写报告', type='work', status='preview', dtstart='2025-01-06T19:00:00', dtend='2025-01-06T21:00:00')]
+你: [调用 create_task(title='明天上午做代码审查', type='work', status='preview', dtstart='2025-01-07T09:00:00', dtend='2025-01-07T11:00:00')]
+你: "✅ 已为您规划了以下任务:
+1. 【下午开会】- 今天 14:00-15:00
+2. 【晚上写报告】- 今天 19:00-21:00
+3. 【明天上午做代码审查】- 明天 09:00-11:00
+
+这些任务已在甘特图和日历上以预览模式显示,您可以直接拖拽调整。确认无误后,点击'全部采纳'按钮。"`;
     }
 
     async init() {
@@ -198,7 +209,9 @@ export class TaskAgentHandler {
             });
 
             const data = await response.json();
+            console.log('LLM响应数据:', data);
             const assistantMessage = data.choices[0].message;
+            console.log('助手消息:', assistantMessage);
 
             // 检查是否有思考过程（thought字段）- 支持ReAct模式
             if (assistantMessage.thought) {
@@ -225,9 +238,9 @@ export class TaskAgentHandler {
                     content: assistantMessage.content
                 });
 
-                // 检查是否需要显示"继续规划"按钮
-                if (assistantMessage.content.includes('确认后') || assistantMessage.content.includes('继续安排')) {
-                    this._showContinueButton();
+                // 检查是否需要显示"全部采纳"按钮(批量规划模式)
+                if (assistantMessage.content.includes('全部采纳') || assistantMessage.content.includes('预览模式')) {
+                    this._showApproveAllButton();
                 }
             }
         } catch (error) {
@@ -319,28 +332,77 @@ export class TaskAgentHandler {
         }
     }
 
-    _showContinueButton() {
+    _showApproveAllButton() {
         const buttonContainer = document.createElement('div');
         buttonContainer.style.cssText = 'text-align: center; margin: 16px 0;';
         buttonContainer.innerHTML = `
-            <button class="continue-planning-btn" style="padding: 10px 24px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 14px;">
-                ✅ 继续规划
+            <button class="approve-all-btn" style="padding: 12px 32px; background: #4CAF50; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 15px; box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);">
+                ✅ 全部采纳
             </button>
         `;
 
         this.messagesContainer.appendChild(buttonContainer);
 
-        buttonContainer.querySelector('.continue-planning-btn').addEventListener('click', async () => {
+        buttonContainer.querySelector('.approve-all-btn').addEventListener('click', async () => {
             buttonContainer.remove();
 
-            // 用户确认,继续规划
-            this.conversationHistory.push({
-                role: 'user',
-                content: '继续'
-            });
+            try {
+                // 将所有 preview 状态的任务更新为 pending 状态
+                await this.approveAllPreviewTasks();
 
-            await this.processWithLLM();
+                this._renderTraceStep({
+                    type: 'final',
+                    title: '成功',
+                    content: '✅ 所有任务已采纳并正式创建!'
+                });
+
+                // 刷新视图
+                await this.workspaceView.loadAndSyncTasks();
+            } catch (error) {
+                this._renderTraceStep({
+                    type: 'error',
+                    title: '错误',
+                    content: `采纳任务失败: ${error.message}`
+                });
+            }
         });
+    }
+
+    async approveAllPreviewTasks() {
+        // 获取所有 preview 状态的任务
+        const result = await fetch('/agent/tasks/execute', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                tool: 'list_tasks',
+                args: { status: 'preview' }
+            })
+        });
+
+        const data = await result.json();
+        // data 已经是字符串,需要解析一次
+        const previewTasks = typeof data === 'string' ? JSON.parse(data) : data;
+
+        // 批量更新所有预览任务为 pending 状态
+        const updatePromises = previewTasks.map(task =>
+            fetch('/agent/tasks/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    tool: 'update_task',
+                    args: {
+                        task_id: task.id,
+                        updates: { status: 'pending' }
+                    }
+                })
+            })
+        );
+
+        await Promise.all(updatePromises);
     }
 
     /**

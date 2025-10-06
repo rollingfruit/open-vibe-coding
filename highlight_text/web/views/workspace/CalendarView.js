@@ -47,11 +47,19 @@ export class CalendarView {
             select: (info) => this.handleSelect(info),
             eventClick: (info) => this.handleEventClick(info),
 
-            // 自定义右键菜单
+            // 自定义右键菜单和双击编辑
             eventDidMount: (info) => {
+                // 右键菜单
                 info.el.addEventListener('contextmenu', (e) => {
                     e.preventDefault();
                     this.showContextMenu(e, info.event);
+                });
+
+                // 双击编辑
+                info.el.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    const task = info.event.extendedProps.taskData;
+                    this.workspaceView.showEditTaskModal(task);
                 });
             }
         });
@@ -72,20 +80,46 @@ export class CalendarView {
         const processedTasks = this.inheritParentColors(tasks);
 
         // 转换任务数据为 FullCalendar 事件格式
-        const events = processedTasks.map(task => ({
-            id: task.id,
-            title: task.title,
-            start: task.dtstart,
-            end: task.dtend,
-            backgroundColor: task.color || '#FBBF24', // 使用任务颜色，默认黄色
-            borderColor: task.color || '#FBBF24',
-            extendedProps: {
-                status: task.status,
-                project: task.project,
-                review: task.review,
-                taskData: task
+        const events = processedTasks.map(task => {
+            const start = new Date(task.dtstart);
+            const end = new Date(task.dtend);
+
+            // 计算任务持续时间(小时)
+            const durationHours = (end - start) / (1000 * 60 * 60);
+
+            // 构建CSS类名
+            const taskType = task.type || 'default';
+            let classNames = [`task-type-${taskType}`];
+
+            // 如果任务持续时间超过12小时，添加长任务类
+            if (durationHours > 12) {
+                classNames.push('task-long-duration');
             }
-        }));
+
+            // 如果是预览状态，添加预览类
+            if (task.status === 'preview') {
+                classNames.push('task-preview');
+            }
+
+            // 如果时间跨度超过18小时或没有具体时间,设置为全天事件
+            const isAllDay = durationHours > 18 || (!task.dtstart && !task.dtend);
+
+            return {
+                id: task.id,
+                title: task.title,
+                start: task.dtstart,
+                end: task.dtend,
+                allDay: isAllDay,
+                className: classNames,
+                extendedProps: {
+                    status: task.status,
+                    project: task.project,
+                    review: task.review,
+                    taskData: task,
+                    taskType: taskType
+                }
+            };
+        });
 
         // 更新日历事件
         this.calendar.removeAllEvents();
@@ -226,12 +260,6 @@ export class CalendarView {
             <div class="menu-item" data-action="review" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>📝</span><span>任务复盘</span>
             </div>
-            <div class="menu-item" data-action="set_parent" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
-                <span>🔗</span><span>设置父项目</span>
-            </div>
-            <div class="menu-item" data-action="add_subtask" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
-                <span>➕</span><span>添加子任务</span>
-            </div>
             <div class="menu-item" data-action="complete" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>✅</span><span>标记完成</span>
             </div>
@@ -272,14 +300,11 @@ export class CalendarView {
             case 'review':
                 this.workspaceView.showReviewModal(task);
                 break;
-            case 'set_parent':
-                this.showSetParentDialog(task);
-                break;
-            case 'add_subtask':
-                this.showAddSubtaskDialog(task);
-                break;
             case 'complete':
-                this.workspaceView.updateTaskState(task.id, { status: 'completed' });
+                this.workspaceView.updateTaskState(task.id, {
+                    status: 'completed',
+                    progress: 100
+                });
                 break;
             case 'delete':
                 if (confirm(`确定要删除任务 "${task.title}" 吗?`)) {
@@ -289,73 +314,10 @@ export class CalendarView {
         }
     }
 
-    showSetParentDialog(task) {
-        // 获取所有可能的父任务(不包括自己和自己的子任务)
-        const availableParents = this.tasks.filter(t =>
-            t.id !== task.id && t.parent_id !== task.id
-        );
-
-        if (availableParents.length === 0) {
-            alert('没有可用的父项目');
-            return;
-        }
-
-        // 创建选择列表
-        const options = availableParents.map((t, index) =>
-            `${index + 1}. ${t.title}`
-        ).join('\n');
-
-        const selection = prompt(`请选择父项目:\n${options}\n\n输入序号 (输入0取消父项目关联):`);
-
-        if (selection === null) return;
-
-        const index = parseInt(selection) - 1;
-
-        if (selection === '0') {
-            // 取消父项目关联
-            this.workspaceView.updateTaskState(task.id, { parent_id: '' });
-        } else if (index >= 0 && index < availableParents.length) {
-            const parentTask = availableParents[index];
-            this.workspaceView.updateTaskState(task.id, {
-                parent_id: parentTask.id,
-                // 继承父任务的颜色和类型
-                color: parentTask.color,
-                type: parentTask.type
-            });
-        } else {
-            alert('无效的选择');
-        }
-    }
-
-    showAddSubtaskDialog(task) {
-        const title = prompt('请输入子任务标题:');
-        if (!title) return;
-
-        // 使用 TaskAgent 创建子任务
-        const startTime = task.dtstart || new Date().toISOString();
-        const endTime = task.dtend || new Date(Date.now() + 3600000).toISOString();
-
-        this.workspaceView.taskAgent.executeTool('create_task', {
-            title: title,
-            parent_id: task.id,
-            type: task.type,
-            dtstart: startTime,
-            dtend: endTime
-        }).then(async (result) => {
-            const data = JSON.parse(result);
-            if (data.success) {
-                await this.workspaceView.loadAndSyncTasks();
-            } else {
-                alert('创建子任务失败: ' + (data.error || '未知错误'));
-            }
-        }).catch(error => {
-            alert('创建子任务失败: ' + error.message);
-        });
-    }
-
     async deleteTask(taskId) {
         try {
-            await fetch('/agent/tasks/execute', {
+            console.log('Deleting task:', taskId);
+            const response = await fetch('/agent/tasks/execute', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -366,9 +328,36 @@ export class CalendarView {
                 })
             });
 
-            // 重新加载任务
-            await this.workspaceView.loadAndSyncTasks();
+            console.log('Delete response status:', response.status);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Delete failed:', errorText);
+                throw new Error(`删除请求失败: ${response.status} ${errorText}`);
+            }
+
+            const result = await response.json();
+            console.log('Delete result:', result);
+
+            // 检查返回的数据格式
+            let data = result;
+            if (typeof result === 'string') {
+                try {
+                    data = JSON.parse(result);
+                } catch (e) {
+                    console.error('Failed to parse result:', e);
+                }
+            }
+
+            if (data.success) {
+                console.log(`成功删除 ${data.deleted_count} 个任务`);
+                // 重新加载任务
+                await this.workspaceView.loadAndSyncTasks();
+            } else {
+                throw new Error(data.error || data.message || '删除失败');
+            }
         } catch (error) {
+            console.error('Delete task error:', error);
             alert('删除失败: ' + error.message);
         }
     }

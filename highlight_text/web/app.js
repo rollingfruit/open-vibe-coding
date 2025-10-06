@@ -90,11 +90,7 @@ class AIAssistant {
 
     loadSettings() {
         const stored = localStorage.getItem('aiAssistantSettings');
-        return stored ? JSON.parse(stored) : {
-            apiKey: '',
-            endpoint: 'https://api.openai.com/v1/chat/completions',
-            model: 'gpt-5-nano-2025-08-07'
-        };
+        return JSON.parse(stored);
     }
 
     saveSettings() {
@@ -5442,9 +5438,9 @@ tags: []
 
     get apiSettings() {
         return {
-            endpoint: this.settings?.apiEndpoint || 'https://api.openai.com/v1/chat/completions',
-            apiKey: this.settings?.apiKey || '',
-            model: this.settings?.model || 'gpt-4'
+            endpoint: this.settings?.endpoint || this.settings?.apiEndpoint,
+            apiKey: this.settings?.apiKey,
+            model: this.settings?.model
         };
     }
 }

@@ -10,6 +10,10 @@ export class GanttView {
         this.tasks = [];
         this.isSorted = false; // 排序状态
 
+        // 项目层级展示状态
+        this.projects = []; // 结构化的项目数据
+        this.expandedProjects = new Set(); // 跟踪展开的项目
+
         // 拖拽创建任务的状态
         this.dragState = {
             isDragging: false,
@@ -178,8 +182,23 @@ export class GanttView {
             return;
         }
 
+        // 步骤1: 构建树状结构
+        const { projects, taskMap } = this.buildTreeStructure(tasks);
+        this.projects = projects;
+        this.taskMap = taskMap;
+
+        console.log('Tree structure built:', {
+            totalTasks: tasks.length,
+            topLevelProjects: projects.length,
+            expandedProjects: Array.from(this.expandedProjects)
+        });
+
+        // 步骤2: 生成用于渲染的扁平列表(根据展开状态)
+        let displayTasks = this.generateDisplayList(projects);
+
+        console.log('Display tasks:', displayTasks.length, 'tasks will be shown');
+
         // 根据排序状态处理任务列表
-        let displayTasks = [...tasks];
         if (this.isSorted) {
             // 按持续时间降序排序（跨日程长的在上方）
             displayTasks.sort((a, b) => {
@@ -205,14 +224,17 @@ export class GanttView {
                     popup_trigger: 'click',
                     custom_popup_html: (task) => {
                         const originalTask = this.tasks.find(t => t.id === task.id);
+                        // task.start 和 task.end 是字符串格式 (YYYY-MM-DD)
+                        const startDate = task._start ? new Date(task._start).toLocaleDateString('zh-CN') : task.start;
+                        const endDate = task._end ? new Date(task._end).toLocaleDateString('zh-CN') : task.end;
                         return `
                             <div class="gantt-popup" style="padding: 12px;">
                                 <div style="font-weight: 600; margin-bottom: 8px;">${task.name}</div>
                                 <div style="font-size: 12px; color: #666;">
                                     <div>项目: ${originalTask?.project || '未分类'}</div>
                                     <div>状态: ${this.getStatusLabel(originalTask?.status)}</div>
-                                    <div>开始: ${task.start.toLocaleDateString('zh-CN')}</div>
-                                    <div>结束: ${task.end.toLocaleDateString('zh-CN')}</div>
+                                    <div>开始: ${startDate}</div>
+                                    <div>结束: ${endDate}</div>
                                     <div style="margin-top: 8px;">右键打开更多选项</div>
                                 </div>
                             </div>
@@ -225,15 +247,20 @@ export class GanttView {
                         console.log('Progress changed:', task.id, progress);
                     },
                     on_click: (task) => {
-                        console.log('Task clicked:', task.id);
+                        // 检查是否点击的是项目(使用 taskMap 查找,因为它包含 children 信息)
+                        const taskData = this.taskMap?.get(task.id);
+                        if (taskData && taskData.children && taskData.children.length > 0) {
+                            // 是项目，切换展开/折叠状态
+                            console.log('Toggling project:', task.id);
+                            this.toggleProjectExpansion(task.id);
+                        } else {
+                            console.log('Task clicked (not a project):', task.id);
+                        }
                     }
                 });
 
                 // 绑定右键菜单
                 this.setupContextMenu();
-
-                // 应用自定义颜色
-                this.applyTaskColors(ganttTasks);
 
                 console.log('Frappe Gantt initialized with', ganttTasks.length, 'tasks');
             } catch (error) {
@@ -250,48 +277,11 @@ export class GanttView {
                 this.gantt.refresh(ganttTasks);
                 this.setupContextMenu();
 
-                // 应用自定义颜色
-                this.applyTaskColors(ganttTasks);
-
                 console.log('Gantt refreshed with', ganttTasks.length, 'tasks');
             } catch (error) {
                 console.error('Failed to refresh Gantt:', error);
             }
         }
-    }
-
-    /**
-     * 为甘特图任务条应用自定义颜色
-     */
-    applyTaskColors(ganttTasks) {
-        setTimeout(() => {
-            ganttTasks.forEach(ganttTask => {
-                if (ganttTask._color) {
-                    const bar = this.container.querySelector(`.bar-wrapper[data-id="${ganttTask.id}"] .bar`);
-                    if (bar) {
-                        bar.style.fill = ganttTask._color;
-                    }
-                    const progressBar = this.container.querySelector(`.bar-wrapper[data-id="${ganttTask.id}"] .bar-progress`);
-                    if (progressBar) {
-                        progressBar.style.fill = this.darkenColor(ganttTask._color, 20);
-                    }
-                }
-            });
-        }, 100);
-    }
-
-    /**
-     * 加深颜色
-     */
-    darkenColor(color, percent) {
-        const num = parseInt(color.replace("#",""), 16);
-        const amt = Math.round(2.55 * percent);
-        const R = (num >> 16) - amt;
-        const G = (num >> 8 & 0x00FF) - amt;
-        const B = (num & 0x0000FF) - amt;
-        return "#" + (0x1000000 + (R<255?R<1?0:R:255)*0x10000 +
-            (G<255?G<1?0:G:255)*0x100 + (B<255?B<1?0:B:255))
-            .toString(16).slice(1);
     }
 
     convertToGanttFormat(tasks) {
@@ -306,17 +296,120 @@ export class GanttView {
                 else if (task.status === 'in_progress') progress = 50;
             }
 
+            // 计算任务持续时间(小时)
+            const durationHours = (end - start) / (1000 * 60 * 60);
+
+            // 构建CSS类名
+            let customClass = this.getTaskClass(task);
+
+            // 添加任务类型类
+            const taskType = task.type || 'default';
+            customClass += ` task-type-${taskType}`;
+
+            // 判断是否为项目(有子任务)
+            const isProject = task.children && task.children.length > 0;
+            if (isProject) {
+                customClass += ' task-is-project';
+            }
+
+            // 如果任务持续时间超过8小时，添加长任务类
+            if (durationHours > 8) {
+                customClass += ' task-all-day';
+            }
+
+            // 如果是预览状态，添加预览类
+            if (task.status === 'preview') {
+                customClass += ' task-preview';
+            }
+
+            // 为项目名称添加展开/折叠图标
+            let displayName = task.title;
+            if (isProject) {
+                const isExpanded = this.expandedProjects.has(task.id);
+                const icon = isExpanded ? '▼' : '►';
+                displayName = `${icon} ${task.title}`;
+            }
+
+            // 为子任务添加缩进
+            if (task._level && task._level > 0) {
+                const indent = '　'.repeat(task._level); // 全角空格缩进
+                displayName = indent + displayName;
+            }
+
             return {
                 id: task.id,
-                name: task.title,
+                name: displayName,
                 start: this.formatDate(start),
                 end: this.formatDate(end),
                 progress: progress,
-                custom_class: this.getTaskClass(task),
-                // 存储颜色信息用于后续渲染
-                _color: task.color
+                custom_class: customClass.trim()
             };
         });
+    }
+
+    /**
+     * 构建树状结构
+     * 将扁平的任务列表转换为父子关系的树结构
+     */
+    buildTreeStructure(tasks) {
+        const taskMap = new Map();
+        const projects = [];
+
+        // 第一遍: 建立ID到任务的映射，并初始化children数组
+        tasks.forEach(task => {
+            taskMap.set(task.id, { ...task, children: [] });
+        });
+
+        // 第二遍: 建立父子关系
+        tasks.forEach(task => {
+            const taskWithChildren = taskMap.get(task.id);
+            if (task.parent_id && taskMap.has(task.parent_id)) {
+                // 有父任务，添加到父任务的children中
+                const parent = taskMap.get(task.parent_id);
+                parent.children.push(taskWithChildren);
+            } else {
+                // 没有父任务，是顶层项目
+                projects.push(taskWithChildren);
+            }
+        });
+
+        return { projects, taskMap };
+    }
+
+    /**
+     * 根据展开状态生成用于显示的扁平列表
+     */
+    generateDisplayList(projects) {
+        const displayTasks = [];
+
+        const addTaskAndChildren = (task, level = 0) => {
+            // 添加任务本身，并标记层级
+            const taskCopy = { ...task, _level: level };
+            displayTasks.push(taskCopy);
+
+            // 如果这个任务是项目且已展开，递归添加其子任务
+            if (task.children && task.children.length > 0 && this.expandedProjects.has(task.id)) {
+                task.children.forEach(child => {
+                    addTaskAndChildren(child, level + 1);
+                });
+            }
+        };
+
+        projects.forEach(project => addTaskAndChildren(project));
+        return displayTasks;
+    }
+
+    /**
+     * 切换项目的展开/折叠状态
+     */
+    toggleProjectExpansion(projectId) {
+        if (this.expandedProjects.has(projectId)) {
+            this.expandedProjects.delete(projectId);
+        } else {
+            this.expandedProjects.add(projectId);
+        }
+        // 重新渲染
+        this.render(this.tasks);
     }
 
     /**
@@ -384,24 +477,39 @@ export class GanttView {
     }
 
     setupContextMenu() {
-        // 为所有任务条添加右键菜单
+        // 为所有任务条添加右键菜单和双击编辑
         const taskBars = this.container.querySelectorAll('.bar-wrapper');
 
         taskBars.forEach(bar => {
-            // 移除旧的监听器(如果存在)
-            bar.removeEventListener('contextmenu', this.contextMenuHandler);
-
-            // 添加新的监听器
-            this.contextMenuHandler = (e) => {
+            // 为每个bar创建独立的事件处理器
+            const contextMenuHandler = (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 const taskId = bar.getAttribute('data-id');
-                const task = this.tasks.find(t => t.id === taskId);
+                const task = this.taskMap?.get(taskId) || this.tasks.find(t => t.id === taskId);
                 if (task) {
                     this.showContextMenu(e, task);
                 }
+                return false;
             };
 
-            bar.addEventListener('contextmenu', this.contextMenuHandler);
+            const dblClickHandler = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const taskId = bar.getAttribute('data-id');
+                const task = this.taskMap?.get(taskId) || this.tasks.find(t => t.id === taskId);
+                if (task) {
+                    this.workspaceView.showEditTaskModal(task);
+                }
+            };
+
+            // 移除所有已有的监听器,避免重复绑定
+            const newBar = bar.cloneNode(true);
+            bar.parentNode.replaceChild(newBar, bar);
+
+            // 绑定新的监听器
+            newBar.addEventListener('contextmenu', contextMenuHandler, { capture: true });
+            newBar.addEventListener('dblclick', dblClickHandler);
         });
     }
 
@@ -447,7 +555,11 @@ export class GanttView {
             batteryIcons += `<span class="battery-icon" data-level="${i}" style="${iconStyle}"></span>`;
         }
 
-        menu.innerHTML = `
+        // 判断是否为项目(有子任务)
+        const isProject = task.children && task.children.length > 0;
+
+        // 根据任务类型动态生成菜单项
+        let menuItems = `
             <div id="progress-selector" style="padding: 12px 16px; border-bottom: 1px solid #f0f0f0;">
                 <div style="font-size: 12px; margin-bottom: 8px; color: #666;">
                     设置进度: <span id="progress-value" style="font-weight: 600; color: #4CAF50;">${currentProgress}%</span>
@@ -459,19 +571,25 @@ export class GanttView {
             <div class="menu-item" data-action="review" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>📝</span><span>任务复盘</span>
             </div>
-            <div class="menu-item" data-action="set_parent" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
-                <span>🔗</span><span>设置父项目</span>
-            </div>
+        `;
+
+        // 只有非项目任务才显示"添加子任务"
+        if (!isProject) {
+            menuItems += `
             <div class="menu-item" data-action="add_subtask" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>➕</span><span>添加子任务</span>
             </div>
-            <div class="menu-item" data-action="complete" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
-                <span>✅</span><span>标记完成</span>
-            </div>
+            `;
+        }
+
+        // 删除按钮
+        menuItems += `
             <div class="menu-item" data-action="delete" style="padding: 12px 16px; cursor: pointer; color: #F44336; display: flex; align-items: center; gap: 8px;">
-                <span>🗑️</span><span>删除任务</span>
+                <span>🗑️</span><span>删除${isProject ? '项目' : '任务'}</span>
             </div>
         `;
+
+        menu.innerHTML = menuItems;
 
         document.body.appendChild(menu);
 
@@ -483,8 +601,16 @@ export class GanttView {
                 const level = parseInt(batteryIcon.getAttribute('data-level'));
                 const newProgress = level * 10;
 
-                // 更新任务进度
-                this.workspaceView.updateTaskState(task.id, { progress: newProgress });
+                // 如果进度达到100%,自动标记为完成
+                if (newProgress === 100) {
+                    this.workspaceView.updateTaskState(task.id, {
+                        progress: 100,
+                        status: 'completed'
+                    });
+                } else {
+                    // 否则只更新进度
+                    this.workspaceView.updateTaskState(task.id, { progress: newProgress });
+                }
 
                 // 更新进度值显示
                 const progressValue = menu.querySelector('#progress-value');
@@ -498,6 +624,13 @@ export class GanttView {
                     icon.style.border = `2px solid ${isFilled ? '#4CAF50' : '#ddd'}`;
                     icon.style.background = isFilled ? '#4CAF50' : 'white';
                 });
+
+                // 如果达到100%,关闭菜单并刷新视图
+                if (newProgress === 100) {
+                    setTimeout(() => {
+                        menu.remove();
+                    }, 300);
+                }
             }
         });
 
@@ -544,58 +677,20 @@ export class GanttView {
             case 'review':
                 this.workspaceView.showReviewModal(task);
                 break;
-            case 'set_parent':
-                this.showSetParentDialog(task);
-                break;
             case 'add_subtask':
                 this.showAddSubtaskDialog(task);
                 break;
-            case 'complete':
-                this.workspaceView.updateTaskState(task.id, { status: 'completed' });
-                break;
             case 'delete':
-                if (confirm(`确定要删除任务 "${task.title}" 吗?`)) {
+                const isProject = task.children && task.children.length > 0;
+                const itemType = isProject ? '项目' : '任务';
+                const warningMsg = isProject
+                    ? `确定要删除项目 "${task.title}" 及其所有子任务吗?`
+                    : `确定要删除任务 "${task.title}" 吗?`;
+
+                if (confirm(warningMsg)) {
                     this.deleteTask(task.id);
                 }
                 break;
-        }
-    }
-
-    showSetParentDialog(task) {
-        // 获取所有可能的父任务(不包括自己和自己的子任务)
-        const availableParents = this.tasks.filter(t =>
-            t.id !== task.id && t.parent_id !== task.id
-        );
-
-        if (availableParents.length === 0) {
-            alert('没有可用的父项目');
-            return;
-        }
-
-        // 创建选择列表
-        const options = availableParents.map((t, index) =>
-            `${index + 1}. ${t.title}`
-        ).join('\n');
-
-        const selection = prompt(`请选择父项目:\n${options}\n\n输入序号 (输入0取消父项目关联):`);
-
-        if (selection === null) return;
-
-        const index = parseInt(selection) - 1;
-
-        if (selection === '0') {
-            // 取消父项目关联
-            this.workspaceView.updateTaskState(task.id, { parent_id: '' });
-        } else if (index >= 0 && index < availableParents.length) {
-            const parentTask = availableParents[index];
-            this.workspaceView.updateTaskState(task.id, {
-                parent_id: parentTask.id,
-                // 继承父任务的颜色和类型
-                color: parentTask.color,
-                type: parentTask.type
-            });
-        } else {
-            alert('无效的选择');
         }
     }
 
@@ -627,7 +722,8 @@ export class GanttView {
 
     async deleteTask(taskId) {
         try {
-            await fetch('/agent/tasks/execute', {
+            console.log('Deleting task:', taskId);
+            const response = await fetch('/agent/tasks/execute', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -638,9 +734,36 @@ export class GanttView {
                 })
             });
 
-            // 重新加载任务
-            await this.workspaceView.loadAndSyncTasks();
+            console.log('Delete response status:', response.status);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Delete failed:', errorText);
+                throw new Error(`删除请求失败: ${response.status} ${errorText}`);
+            }
+
+            const result = await response.json();
+            console.log('Delete result:', result);
+
+            // 检查返回的数据格式
+            let data = result;
+            if (typeof result === 'string') {
+                try {
+                    data = JSON.parse(result);
+                } catch (e) {
+                    console.error('Failed to parse result:', e);
+                }
+            }
+
+            if (data.success) {
+                console.log(`成功删除 ${data.deleted_count} 个任务`);
+                // 重新加载任务
+                await this.workspaceView.loadAndSyncTasks();
+            } else {
+                throw new Error(data.error || data.message || '删除失败');
+            }
         } catch (error) {
+            console.error('Delete task error:', error);
             alert('删除失败: ' + error.message);
         }
     }

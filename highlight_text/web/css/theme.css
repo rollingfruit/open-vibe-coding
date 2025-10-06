@@ -1,0 +1,233 @@
+/**
+ * 统一主题样式 - 任务管理系统
+ * 定义全局颜色体系和任务样式
+ */
+
+/* ========== 全局颜色变量 ========== */
+:root {
+    /* 任务类型颜色 - 正常状态 */
+    --color-work: #3B82F6;          /* 蓝色 - 工作任务 */
+    --color-personal: #10B981;      /* 绿色 - 个人事务 */
+    --color-study: #F97316;         /* 橙色 - 学习任务 */
+    --color-default: #FBBF24;       /* 黄色 - 默认 */
+
+    /* 任务类型颜色 - 淡色版本 (用于长任务/全天任务) */
+    --color-work-light: rgba(59, 130, 246, 0.2);
+    --color-personal-light: rgba(16, 185, 129, 0.2);
+    --color-study-light: rgba(249, 115, 22, 0.2);
+    --color-default-light: rgba(251, 191, 36, 0.2);
+
+    /* 任务状态颜色 */
+    --color-preview: rgba(156, 39, 176, 0.15);      /* 紫色半透明 - 预览状态 */
+    --color-preview-border: #9C27B0;                /* 紫色 - 预览边框 */
+    --color-pending: #FFF9C4;                       /* 浅黄 - 待处理 */
+    --color-in-progress: #E3F2FD;                   /* 浅蓝 - 进行中 */
+    --color-completed: #E8F5E9;                     /* 浅绿 - 已完成 */
+    --color-overdue: #FFEBEE;                       /* 浅红 - 逾期 */
+
+    /* 高亮颜色 */
+    --color-highlight: #FFF59D;                     /* 明黄 - 高亮状态 */
+    --color-highlight-border: #FBC02D;              /* 深黄 - 高亮边框 */
+}
+
+/* ========== 甘特图任务样式 ========== */
+/* 按任务类型设置颜色 */
+.bar-wrapper.task-type-work .bar {
+    fill: var(--color-work) !important;
+}
+
+.bar-wrapper.task-type-personal .bar {
+    fill: var(--color-personal) !important;
+}
+
+.bar-wrapper.task-type-study .bar {
+    fill: var(--color-study) !important;
+}
+
+.bar-wrapper.task-type-default .bar {
+    fill: var(--color-default) !important;
+}
+
+/* 长任务样式 (超过8小时) - 淡色背景 + 虚线边框 */
+.bar-wrapper.task-type-work.task-all-day .bar {
+    fill: var(--color-work-light) !important;
+    stroke: var(--color-work) !important;
+    stroke-width: 2 !important;
+    stroke-dasharray: 5,5 !important;
+}
+
+.bar-wrapper.task-type-personal.task-all-day .bar {
+    fill: var(--color-personal-light) !important;
+    stroke: var(--color-personal) !important;
+    stroke-width: 2 !important;
+    stroke-dasharray: 5,5 !important;
+}
+
+.bar-wrapper.task-type-study.task-all-day .bar {
+    fill: var(--color-study-light) !important;
+    stroke: var(--color-study) !important;
+    stroke-width: 2 !important;
+    stroke-dasharray: 5,5 !important;
+}
+
+.bar-wrapper.task-type-default.task-all-day .bar {
+    fill: var(--color-default-light) !important;
+    stroke: var(--color-default) !important;
+    stroke-width: 2 !important;
+    stroke-dasharray: 5,5 !important;
+}
+
+/* 预览状态任务 - 半透明 + 虚线边框 */
+.bar-wrapper.task-preview .bar {
+    fill: var(--color-preview) !important;
+    stroke: var(--color-preview-border) !important;
+    stroke-width: 2 !important;
+    stroke-dasharray: 5,5 !important;
+    opacity: 0.7 !important;
+}
+
+/* 高亮状态 - 联动高亮 */
+.bar-wrapper.task-highlight .bar {
+    fill: var(--color-highlight) !important;
+    stroke: var(--color-highlight-border) !important;
+    stroke-width: 3 !important;
+    filter: drop-shadow(0 0 8px var(--color-highlight-border));
+}
+
+/* 进度条颜色 */
+.bar-wrapper.task-type-work .bar-progress {
+    fill: rgba(29, 78, 216, 0.8) !important;
+}
+
+.bar-wrapper.task-type-personal .bar-progress {
+    fill: rgba(5, 150, 105, 0.8) !important;
+}
+
+.bar-wrapper.task-type-study .bar-progress {
+    fill: rgba(234, 88, 12, 0.8) !important;
+}
+
+.bar-wrapper.task-type-default .bar-progress {
+    fill: rgba(245, 158, 11, 0.8) !important;
+}
+
+/* ========== 日历视图任务样式 ========== */
+/* 正常任务 - 按类型着色 */
+.fc-event.task-type-work {
+    background-color: var(--color-work) !important;
+    border-color: var(--color-work) !important;
+    color: white !important;
+}
+
+.fc-event.task-type-personal {
+    background-color: var(--color-personal) !important;
+    border-color: var(--color-personal) !important;
+    color: white !important;
+}
+
+.fc-event.task-type-study {
+    background-color: var(--color-study) !important;
+    border-color: var(--color-study) !important;
+    color: white !important;
+}
+
+.fc-event.task-type-default {
+    background-color: var(--color-default) !important;
+    border-color: var(--color-default) !important;
+    color: #333 !important;
+}
+
+/* 长时间任务 - 淡色背景 */
+.fc-event.task-type-work.task-long-duration {
+    background-color: var(--color-work-light) !important;
+    border-color: var(--color-work) !important;
+    color: var(--color-work) !important;
+    border-style: dashed !important;
+    border-width: 2px !important;
+}
+
+.fc-event.task-type-personal.task-long-duration {
+    background-color: var(--color-personal-light) !important;
+    border-color: var(--color-personal) !important;
+    color: var(--color-personal) !important;
+    border-style: dashed !important;
+    border-width: 2px !important;
+}
+
+.fc-event.task-type-study.task-long-duration {
+    background-color: var(--color-study-light) !important;
+    border-color: var(--color-study) !important;
+    color: var(--color-study) !important;
+    border-style: dashed !important;
+    border-width: 2px !important;
+}
+
+.fc-event.task-type-default.task-long-duration {
+    background-color: var(--color-default-light) !important;
+    border-color: var(--color-default) !important;
+    color: var(--color-default) !important;
+    border-style: dashed !important;
+    border-width: 2px !important;
+}
+
+/* 预览状态任务 */
+.fc-event.task-preview {
+    background-color: var(--color-preview) !important;
+    border-color: var(--color-preview-border) !important;
+    color: var(--color-preview-border) !important;
+    border-style: dashed !important;
+    border-width: 2px !important;
+    opacity: 0.7 !important;
+}
+
+/* 高亮状态 - 联动高亮 */
+.fc-event.task-highlight {
+    background-color: var(--color-highlight) !important;
+    border-color: var(--color-highlight-border) !important;
+    color: #333 !important;
+    box-shadow: 0 0 12px var(--color-highlight-border) !important;
+    border-width: 3px !important;
+    transform: scale(1.02);
+    transition: all 0.2s ease;
+}
+
+/* ========== 通用任务样式 ========== */
+/* Hover 效果 */
+.bar-wrapper:hover .bar,
+.fc-event:hover {
+    opacity: 0.85;
+    cursor: pointer;
+    filter: brightness(1.1);
+}
+
+/* 拖拽中的样式 */
+.bar-wrapper.dragging,
+.fc-event.fc-dragging {
+    opacity: 0.6;
+    filter: grayscale(0.3);
+}
+
+/* ========== 动画效果 ========== */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+}
+
+/* 预览任务的脉冲动画 */
+.task-preview {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* ========== 响应式调整 ========== */
+@media (max-width: 768px) {
+    :root {
+        /* 在小屏幕上稍微减淡颜色以提高可读性 */
+        --color-work: #60A5FA;
+        --color-personal: #34D399;
+        --color-study: #FB923C;
+    }
+}

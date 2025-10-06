@@ -15,7 +15,7 @@ type Task struct {
 	Title       string                 `json:"title"`
 	Type        string                 `json:"type,omitempty"`     // 任务类型: work, personal, study
 	Color       string                 `json:"color,omitempty"`    // 任务颜色
-	Status      string                 `json:"status"`             // pending | in_progress | completed | archived
+	Status      string                 `json:"status"`             // preview | pending | in_progress | completed | archived
 	Project     string                 `json:"project,omitempty"`
 	ParentID    string                 `json:"parent_id,omitempty"` // 父任务ID
 	Progress    int                    `json:"progress,omitempty"`  // 进度百分比 (0-100)
@@ -67,6 +67,10 @@ func GetTaskTools() []ToolDefinition {
 					"type": map[string]interface{}{
 						"type":        "string",
 						"description": "任务类型（work-工作/personal-个人/study-学习，可选）",
+					},
+					"status": map[string]interface{}{
+						"type":        "string",
+						"description": "任务状态（preview-预览/pending-待处理，默认为pending。使用preview创建待确认的任务）",
 					},
 					"project": map[string]interface{}{
 						"type":        "string",
@@ -201,11 +205,16 @@ func createTask(args map[string]interface{}, basePath string) (string, error) {
 	now := time.Now()
 	taskID := fmt.Sprintf("task_%d_%s", now.Unix(), generateRandomID(5))
 
-	// 构建任务对象
+	// 构建任务对象，支持自定义状态
+	status := "pending"
+	if statusArg, ok := args["status"].(string); ok && statusArg != "" {
+		status = statusArg
+	}
+
 	task := Task{
 		ID:        taskID,
 		Title:     title,
-		Status:    "pending",
+		Status:    status,
 		CreatedAt: now.Format(time.RFC3339),
 		UpdatedAt: now.Format(time.RFC3339),
 	}
@@ -387,26 +396,95 @@ func updateTask(args map[string]interface{}, basePath string) (string, error) {
 	return string(resultJSON), nil
 }
 
-// deleteTask 删除任务
+// deleteTask 删除任务(递归删除所有子任务)
 func deleteTask(args map[string]interface{}, basePath string) (string, error) {
 	taskID, ok := args["task_id"].(string)
 	if !ok || taskID == "" {
 		return "", fmt.Errorf("缺少必需参数: task_id")
 	}
 
-	taskPath := filepath.Join(basePath, taskID+".md")
-	if err := os.Remove(taskPath); err != nil {
-		return "", fmt.Errorf("删除任务失败: %v", err)
+	// 步骤1: 加载所有任务以构建父子关系
+	allTasks, err := loadAllTasks(basePath)
+	if err != nil {
+		return "", fmt.Errorf("加载任务列表失败: %v", err)
 	}
 
+	// 步骤2: 构建任务ID到任务对象的映射
+	taskMap := make(map[string]Task)
+	for _, task := range allTasks {
+		taskMap[task.ID] = task
+	}
+
+	// 步骤3: 递归查找所有需要删除的任务ID
+	tasksToDelete := []string{}
+	collectTasksToDelete(taskID, taskMap, &tasksToDelete)
+
+	// 步骤4: 批量删除文件
+	deletedCount := 0
+	for _, id := range tasksToDelete {
+		taskPath := filepath.Join(basePath, id+".md")
+		if err := os.Remove(taskPath); err != nil {
+			// 如果文件不存在，继续删除其他文件
+			if !os.IsNotExist(err) {
+				return "", fmt.Errorf("删除任务 %s 失败: %v", id, err)
+			}
+		} else {
+			deletedCount++
+		}
+	}
+
+	// 步骤5: 返回结果
 	result := map[string]interface{}{
-		"success": true,
-		"task_id": taskID,
-		"message": fmt.Sprintf("任务 '%s' 已成功删除", taskID),
+		"success":      true,
+		"task_id":      taskID,
+		"deleted_ids":  tasksToDelete,
+		"deleted_count": deletedCount,
+		"message":      fmt.Sprintf("任务 '%s' 及 %d 个子任务已成功删除", taskID, deletedCount-1),
 	}
 
 	resultJSON, _ := json.MarshalIndent(result, "", "  ")
 	return string(resultJSON), nil
+}
+
+// loadAllTasks 加载所有任务(内部辅助函数)
+func loadAllTasks(basePath string) ([]Task, error) {
+	files, err := os.ReadDir(basePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Task{}, nil
+		}
+		return nil, err
+	}
+
+	var tasks []Task
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".md") {
+			continue
+		}
+
+		taskPath := filepath.Join(basePath, file.Name())
+		task, err := parseTaskFile(taskPath)
+		if err != nil {
+			continue // 跳过解析失败的文件
+		}
+		tasks = append(tasks, task)
+	}
+
+	return tasks, nil
+}
+
+// collectTasksToDelete 递归收集所有需要删除的任务ID
+func collectTasksToDelete(taskID string, taskMap map[string]Task, result *[]string) {
+	// 添加当前任务
+	*result = append(*result, taskID)
+
+	// 查找所有子任务
+	for _, task := range taskMap {
+		if task.ParentID == taskID {
+			// 递归处理子任务
+			collectTasksToDelete(task.ID, taskMap, result)
+		}
+	}
 }
 
 // parseTaskFile 解析任务文件

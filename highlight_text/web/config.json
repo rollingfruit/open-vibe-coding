@@ -1,6 +1,6 @@
 {
   "apiSettings": {
-    "defaultEndpoint": "https://api.openai.com/v1/chat/completions",
+    "defaultEndpoint": "",
     "maxContextTokens": 20000,
     "maxTokens": 10000,
     "model": "gpt-4.1-mini",

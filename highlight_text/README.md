@@ -70,25 +70,36 @@ Directory structure:
 └── /./
     ├── go.mod
     ├── web/
-    │   ├── theme.css
     │   ├── index.html
     │   ├── js/
-    │   │   └── diff/
-    │   │       └── DiffViewer.js
+    │   │   ├── core/
+    │   │   │   ├── SettingsManager.js
+    │   │   │   └── UIManager.js
+    │   │   ├── diff/
+    │   │   │   └── DiffViewer.js
+    │   │   └── utils/
+    │   │       └── helpers.js
     │   ├── config.json
     │   ├── shortcuts.js
     │   ├── agent/
-    │   │   ├── agent.css
+    │   │   ├── tasks/
+    │   │   │   └── TaskAgentHandler.js
     │   │   ├── notes/
-    │   │   │   ├── knowledge-base.css
     │   │   │   └── handler.js
     │   │   └── agent.js
-    │   ├── style.css
+    │   ├── views/
+    │   │   └── workspace/
+    │   │       ├── AnalyticsView.js
+    │   │       ├── CalendarView.js
+    │   │       ├── GanttView.js
+    │   │       └── WorkspaceView.js
     │   └── app.js
     ├── .claude/
     ├── uploads/
     ├── agent/
     │   ├── tools/
+    │   │   ├── tasks/
+    │   │   │   └── executor.go
     │   │   ├── notes/
     │   │   │   └── executor.go
     │   │   └── executor.go
