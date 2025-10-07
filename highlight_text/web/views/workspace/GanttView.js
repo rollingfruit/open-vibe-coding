@@ -26,7 +26,7 @@ export class GanttView {
     init() {
         this.container.innerHTML = `
             <div class="gantt-header" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
-                <h3 style="margin: 0; font-size: 16px; font-weight: 600;">📈 任务时间线 (甘特图)</h3>
+                <h3 style="margin: 0; font-size: 16px; font-weight: 600;">🎯 目标进度 (甘特图)</h3>
                 <div class="gantt-view-controls" style="display: flex; gap: 8px;">
                     <button id="gantt-sort-btn" style="padding: 4px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px;">排序</button>
                     <button class="view-mode-btn active" data-mode="Day" style="padding: 4px 12px; border: 1px solid #2196F3; background: #E3F2FD; color: #2196F3; border-radius: 4px; cursor: pointer; font-size: 12px;">日</button>

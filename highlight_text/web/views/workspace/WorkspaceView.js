@@ -166,10 +166,22 @@ export class WorkspaceView {
         const taskIndex = this.tasks.findIndex(t => t.id === taskId);
         if (taskIndex === -1) return;
 
+        const task = this.tasks[taskIndex];
+
+        // 检查是否是目标(无parent_id)且进度达到100%
+        const isGoal = !task.parent_id;
+        const wasIncomplete = task.progress !== 100;
+        const isNowComplete = updatedData.progress === 100;
+
         // 更新本地任务数据
         Object.assign(this.tasks[taskIndex], updatedData);
 
         console.log('Task state updated:', taskId, updatedData);
+
+        // 如果是目标达成,触发庆祝动画
+        if (isGoal && wasIncomplete && isNowComplete) {
+            this.triggerGoalCompletionCelebration(this.tasks[taskIndex]);
+        }
 
         // 清除之前的定时器
         if (this.autoSaveTimer) {
@@ -519,12 +531,12 @@ export class WorkspaceView {
 
         modal.innerHTML = `
             <div class="modal-content" style="background: white; border-radius: 8px; padding: 24px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-                <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">创建新项目</h3>
+                <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">🎯 设定一个新目标</h3>
 
                 <form id="create-project-form">
                     <div style="margin-bottom: 16px;">
-                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">项目名称 *</label>
-                        <input type="text" id="project-title" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="输入项目名称">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">目标描述 *</label>
+                        <input type="text" id="project-title" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="我想要实现... (例如:上线V2.0产品)">
                     </div>
 
                     <div style="margin-bottom: 16px;">
@@ -549,7 +561,7 @@ export class WorkspaceView {
 
                     <div style="display: flex; gap: 12px; justify-content: flex-end;">
                         <button type="button" id="cancel-btn" style="padding: 8px 20px; background: #f5f5f5; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">取消</button>
-                        <button type="submit" style="padding: 8px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">创建</button>
+                        <button type="submit" style="padding: 8px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">设定目标</button>
                     </div>
                 </form>
             </div>
@@ -669,7 +681,7 @@ export class WorkspaceView {
                     </div>
 
                     <div style="margin-bottom: 16px;">
-                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">所属项目</label>
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">关联目标/关键结果</label>
                         <select id="task-parent" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
                             <option value="">无 (独立任务)</option>
                             ${availableParents.map(p => `<option value="${p.id}">${p.title}</option>`).join('')}
@@ -754,5 +766,112 @@ export class WorkspaceView {
                 modal.remove();
             }
         });
+    }
+
+    /**
+     * 触发目标达成庆祝动画
+     */
+    triggerGoalCompletionCelebration(task) {
+        // 创建庆祝覆盖层
+        const overlay = document.createElement('div');
+        overlay.className = 'celebration-overlay';
+
+        // 添加彩带效果
+        for (let i = 0; i < 50; i++) {
+            const confetti = document.createElement('div');
+            confetti.className = 'confetti';
+            confetti.style.left = `${Math.random() * 100}%`;
+            confetti.style.background = `hsl(${Math.random() * 360}, 70%, 60%)`;
+            confetti.style.animationDelay = `${Math.random() * 0.5}s`;
+            overlay.appendChild(confetti);
+        }
+
+        // 添加星星效果
+        for (let i = 0; i < 30; i++) {
+            const star = document.createElement('div');
+            star.className = 'star';
+            star.style.left = `${Math.random() * 100}%`;
+            star.style.top = `${Math.random() * 100}%`;
+            star.style.animationDelay = `${Math.random() * 2}s`;
+            overlay.appendChild(star);
+        }
+
+        // 计算任务统计数据
+        const childTasks = this.tasks.filter(t => t.parent_id === task.id);
+        const completedCount = childTasks.filter(t => t.status === 'completed').length;
+        const duration = task.dtstart && task.dtend
+            ? Math.ceil((new Date(task.dtend) - new Date(task.dtstart)) / (1000 * 60 * 60 * 24))
+            : 0;
+
+        // 计算平均复盘得分
+        const reviewedTasks = childTasks.filter(t => t.review && t.review.score);
+        const avgScore = reviewedTasks.length > 0
+            ? (reviewedTasks.reduce((sum, t) => sum + t.review.score, 0) / reviewedTasks.length).toFixed(1)
+            : '未评分';
+
+        // 创建成就卡片
+        const achievementCard = document.createElement('div');
+        achievementCard.className = 'achievement-card';
+        achievementCard.innerHTML = `
+            <div class="achievement-icon">🎉</div>
+            <div class="achievement-title">目标达成!</div>
+            <div class="achievement-subtitle">${task.title}</div>
+            <div class="achievement-stats">
+                <div class="achievement-stat">
+                    <span class="achievement-stat-value">${completedCount}</span>
+                    <span class="achievement-stat-label">完成任务</span>
+                </div>
+                <div class="achievement-stat">
+                    <span class="achievement-stat-value">${duration}天</span>
+                    <span class="achievement-stat-label">历时</span>
+                </div>
+                <div class="achievement-stat">
+                    <span class="achievement-stat-value">${avgScore}</span>
+                    <span class="achievement-stat-label">平均评分</span>
+                </div>
+            </div>
+            <div class="achievement-actions">
+                <button class="achievement-btn achievement-btn-primary next-goal-btn">
+                    设定下一个目标
+                </button>
+                <button class="achievement-btn achievement-btn-secondary close-celebration-btn">
+                    关闭
+                </button>
+            </div>
+        `;
+
+        overlay.appendChild(achievementCard);
+        document.body.appendChild(overlay);
+
+        // 绑定按钮事件
+        const nextGoalBtn = achievementCard.querySelector('.next-goal-btn');
+        const closeBtn = achievementCard.querySelector('.close-celebration-btn');
+
+        nextGoalBtn.addEventListener('click', () => {
+            overlay.classList.add('celebration-fade-out');
+            setTimeout(() => {
+                overlay.remove();
+                // 打开创建目标弹窗
+                this.showCreateProjectModal({
+                    start: new Date(),
+                    end: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 默认一周后
+                });
+            }, 500);
+        });
+
+        closeBtn.addEventListener('click', () => {
+            overlay.classList.add('celebration-fade-out');
+            setTimeout(() => overlay.remove(), 500);
+        });
+
+        // 3秒后自动淡出
+        setTimeout(() => {
+            if (overlay.parentElement) {
+                overlay.classList.add('celebration-fade-out');
+                setTimeout(() => {
+                    if (overlay.parentElement) overlay.remove();
+                }, 500);
+            }
+        }, 5000);
     }
 }

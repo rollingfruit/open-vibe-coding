@@ -19,10 +19,10 @@ export class AnalyticsView {
                     <div class="completion-chart"></div>
                 </div>
 
-                <!-- 项目分布 -->
+                <!-- 目标投入分布 -->
                 <div class="analytics-card" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    <h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 600; color: #666;">项目分布</h4>
-                    <div class="project-chart"></div>
+                    <h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 600; color: #666;">🎯 目标投入分布</h4>
+                    <div class="objective-distribution-chart"></div>
                 </div>
 
                 <!-- 复盘评分 -->
@@ -49,7 +49,7 @@ export class AnalyticsView {
         `;
 
         this.renderCompletionChart();
-        this.renderProjectChart();
+        this.renderObjectiveDistributionChart();
         this.renderReviewChart();
         this.renderTrendChart();
         this.renderTimeDistributionChart();
@@ -85,8 +85,8 @@ export class AnalyticsView {
         `;
     }
 
-    renderProjectChart() {
-        const container = this.container.querySelector('.project-chart');
+    renderObjectiveDistributionChart() {
+        const container = this.container.querySelector('.objective-distribution-chart');
 
         // 按项目统计
         const projectStats = {};
@@ -149,7 +149,10 @@ export class AnalyticsView {
         const totalQuality = reviewedTasks.reduce((sum, t) => sum + (t.review.metrics?.quality || 0), 0);
         const avgQuality = (totalQuality / reviewedTasks.length).toFixed(1);
 
-        container.innerHTML = `
+        // 按目标分组复盘数据
+        const goalReviewStats = this.calculateGoalReviewStats(reviewedTasks);
+
+        let html = `
             <div style="text-align: center; margin-bottom: 16px;">
                 <div style="font-size: 48px; font-weight: 700; color: #FF9800;">${avgScore}</div>
                 <div style="font-size: 12px; color: #999;">平均评分 (满分5分)</div>
@@ -165,11 +168,86 @@ export class AnalyticsView {
                     <div style="color: #666; margin-top: 4px;">质量</div>
                 </div>
             </div>
+        `;
 
-            <div style="margin-top: 16px; padding: 12px; background: #f9f9f9; border-radius: 4px; font-size: 12px; color: #666;">
+        // 添加目标表现洞察
+        if (goalReviewStats.bestGoal) {
+            html += `
+                <div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #FFF9C4 0%, #FFECB3 100%); border-radius: 8px; border-left: 4px solid #FF9800;">
+                    <div style="font-size: 13px; color: #F57C00; line-height: 1.6;">
+                        🏆 您的优势领域: 在 <strong>"${goalReviewStats.bestGoal.title}"</strong> 目标上的任务完成质量最高! (平均评分: ${goalReviewStats.bestGoal.avgScore})
+                    </div>
+                </div>
+            `;
+        }
+
+        html += `
+            <div style="margin-top: 12px; padding: 12px; background: #f9f9f9; border-radius: 4px; font-size: 12px; color: #666;">
                 已复盘任务: ${reviewedTasks.length} / ${this.tasks.length}
             </div>
         `;
+
+        container.innerHTML = html;
+    }
+
+    /**
+     * 计算各目标的复盘统计数据
+     */
+    calculateGoalReviewStats(reviewedTasks) {
+        // 建立任务映射表
+        const taskMap = new Map();
+        this.tasks.forEach(t => taskMap.set(t.id, t));
+
+        // 按目标分组
+        const goalStats = new Map();
+
+        reviewedTasks.forEach(task => {
+            // 找到任务所属的目标(顶层任务)
+            let goalId = task.parent_id;
+            if (!goalId) return; // 如果是顶层任务自身,跳过
+
+            // 确保找到的是顶层目标
+            let goal = taskMap.get(goalId);
+            while (goal && goal.parent_id) {
+                goalId = goal.parent_id;
+                goal = taskMap.get(goalId);
+            }
+
+            if (!goal) return;
+
+            // 初始化目标统计
+            if (!goalStats.has(goalId)) {
+                goalStats.set(goalId, {
+                    title: goal.title,
+                    scores: [],
+                    efficiencies: [],
+                    qualities: []
+                });
+            }
+
+            const stat = goalStats.get(goalId);
+            if (task.review.score) stat.scores.push(task.review.score);
+            if (task.review.metrics?.efficiency) stat.efficiencies.push(task.review.metrics.efficiency);
+            if (task.review.metrics?.quality) stat.qualities.push(task.review.metrics.quality);
+        });
+
+        // 计算平均分并找出最佳目标
+        let bestGoal = null;
+        let bestScore = 0;
+
+        goalStats.forEach((stat, goalId) => {
+            if (stat.scores.length > 0) {
+                const avgScore = (stat.scores.reduce((sum, s) => sum + s, 0) / stat.scores.length).toFixed(1);
+                stat.avgScore = avgScore;
+
+                if (parseFloat(avgScore) > bestScore) {
+                    bestScore = parseFloat(avgScore);
+                    bestGoal = stat;
+                }
+            }
+        });
+
+        return { bestGoal, goalStats };
     }
 
     /**
@@ -259,6 +337,29 @@ export class AnalyticsView {
     }
 
     /**
+     * 生成激励性解读文本(时间分布)
+     */
+    generateTimeDistributionInsight(typeStats, totalDuration) {
+        // 找出投入最多的类型
+        let maxType = null;
+        let maxDuration = 0;
+
+        Object.entries(typeStats).forEach(([type, stat]) => {
+            if (stat.duration > maxDuration) {
+                maxDuration = stat.duration;
+                maxType = { type, ...stat };
+            }
+        });
+
+        if (!maxType) return '';
+
+        const percentage = ((maxDuration / totalDuration) * 100).toFixed(0);
+        const timeDesc = maxDuration >= 24 ? `${(maxDuration / 24).toFixed(1)}天` : `${maxDuration.toFixed(1)}小时`;
+
+        return `本周,您将 ${percentage}% 的精力(${timeDesc})投入在了"${maxType.label}"类任务上,请继续保持专注!`;
+    }
+
+    /**
      * 渲染时间分布图 (按任务类型)
      */
     renderTimeDistributionChart() {
@@ -293,6 +394,9 @@ export class AnalyticsView {
             `;
             return;
         }
+
+        // 生成激励性解读
+        const insight = this.generateTimeDistributionInsight(typeStats, totalDuration);
 
         // 渲染堆叠条形图
         let html = '<div style="display: flex; height: 40px; border-radius: 8px; overflow: hidden; margin-bottom: 20px;">';
@@ -335,7 +439,17 @@ export class AnalyticsView {
         });
 
         html += '</div>';
-        html += `<div style="margin-top: 16px; padding: 12px; background: #f9f9f9; border-radius: 4px; text-align: center; font-size: 12px; color: #666;">
+
+        // 添加激励性解读
+        if (insight) {
+            html += `<div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #E3F2FD 0%, #E8F5E9 100%); border-radius: 8px; border-left: 4px solid #2196F3;">
+                <div style="font-size: 13px; color: #1976D2; line-height: 1.6;">
+                    💡 ${insight}
+                </div>
+            </div>`;
+        }
+
+        html += `<div style="margin-top: 12px; padding: 12px; background: #f9f9f9; border-radius: 4px; text-align: center; font-size: 12px; color: #666;">
             总计: ${totalDuration.toFixed(1)} 小时
         </div>`;
 

@@ -79,6 +79,10 @@ export class CalendarView {
         // 预处理: 为子任务继承父任务的颜色
         const processedTasks = this.inheritParentColors(this.tasks);
 
+        // 建立任务ID映射表
+        const taskMap = new Map();
+        this.tasks.forEach(t => taskMap.set(t.id, t));
+
         // 转换任务数据为 FullCalendar 事件格式
         const events = processedTasks.map(task => {
             const start = new Date(task.dtstart);
@@ -104,9 +108,16 @@ export class CalendarView {
             // 如果时间跨度超过18小时或没有具体时间,设置为全天事件
             const isAllDay = durationHours > 18 || (!task.dtstart && !task.dtend);
 
+            // 获取父目标的标题(如果有)
+            let displayTitle = task.title;
+            if (task.parent_id && taskMap.has(task.parent_id)) {
+                const parentGoal = taskMap.get(task.parent_id);
+                displayTitle = `[${parentGoal.title}] ${task.title}`;
+            }
+
             return {
                 id: task.id,
-                title: task.title,
+                title: displayTitle,
                 start: task.dtstart,
                 end: task.dtend,
                 allDay: isAllDay,
@@ -116,7 +127,8 @@ export class CalendarView {
                     project: task.project,
                     review: task.review,
                     taskData: task,
-                    taskType: taskType
+                    taskType: taskType,
+                    parentGoalTitle: task.parent_id && taskMap.has(task.parent_id) ? taskMap.get(task.parent_id).title : null
                 }
             };
         });

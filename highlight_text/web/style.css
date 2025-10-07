@@ -935,6 +935,21 @@ code, pre, .code-block {
 }
 
 /* ============================================
+   Calendar - Goal Prefix Styles
+   ============================================ */
+
+/* 日历事件中的目标前缀样式 */
+.fc-event-title {
+    font-size: 0.875em;
+}
+
+/* 提取目标前缀并设置样式 */
+.fc-event-title::before {
+    opacity: 0.7;
+    font-size: 0.85em;
+}
+
+/* ============================================
    Gantt Chart - Project Level Styles
    ============================================ */
 
