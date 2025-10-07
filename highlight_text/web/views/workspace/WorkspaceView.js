@@ -200,13 +200,12 @@ export class WorkspaceView {
 
                 // 保存成功后隐藏指示器
                 if (this.autoSaveIndicator) {
-                    this.autoSaveIndicator.textContent = '✓ 已保存';
+                    this.autoSaveIndicator.textContent = '已保存';
                     setTimeout(() => {
-                        if (this.autoSaveIndicator) {
-                            this.autoSaveIndicator.style.display = 'none';
-                        }
+                        this.autoSaveIndicator.style.display = 'none';
                     }, 2000);
                 }
+                this.loadAndSyncTasks();
             } catch (error) {
                 console.error('Auto-save failed:', error);
                 if (this.autoSaveIndicator) {

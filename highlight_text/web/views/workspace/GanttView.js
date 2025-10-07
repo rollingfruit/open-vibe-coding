@@ -950,6 +950,7 @@ export class GanttView {
         // 绑定进度条点击事件
         const progressSelector = menu.querySelector('#progress-selector');
         progressSelector.addEventListener('click', (e) => {
+            e.stopPropagation();
             const batteryIcon = e.target.closest('.battery-icon');
             if (batteryIcon) {
                 const level = parseInt(batteryIcon.getAttribute('data-level'));
@@ -1009,10 +1010,12 @@ export class GanttView {
             item.addEventListener('mouseleave', () => {
                 item.style.background = 'white';
             });
-            item.addEventListener('click', () => {
+            item.addEventListener('click', async (e) => {
+                e.stopPropagation();
                 const action = item.getAttribute('data-action');
-                this.handleMenuAction(action, task);
-                menu.remove();
+                console.log(`[GanttView] Menu action clicked: ${action}`);
+                await this.handleMenuAction(action, task);
+                // menu.remove(); // Temporarily disabled for debugging
             });
         });
 
@@ -1026,32 +1029,32 @@ export class GanttView {
         }, 100);
     }
 
-    handleMenuAction(action, task) {
+    async handleMenuAction(action, task) {
         switch (action) {
-            case 'review':
+            case "review":
                 this.workspaceView.showReviewModal(task);
                 break;
-            case 'view_subtasks':
+            case "view_subtasks":
                 this.showProjectDetailPopup(task);
                 break;
-            case 'add_subtask':
-                this.showAddSubtaskDialog(task);
+            case "add_subtask":
+                await this.showAddSubtaskDialog(task);
                 break;
-            case 'delete':
+            case "delete":
                 const isProject = task.children && task.children.length > 0;
-                const itemType = isProject ? '项目' : '任务';
+                const itemType = isProject ? "项目" : "任务";
                 const warningMsg = isProject
                     ? `确定要删除项目 "${task.title}" 及其所有子任务吗?`
                     : `确定要删除任务 "${task.title}" 吗?`;
 
                 if (confirm(warningMsg)) {
-                    this.deleteTask(task.id);
+                    await this.deleteTask(task.id);
                 }
                 break;
         }
     }
 
-    showAddSubtaskDialog(task) {
+    async showAddSubtaskDialog(task) {
         const title = prompt('请输入子任务标题:');
         if (!title) return;
 
@@ -1059,22 +1062,23 @@ export class GanttView {
         const startTime = task.dtstart || new Date().toISOString();
         const endTime = task.dtend || new Date(Date.now() + 3600000).toISOString();
 
-        this.workspaceView.taskAgent.executeTool('create_task', {
-            title: title,
-            parent_id: task.id,
-            type: task.type,
-            dtstart: startTime,
-            dtend: endTime
-        }).then(async (result) => {
+        try {
+            const result = await this.workspaceView.taskAgent.executeTool('create_task', {
+                title: title,
+                parent_id: task.id,
+                type: task.type,
+                dtstart: startTime,
+                dtend: endTime
+            });
             const data = JSON.parse(result);
             if (data.success) {
                 await this.workspaceView.loadAndSyncTasks();
             } else {
                 alert('创建子任务失败: ' + (data.error || '未知错误'));
             }
-        }).catch(error => {
+        } catch (error) {
             alert('创建子任务失败: ' + error.message);
-        });
+        }
     }
 
     async deleteTask(taskId) {

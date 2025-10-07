@@ -290,9 +290,10 @@ export class CalendarView {
             item.addEventListener('mouseleave', () => {
                 item.style.background = 'white';
             });
-            item.addEventListener('click', () => {
+            item.addEventListener('click', async (e) => {
+                e.stopPropagation();
                 const action = item.getAttribute('data-action');
-                this.handleMenuAction(action, task);
+                await this.handleMenuAction(action, task);
                 menu.remove();
             });
         });
@@ -307,7 +308,7 @@ export class CalendarView {
         }, 100);
     }
 
-    handleMenuAction(action, task) {
+    async handleMenuAction(action, task) {
         switch (action) {
             case 'review':
                 this.workspaceView.showReviewModal(task);
@@ -320,7 +321,7 @@ export class CalendarView {
                 break;
             case 'delete':
                 if (confirm(`确定要删除任务 "${task.title}" 吗?`)) {
-                    this.deleteTask(task.id);
+                    await this.deleteTask(task.id);
                 }
                 break;
         }
