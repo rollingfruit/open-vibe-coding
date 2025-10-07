@@ -74,10 +74,10 @@ export class CalendarView {
             return;
         }
 
-        this.tasks = tasks;
+        this.tasks = tasks || [];
 
         // 预处理: 为子任务继承父任务的颜色
-        const processedTasks = this.inheritParentColors(tasks);
+        const processedTasks = this.inheritParentColors(this.tasks);
 
         // 转换任务数据为 FullCalendar 事件格式
         const events = processedTasks.map(task => {

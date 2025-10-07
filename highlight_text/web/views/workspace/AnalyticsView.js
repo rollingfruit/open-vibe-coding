@@ -12,7 +12,7 @@ export class AnalyticsView {
         this.container.innerHTML = `
             <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">📊 数据分析与复盘</h3>
 
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 24px;">
                 <!-- 任务完成率 -->
                 <div class="analytics-card" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                     <h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 600; color: #666;">任务完成率</h4>
@@ -31,11 +31,28 @@ export class AnalyticsView {
                     <div class="review-chart"></div>
                 </div>
             </div>
+
+            <!-- 新增图表区域 -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 24px;">
+                <!-- 任务完成趋势 -->
+                <div class="analytics-card" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 600; color: #666;">📈 任务完成趋势 (最近4周)</h4>
+                    <div class="trend-chart"></div>
+                </div>
+
+                <!-- 时间分布 -->
+                <div class="analytics-card" style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h4 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 600; color: #666;">⏱️ 时间分布 (按任务类型)</h4>
+                    <div class="time-distribution-chart"></div>
+                </div>
+            </div>
         `;
 
         this.renderCompletionChart();
         this.renderProjectChart();
         this.renderReviewChart();
+        this.renderTrendChart();
+        this.renderTimeDistributionChart();
     }
 
     renderCompletionChart() {
@@ -153,5 +170,175 @@ export class AnalyticsView {
                 已复盘任务: ${reviewedTasks.length} / ${this.tasks.length}
             </div>
         `;
+    }
+
+    /**
+     * 渲染任务完成趋势图 (最近4周)
+     */
+    renderTrendChart() {
+        const container = this.container.querySelector('.trend-chart');
+
+        // 按周分组统计已完成任务
+        const completedTasks = this.tasks.filter(t => t.status === 'completed' && t.completed_at);
+
+        if (completedTasks.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px 20px; color: #999;">
+                    暂无已完成任务数据
+                </div>
+            `;
+            return;
+        }
+
+        // 获取最近4周的数据
+        const now = new Date();
+        const weeks = [];
+        for (let i = 3; i >= 0; i--) {
+            const weekStart = new Date(now);
+            weekStart.setDate(now.getDate() - (i * 7 + now.getDay()));
+            weekStart.setHours(0, 0, 0, 0);
+
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+            weekEnd.setHours(23, 59, 59, 999);
+
+            weeks.push({
+                start: weekStart,
+                end: weekEnd,
+                label: `${weekStart.getMonth() + 1}/${weekStart.getDate()}`,
+                count: 0,
+                avgScore: 0,
+                scores: []
+            });
+        }
+
+        // 统计每周的任务数和平均评分
+        completedTasks.forEach(task => {
+            const completedDate = new Date(task.completed_at);
+            const week = weeks.find(w => completedDate >= w.start && completedDate <= w.end);
+            if (week) {
+                week.count++;
+                if (task.review && task.review.score) {
+                    week.scores.push(task.review.score);
+                }
+            }
+        });
+
+        // 计算平均分
+        weeks.forEach(week => {
+            if (week.scores.length > 0) {
+                week.avgScore = week.scores.reduce((sum, s) => sum + s, 0) / week.scores.length;
+            }
+        });
+
+        const maxCount = Math.max(...weeks.map(w => w.count), 1);
+
+        // 渲染条形图
+        let html = '<div style="display: flex; align-items: flex-end; justify-content: space-around; height: 200px; padding: 0 10px;">';
+
+        weeks.forEach(week => {
+            const heightPercent = (week.count / maxCount) * 100;
+            const barColor = week.avgScore > 0 ? '#4CAF50' : '#2196F3';
+
+            html += `
+                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                        <div style="font-size: 18px; font-weight: 600; color: ${barColor};">${week.count}</div>
+                        ${week.avgScore > 0 ? `<div style="font-size: 11px; color: #FF9800;">⭐${week.avgScore.toFixed(1)}</div>` : ''}
+                    </div>
+                    <div style="width: 40px; background: ${barColor}; height: ${heightPercent}%; min-height: ${week.count > 0 ? '8px' : '0'}; border-radius: 4px 4px 0 0; transition: all 0.3s;"></div>
+                    <div style="font-size: 11px; color: #666; white-space: nowrap;">${week.label}</div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        html += '<div style="margin-top: 16px; text-align: center; font-size: 12px; color: #999;">最近4周完成 ' + completedTasks.length + ' 个任务</div>';
+
+        container.innerHTML = html;
+    }
+
+    /**
+     * 渲染时间分布图 (按任务类型)
+     */
+    renderTimeDistributionChart() {
+        const container = this.container.querySelector('.time-distribution-chart');
+
+        // 按任务类型分组并计算总时长
+        const typeStats = {
+            work: { duration: 0, count: 0, color: '#3B82F6', label: '工作' },
+            personal: { duration: 0, count: 0, color: '#10B981', label: '个人' },
+            study: { duration: 0, count: 0, color: '#F97316', label: '学习' },
+            default: { duration: 0, count: 0, color: '#FBBF24', label: '其他' }
+        };
+
+        this.tasks.forEach(task => {
+            if (task.dtstart && task.dtend) {
+                const duration = (new Date(task.dtend) - new Date(task.dtstart)) / (1000 * 60 * 60); // 小时
+                const type = task.type || 'default';
+                if (typeStats[type]) {
+                    typeStats[type].duration += duration;
+                    typeStats[type].count++;
+                }
+            }
+        });
+
+        const totalDuration = Object.values(typeStats).reduce((sum, stat) => sum + stat.duration, 0);
+
+        if (totalDuration === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px 20px; color: #999;">
+                    暂无时间数据
+                </div>
+            `;
+            return;
+        }
+
+        // 渲染堆叠条形图
+        let html = '<div style="display: flex; height: 40px; border-radius: 8px; overflow: hidden; margin-bottom: 20px;">';
+
+        Object.entries(typeStats).forEach(([type, stat]) => {
+            if (stat.duration > 0) {
+                const percentage = (stat.duration / totalDuration) * 100;
+                html += `
+                    <div style="flex: ${stat.duration}; background: ${stat.color}; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 600;">
+                        ${percentage.toFixed(0)}%
+                    </div>
+                `;
+            }
+        });
+
+        html += '</div>';
+
+        // 图例和详细信息
+        html += '<div style="display: flex; flex-direction: column; gap: 12px;">';
+
+        Object.entries(typeStats).forEach(([type, stat]) => {
+            if (stat.duration > 0) {
+                const hours = stat.duration.toFixed(1);
+                const percentage = ((stat.duration / totalDuration) * 100).toFixed(1);
+
+                html += `
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="width: 12px; height: 12px; background: ${stat.color}; border-radius: 2px;"></div>
+                            <span style="font-size: 13px; color: #333;">${stat.label}</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 12px; color: #666;">${stat.count} 个任务</span>
+                            <span style="font-size: 13px; font-weight: 600; color: ${stat.color};">${hours}h</span>
+                            <span style="font-size: 11px; color: #999;">${percentage}%</span>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+
+        html += '</div>';
+        html += `<div style="margin-top: 16px; padding: 12px; background: #f9f9f9; border-radius: 4px; text-align: center; font-size: 12px; color: #666;">
+            总计: ${totalDuration.toFixed(1)} 小时
+        </div>`;
+
+        container.innerHTML = html;
     }
 }

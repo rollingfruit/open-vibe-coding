@@ -29,8 +29,8 @@ export class GanttView {
                 <h3 style="margin: 0; font-size: 16px; font-weight: 600;">📈 任务时间线 (甘特图)</h3>
                 <div class="gantt-view-controls" style="display: flex; gap: 8px;">
                     <button id="gantt-sort-btn" style="padding: 4px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px;">排序</button>
-                    <button class="view-mode-btn" data-mode="Day" style="padding: 4px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px;">日</button>
-                    <button class="view-mode-btn active" data-mode="Week" style="padding: 4px 12px; border: 1px solid #2196F3; background: #E3F2FD; color: #2196F3; border-radius: 4px; cursor: pointer; font-size: 12px;">周</button>
+                    <button class="view-mode-btn active" data-mode="Day" style="padding: 4px 12px; border: 1px solid #2196F3; background: #E3F2FD; color: #2196F3; border-radius: 4px; cursor: pointer; font-size: 12px;">日</button>
+                    <button class="view-mode-btn" data-mode="Week" style="padding: 4px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px;">周</button>
                     <button class="view-mode-btn" data-mode="Month" style="padding: 4px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px;">月</button>
                 </div>
             </div>
@@ -63,6 +63,9 @@ export class GanttView {
 
         // 绑定拖拽创建任务的事件
         this.setupDragToCreate();
+
+        // 使用事件委托绑定右键菜单和双击编辑(只绑定一次)
+        this.setupEventDelegation();
     }
 
     /**
@@ -133,8 +136,8 @@ export class GanttView {
             const end = new Date(now);
             end.setHours(end.getHours() + 2); // 默认2小时
 
-            // 显示创建任务弹窗
-            this.workspaceView.showCreateTaskModal({ start, end });
+            // 显示创建项目弹窗
+            this.workspaceView.showCreateProjectModal({ start, end });
         });
 
         ganttContainer.addEventListener('mouseleave', () => {
@@ -169,26 +172,15 @@ export class GanttView {
     }
 
     render(tasks) {
-        this.tasks = tasks;
-
-        if (tasks.length === 0) {
-            this.container.querySelector('.gantt-chart-container').innerHTML = `
-                <div style="text-align: center; padding: 60px 20px; color: #999;">
-                    <div style="font-size: 48px; margin-bottom: 16px;">📋</div>
-                    <div style="font-size: 16px;">暂无任务</div>
-                    <div style="font-size: 14px; margin-top: 8px;">请通过左侧 Copilot 创建任务</div>
-                </div>
-            `;
-            return;
-        }
+        this.tasks = tasks || [];
 
         // 步骤1: 构建树状结构
-        const { projects, taskMap } = this.buildTreeStructure(tasks);
+        const { projects, taskMap } = this.buildTreeStructure(this.tasks);
         this.projects = projects;
         this.taskMap = taskMap;
 
         console.log('Tree structure built:', {
-            totalTasks: tasks.length,
+            totalTasks: this.tasks.length,
             topLevelProjects: projects.length,
             expandedProjects: Array.from(this.expandedProjects)
         });
@@ -198,10 +190,19 @@ export class GanttView {
 
         console.log('Display tasks:', displayTasks.length, 'tasks will be shown');
 
-        // 根据排序状态处理任务列表
+        // 步骤3: 将任务分为活跃任务和已完成任务
+        const activeTasks = displayTasks.filter(task => task.status !== 'completed');
+        const completedTasks = displayTasks.filter(task => task.status === 'completed');
+
+        console.log('Task split:', {
+            active: activeTasks.length,
+            completed: completedTasks.length
+        });
+
+        // 根据排序状态处理活跃任务列表
         if (this.isSorted) {
             // 按持续时间降序排序（跨日程长的在上方）
-            displayTasks.sort((a, b) => {
+            activeTasks.sort((a, b) => {
                 const durationA = new Date(a.dtend) - new Date(a.dtstart);
                 const durationB = new Date(b.dtend) - new Date(b.dtstart);
                 return durationB - durationA; // 降序
@@ -209,16 +210,40 @@ export class GanttView {
         }
 
         // 预处理: 为子任务继承父任务的颜色
-        const processedTasks = this.inheritParentColors(displayTasks);
+        const processedActiveTasks = this.inheritParentColors(activeTasks);
+        const processedCompletedTasks = this.inheritParentColors(completedTasks);
 
         // 转换数据为 Frappe Gantt 格式
-        const ganttTasks = this.convertToGanttFormat(processedTasks);
+        const activeGanttTasks = this.convertToGanttFormat(processedActiveTasks);
+        const completedGanttTasks = this.convertToGanttFormat(processedCompletedTasks);
 
-        // 初始化或更新 Gantt 图
+        // 步骤4: 渲染活跃任务和已完成任务的分离视图
+        this.renderSplitGanttView(activeGanttTasks, completedGanttTasks);
+    }
+
+    /**
+     * 渲染分离的甘特图视图(活跃任务 + 已完成任务)
+     */
+    renderSplitGanttView(activeGanttTasks, completedGanttTasks) {
+        const ganttContainer = this.container.querySelector('.gantt-chart-container');
+
+        // 清空容器
+        ganttContainer.innerHTML = '';
+
+        // 创建活跃任务容器
+        const activeContainer = document.createElement('div');
+        activeContainer.id = 'active-gantt-container';
+        ganttContainer.appendChild(activeContainer);
+
+        // 准备要渲染的任务数据
+        const tasksToRender = activeGanttTasks.length > 0 ? activeGanttTasks : this.createPlaceholderTask();
+
+        // 初始化或更新活跃任务的甘特图
         if (!this.gantt) {
+            // 第一次初始化甘特图
             try {
-                this.gantt = new Gantt('#gantt-chart', ganttTasks, {
-                    view_mode: 'Week',
+                this.gantt = new Gantt('#active-gantt-container', tasksToRender, {
+                    view_mode: 'Day',
                     date_format: 'YYYY-MM-DD',
                     language: 'zh',
                     popup_trigger: 'click',
@@ -247,47 +272,180 @@ export class GanttView {
                         console.log('Progress changed:', task.id, progress);
                     },
                     on_click: (task) => {
-                        // 检查是否点击的是项目(使用 taskMap 查找,因为它包含 children 信息)
-                        const taskData = this.taskMap?.get(task.id);
-                        if (taskData && taskData.children && taskData.children.length > 0) {
-                            // 是项目，切换展开/折叠状态
-                            console.log('Toggling project:', task.id);
-                            this.toggleProjectExpansion(task.id);
-                        } else {
-                            console.log('Task clicked (not a project):', task.id);
-                        }
+                        // 单击事件：不做任何操作，避免与双击编辑冲突
+                        console.log('Task clicked:', task.id);
                     }
                 });
 
-                // 绑定右键菜单
-                this.setupContextMenu();
-
-                console.log('Frappe Gantt initialized with', ganttTasks.length, 'tasks');
+                console.log('Active Gantt initialized with', activeGanttTasks.length, 'tasks');
             } catch (error) {
-                console.error('Failed to initialize Gantt:', error);
-                this.container.querySelector('.gantt-chart-container').innerHTML = `
+                console.error('Failed to initialize Active Gantt:', error);
+                ganttContainer.innerHTML = `
                     <div style="color: red; padding: 20px;">
                         甘特图初始化失败: ${error.message}
                     </div>
                 `;
+                return;
             }
         } else {
-            // 更新现有 Gantt 图
+            // 更新现有活跃任务甘特图
+            // 注意: 由于上面已经清空并重新创建了容器，需要重新初始化甘特图实例
             try {
-                this.gantt.refresh(ganttTasks);
-                this.setupContextMenu();
-
-                console.log('Gantt refreshed with', ganttTasks.length, 'tasks');
+                this.gantt = new Gantt('#active-gantt-container', tasksToRender, {
+                    view_mode: 'Day',
+                    date_format: 'YYYY-MM-DD',
+                    language: 'zh',
+                    popup_trigger: 'click',
+                    custom_popup_html: (task) => {
+                        const originalTask = this.tasks.find(t => t.id === task.id);
+                        const startDate = task._start ? new Date(task._start).toLocaleDateString('zh-CN') : task.start;
+                        const endDate = task._end ? new Date(task._end).toLocaleDateString('zh-CN') : task.end;
+                        return `
+                            <div class="gantt-popup" style="padding: 12px;">
+                                <div style="font-weight: 600; margin-bottom: 8px;">${task.name}</div>
+                                <div style="font-size: 12px; color: #666;">
+                                    <div>项目: ${originalTask?.project || '未分类'}</div>
+                                    <div>状态: ${this.getStatusLabel(originalTask?.status)}</div>
+                                    <div>开始: ${startDate}</div>
+                                    <div>结束: ${endDate}</div>
+                                    <div style="margin-top: 8px;">右键打开更多选项</div>
+                                </div>
+                            </div>
+                        `;
+                    },
+                    on_date_change: (task, start, end) => {
+                        this.handleDateChange(task, start, end);
+                    },
+                    on_progress_change: (task, progress) => {
+                        console.log('Progress changed:', task.id, progress);
+                    },
+                    on_click: (task) => {
+                        // 单击事件：不做任何操作，避免与双击编辑冲突
+                        console.log('Task clicked:', task.id);
+                    }
+                });
+                console.log('Active Gantt re-initialized with', activeGanttTasks.length, 'tasks');
             } catch (error) {
-                console.error('Failed to refresh Gantt:', error);
+                console.error('Failed to re-initialize Active Gantt:', error);
             }
+        }
+
+        // 如果有已完成任务，创建分隔符和已完成任务区域
+        if (completedGanttTasks.length > 0) {
+            // 创建分隔符
+            const separator = document.createElement('div');
+            separator.id = 'completed-separator';
+            separator.className = 'gantt-completed-separator';
+            separator.innerHTML = `
+                <span class="chevron">▶</span>
+                <span>已完成的任务 (${completedGanttTasks.length})</span>
+            `;
+            ganttContainer.appendChild(separator);
+
+            // 创建已完成任务容器(默认隐藏)
+            const completedContainer = document.createElement('div');
+            completedContainer.id = 'completed-gantt-container';
+            completedContainer.style.display = 'none';
+            ganttContainer.appendChild(completedContainer);
+
+            // 绑定分隔符点击事件(使用事件委托已在init中设置,这里添加具体逻辑)
+            separator.addEventListener('click', () => {
+                this.toggleCompletedSection(completedGanttTasks);
+            });
+        }
+    }
+
+    /**
+     * 切换已完成任务区域的显示/隐藏
+     */
+    toggleCompletedSection(completedGanttTasks) {
+        const separator = document.getElementById('completed-separator');
+        const completedContainer = document.getElementById('completed-gantt-container');
+
+        if (completedContainer.style.display === 'none') {
+            // 展开已完成任务区域
+            completedContainer.style.display = 'block';
+            separator.classList.add('expanded');
+
+            // 懒加载: 如果还没有渲染甘特图,现在渲染
+            if (!this.completedGantt) {
+                try {
+                    this.completedGantt = new Gantt('#completed-gantt-container', completedGanttTasks, {
+                        view_mode: 'Week',
+                        date_format: 'YYYY-MM-DD',
+                        language: 'zh',
+                        popup_trigger: 'click',
+                        custom_popup_html: (task) => {
+                            const originalTask = this.tasks.find(t => t.id === task.id);
+                            const startDate = task._start ? new Date(task._start).toLocaleDateString('zh-CN') : task.start;
+                            const endDate = task._end ? new Date(task._end).toLocaleDateString('zh-CN') : task.end;
+                            return `
+                                <div class="gantt-popup" style="padding: 12px;">
+                                    <div style="font-weight: 600; margin-bottom: 8px;">${task.name}</div>
+                                    <div style="font-size: 12px; color: #666;">
+                                        <div>项目: ${originalTask?.project || '未分类'}</div>
+                                        <div>状态: ${this.getStatusLabel(originalTask?.status)}</div>
+                                        <div>开始: ${startDate}</div>
+                                        <div>结束: ${endDate}</div>
+                                        <div style="margin-top: 8px; color: #28a745;">✓ 已完成</div>
+                                    </div>
+                                </div>
+                            `;
+                        },
+                        on_click: (task) => {
+                            const taskData = this.taskMap?.get(task.id);
+                            if (taskData && taskData.children && taskData.children.length > 0) {
+                                this.showProjectDetailPopup(taskData);
+                            }
+                        }
+                    });
+                    console.log('Completed Gantt initialized with', completedGanttTasks.length, 'tasks');
+                } catch (error) {
+                    console.error('Failed to initialize Completed Gantt:', error);
+                }
+            } else {
+                // 更新已完成任务甘特图
+                this.completedGantt.refresh(completedGanttTasks);
+            }
+        } else {
+            // 折叠已完成任务区域
+            completedContainer.style.display = 'none';
+            separator.classList.remove('expanded');
         }
     }
 
     convertToGanttFormat(tasks) {
+        // 如果没有任务，返回空数组
+        if (!tasks || tasks.length === 0) {
+            return [];
+        }
+
         return tasks.map(task => {
-            const start = task.dtstart ? new Date(task.dtstart) : new Date();
-            const end = task.dtend ? new Date(task.dtend) : new Date(start.getTime() + 3600000);
+            // 确保任务有有效的时间信息
+            let start, end;
+
+            if (task.dtstart && task.dtend) {
+                start = new Date(task.dtstart);
+                end = new Date(task.dtend);
+                console.log('Task time info:', task.id, {
+                    dtstart: task.dtstart,
+                    dtend: task.dtend,
+                    parsedStart: start,
+                    parsedEnd: end
+                });
+            } else {
+                // 如果没有时间信息，使用当前时间
+                console.warn('Task missing time info:', task.id, task);
+                start = new Date();
+                end = new Date(start.getTime() + 3600000); // 默认1小时
+            }
+
+            // 验证日期有效性
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+                console.warn('Invalid date for task:', task.id, task);
+                start = new Date();
+                end = new Date(start.getTime() + 3600000);
+            }
 
             // 使用任务的progress字段，如果没有则根据状态计算
             let progress = task.progress || 0;
@@ -322,21 +480,13 @@ export class GanttView {
                 customClass += ' task-preview';
             }
 
-            // 为项目名称添加展开/折叠图标
-            let displayName = task.title;
+            // 为项目添加图标提示
+            let displayName = task.title || '未命名任务';
             if (isProject) {
-                const isExpanded = this.expandedProjects.has(task.id);
-                const icon = isExpanded ? '▼' : '►';
-                displayName = `${icon} ${task.title}`;
+                displayName = `📁 ${displayName}`;
             }
 
-            // 为子任务添加缩进
-            if (task._level && task._level > 0) {
-                const indent = '　'.repeat(task._level); // 全角空格缩进
-                displayName = indent + displayName;
-            }
-
-            return {
+            const ganttTask = {
                 id: task.id,
                 name: displayName,
                 start: this.formatDate(start),
@@ -344,6 +494,9 @@ export class GanttView {
                 progress: progress,
                 custom_class: customClass.trim()
             };
+
+            console.log('Converted to Gantt format:', ganttTask);
+            return ganttTask;
         });
     }
 
@@ -373,43 +526,209 @@ export class GanttView {
             }
         });
 
+        // 第三遍: 动态计算项目属性(起止时间、进度)
+        this.processProjectData(projects);
+
         return { projects, taskMap };
     }
 
     /**
+     * 动态计算项目属性
+     * 递归遍历项目及其子任务,计算项目的起止时间和平均进度
+     */
+    processProjectData(projects) {
+        projects.forEach(project => {
+            if (project.children && project.children.length > 0) {
+                // 递归处理子项目
+                this.processProjectData(project.children);
+
+                // 收集所有子任务的时间和进度
+                const childTimes = [];
+                const childProgresses = [];
+
+                const collectChildData = (children) => {
+                    children.forEach(child => {
+                        if (child.dtstart) childTimes.push(new Date(child.dtstart));
+                        if (child.dtend) childTimes.push(new Date(child.dtend));
+                        if (typeof child.progress === 'number') {
+                            childProgresses.push(child.progress);
+                        }
+                        // 递归收集子任务的子任务
+                        if (child.children && child.children.length > 0) {
+                            collectChildData(child.children);
+                        }
+                    });
+                };
+
+                collectChildData(project.children);
+
+                // 计算项目的起止时间(只在有子任务时间时才覆盖)
+                if (childTimes.length > 0) {
+                    const minTime = new Date(Math.min(...childTimes));
+                    const maxTime = new Date(Math.max(...childTimes));
+                    project.dtstart = minTime.toISOString();
+                    project.dtend = maxTime.toISOString();
+                }
+                // 如果项目有子任务但子任务都没有时间，保留项目原有的时间
+                // (不做任何操作，保持 project.dtstart 和 project.dtend 不变)
+
+                // 计算项目的平均进度
+                if (childProgresses.length > 0) {
+                    const avgProgress = childProgresses.reduce((sum, p) => sum + p, 0) / childProgresses.length;
+                    project.progress = Math.round(avgProgress);
+                }
+            }
+            // 如果项目没有子任务，保留其原始时间信息
+            // (不做任何操作，直接使用创建时填写的 dtstart 和 dtend)
+        });
+    }
+
+    /**
      * 根据展开状态生成用于显示的扁平列表
+     * 注意：由于现在使用弹窗显示项目详情，主甘特图中默认只显示顶层项目
      */
     generateDisplayList(projects) {
         const displayTasks = [];
 
-        const addTaskAndChildren = (task, level = 0) => {
-            // 添加任务本身，并标记层级
-            const taskCopy = { ...task, _level: level };
-            displayTasks.push(taskCopy);
+        // 只添加顶层项目，不展开子任务（子任务在弹窗中查看）
+        projects.forEach(project => {
+            displayTasks.push({ ...project, _level: 0 });
+        });
 
-            // 如果这个任务是项目且已展开，递归添加其子任务
-            if (task.children && task.children.length > 0 && this.expandedProjects.has(task.id)) {
-                task.children.forEach(child => {
-                    addTaskAndChildren(child, level + 1);
-                });
-            }
-        };
-
-        projects.forEach(project => addTaskAndChildren(project));
         return displayTasks;
     }
 
+
+
+
+
+
     /**
-     * 切换项目的展开/折叠状态
+     * 显示项目详情弹窗（带内部任务甘特图）
      */
-    toggleProjectExpansion(projectId) {
-        if (this.expandedProjects.has(projectId)) {
-            this.expandedProjects.delete(projectId);
-        } else {
-            this.expandedProjects.add(projectId);
+    showProjectDetailPopup(projectTask) {
+        // 创建模态窗口
+        const modal = document.createElement('div');
+        modal.className = 'project-detail-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+        // 创建弹窗内容容器
+        const modalContent = document.createElement('div');
+        modalContent.className = 'project-detail-content';
+        modalContent.style.cssText = `
+            background: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 1200px;
+            height: 80%;
+            max-height: 800px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        `;
+
+        // 创建标题栏
+        const header = document.createElement('div');
+        header.className = 'project-detail-header';
+        header.style.cssText = `
+            padding: 20px 24px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f5f5f5;
+            border-radius: 8px 8px 0 0;
+        `;
+        header.innerHTML = `
+            <div>
+                <h2 style="margin: 0; font-size: 20px; font-weight: 600; color: #333;">${projectTask.title}</h2>
+                <p style="margin: 4px 0 0 0; font-size: 14px; color: #666;">项目内部任务视图 (${projectTask.children.length} 个任务)</p>
+            </div>
+            <button class="close-modal-btn" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #999; line-height: 1; padding: 0; width: 32px; height: 32px;">&times;</button>
+        `;
+
+        // 创建甘特图容器
+        const ganttContainer = document.createElement('div');
+        ganttContainer.className = 'project-detail-gantt-container';
+        ganttContainer.style.cssText = `
+            flex: 1;
+            overflow: auto;
+            padding: 16px;
+        `;
+        ganttContainer.innerHTML = '<div id="project-detail-gantt"></div>';
+
+        // 组装弹窗
+        modalContent.appendChild(header);
+        modalContent.appendChild(ganttContainer);
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        // 绑定关闭事件
+        const closeBtn = header.querySelector('.close-modal-btn');
+        const closeModal = () => {
+            modal.remove();
+        };
+        closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+
+        // 准备数据并渲染甘特图
+        const childTasks = projectTask.children || [];
+        if (childTasks.length === 0) {
+            ganttContainer.innerHTML = '<div style="text-align: center; padding: 60px; color: #999;">该项目暂无子任务</div>';
+            return;
         }
-        // 重新渲染
-        this.render(this.tasks);
+
+        // 转换为甘特图格式
+        const ganttTasks = this.convertToGanttFormat(childTasks);
+
+        // 实例化甘特图
+        try {
+            new Gantt('#project-detail-gantt', ganttTasks, {
+                view_mode: 'Week',
+                date_format: 'YYYY-MM-DD',
+                language: 'zh',
+                popup_trigger: 'click',
+                custom_popup_html: (task) => {
+                    const originalTask = childTasks.find(t => t.id === task.id);
+                    const startDate = task._start ? new Date(task._start).toLocaleDateString('zh-CN') : task.start;
+                    const endDate = task._end ? new Date(task._end).toLocaleDateString('zh-CN') : task.end;
+                    return `
+                        <div class="gantt-popup" style="padding: 12px;">
+                            <div style="font-weight: 600; margin-bottom: 8px;">${task.name}</div>
+                            <div style="font-size: 12px; color: #666;">
+                                <div>状态: ${this.getStatusLabel(originalTask?.status)}</div>
+                                <div>开始: ${startDate}</div>
+                                <div>结束: ${endDate}</div>
+                            </div>
+                        </div>
+                    `;
+                },
+                on_date_change: (task, start, end) => {
+                    this.handleDateChange(task, start, end);
+                },
+                on_click: (task) => {
+                    console.log('Subtask clicked:', task.id);
+                }
+            });
+        } catch (error) {
+            console.error('Failed to initialize project detail gantt:', error);
+            ganttContainer.innerHTML = `<div style="color: red; padding: 20px;">甘特图初始化失败: ${error.message}</div>`;
+        }
     }
 
     /**
@@ -476,40 +795,66 @@ export class GanttView {
         }
     }
 
-    setupContextMenu() {
-        // 为所有任务条添加右键菜单和双击编辑
-        const taskBars = this.container.querySelectorAll('.bar-wrapper');
+    /**
+     * 使用事件委托模式设置右键菜单和双击编辑
+     * 只在 init() 中调用一次,避免重复绑定
+     */
+    setupEventDelegation() {
+        const ganttContainer = this.container.querySelector('.gantt-chart-container');
 
-        taskBars.forEach(bar => {
-            // 为每个bar创建独立的事件处理器
-            const contextMenuHandler = (e) => {
+        // 右键菜单事件委托
+        ganttContainer.addEventListener('contextmenu', (e) => {
+            // 查找最近的任务条元素
+            const barWrapper = e.target.closest('.bar-wrapper');
+
+            if (barWrapper) {
                 e.preventDefault();
                 e.stopPropagation();
-                const taskId = bar.getAttribute('data-id');
+
+                const taskId = barWrapper.getAttribute('data-id');
                 const task = this.taskMap?.get(taskId) || this.tasks.find(t => t.id === taskId);
+
                 if (task) {
                     this.showContextMenu(e, task);
                 }
-                return false;
-            };
 
-            const dblClickHandler = (e) => {
+                return false;
+            }
+        }, true); // 使用捕获模式确保优先执行
+
+        // 双击编辑事件委托
+        ganttContainer.addEventListener('dblclick', (e) => {
+            // 查找最近的任务条元素
+            const barWrapper = e.target.closest('.bar-wrapper');
+
+            if (barWrapper) {
                 e.preventDefault();
                 e.stopPropagation();
-                const taskId = bar.getAttribute('data-id');
+
+                const taskId = barWrapper.getAttribute('data-id');
+
+                // 检查是否是占位任务
+                if (taskId === 'placeholder-task') {
+                    console.log('Double-clicked placeholder task, opening create project modal');
+                    this.workspaceView.showCreateProjectModal({ start: new Date(), end: new Date() });
+                    return;
+                }
+
                 const task = this.taskMap?.get(taskId) || this.tasks.find(t => t.id === taskId);
+
                 if (task) {
+                    // 检查是否是项目（有子任务）
+                    const isProject = task.children && task.children.length > 0;
+
+                    if (isProject) {
+                        console.log('Double-clicked project, opening edit modal');
+                    } else {
+                        console.log('Double-clicked task, opening edit modal');
+                    }
+
                     this.workspaceView.showEditTaskModal(task);
                 }
-            };
-
-            // 移除所有已有的监听器,避免重复绑定
-            const newBar = bar.cloneNode(true);
-            bar.parentNode.replaceChild(newBar, bar);
-
-            // 绑定新的监听器
-            newBar.addEventListener('contextmenu', contextMenuHandler, { capture: true });
-            newBar.addEventListener('dblclick', dblClickHandler);
+            }
         });
     }
 
@@ -573,8 +918,17 @@ export class GanttView {
             </div>
         `;
 
-        // 只有非项目任务才显示"添加子任务"
-        if (!isProject) {
+        // 项目显示"查看子任务"，任务显示"添加子任务"
+        if (isProject) {
+            menuItems += `
+            <div class="menu-item" data-action="view_subtasks" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
+                <span>📋</span><span>查看子任务 (${task.children.length})</span>
+            </div>
+            <div class="menu-item" data-action="add_subtask" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
+                <span>➕</span><span>添加子任务</span>
+            </div>
+            `;
+        } else {
             menuItems += `
             <div class="menu-item" data-action="add_subtask" style="padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 8px;">
                 <span>➕</span><span>添加子任务</span>
@@ -677,6 +1031,9 @@ export class GanttView {
             case 'review':
                 this.workspaceView.showReviewModal(task);
                 break;
+            case 'view_subtasks':
+                this.showProjectDetailPopup(task);
+                break;
             case 'add_subtask':
                 this.showAddSubtaskDialog(task);
                 break;
@@ -766,5 +1123,23 @@ export class GanttView {
             console.error('Delete task error:', error);
             alert('删除失败: ' + error.message);
         }
+    }
+
+    /**
+     * 创建占位任务，用于在没有真实任务时显示空甘特图
+     */
+    createPlaceholderTask() {
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        return [{
+            id: 'placeholder-task',
+            name: '暂无任务 - 请使用左侧 Copilot 创建任务',
+            start: this.formatDate(today),
+            end: this.formatDate(tomorrow),
+            progress: 0,
+            custom_class: 'task-placeholder'
+        }];
     }
 }

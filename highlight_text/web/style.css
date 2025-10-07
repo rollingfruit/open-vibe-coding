@@ -935,3 +935,122 @@ code, pre, .code-block {
 }
 
 /* ============================================
+   Gantt Chart - Project Level Styles
+   ============================================ */
+
+/* 项目级任务的视觉样式 */
+.gantt .bar-wrapper.task-is-project .bar {
+    height: 18px !important; /* 更粗的条形 */
+    background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
+    background-size: 20px 20px; /* 斜纹理大小 */
+    border-radius: 4px;
+    border-width: 2px !important; /* 更粗的边框 */
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); /* 添加阴影增强立体感 */
+    cursor: pointer; /* 提示可点击 */
+}
+
+.gantt .bar-wrapper.task-is-project .bar-label {
+    font-weight: 600 !important; /* 字体加粗 */
+    font-size: 13px !important; /* 稍大的字体 */
+}
+
+/* 项目详情弹窗样式 */
+.project-detail-modal {
+    animation: modalFadeIn 0.3s ease-in-out;
+}
+
+.project-detail-content {
+    animation: modalSlideIn 0.3s ease-in-out;
+}
+
+/* 项目详情弹窗标题栏 */
+.project-detail-header .close-modal-btn:hover {
+    color: #333;
+    transform: rotate(90deg);
+    transition: all 0.2s ease;
+}
+
+/* 项目详情甘特图容器滚动条 */
+.project-detail-gantt-container::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.project-detail-gantt-container::-webkit-scrollbar-track {
+    background: #f5f5f5;
+    border-radius: 4px;
+}
+
+.project-detail-gantt-container::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 4px;
+}
+
+.project-detail-gantt-container::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+/* 占位任务样式 */
+.gantt .bar-wrapper.task-placeholder .bar {
+    opacity: 0.3;
+    background: #e0e0e0 !important;
+    border: 2px dashed #999 !important;
+    pointer-events: none;
+}
+
+.gantt .bar-wrapper.task-placeholder .bar-label {
+    color: #999 !important;
+    font-style: italic;
+    font-weight: normal !important;
+}
+
+/* 已完成任务的分隔符样式 */
+.gantt-completed-separator {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    cursor: pointer;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    font-weight: 500;
+    font-size: 14px;
+    color: #495057;
+    user-select: none;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gantt-completed-separator:hover {
+    background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.gantt-completed-separator .chevron {
+    display: inline-block;
+    transition: transform 0.2s ease;
+    font-size: 12px;
+}
+
+.gantt-completed-separator.expanded .chevron {
+    transform: rotate(90deg);
+}
+
+/* 已完成任务的样式 */
+.gantt .bar-wrapper.task-completed .bar {
+    opacity: 0.5;
+    filter: grayscale(70%);
+}
+
+.gantt .bar-wrapper.task-completed {
+    cursor: default; /* 提示用户已完成的任务 */
+}
+
+.gantt .bar-wrapper.task-completed .bar-label {
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+/* ============================================

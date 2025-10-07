@@ -118,6 +118,10 @@ func GetTaskTools() []ToolDefinition {
 						"type":        "string",
 						"description": "结束日期过滤（ISO 8601格式，可选）",
 					},
+					"projects_only": map[string]interface{}{
+						"type":        "boolean",
+						"description": "如果为 true，则只返回顶级项目列表（即没有 parent_id 的任务），用于任务归属判断（可选）",
+					},
 				},
 			},
 		},
@@ -302,6 +306,19 @@ func listTasks(args map[string]interface{}, basePath string) (string, error) {
 		if shouldIncludeTask(task, args) {
 			tasks = append(tasks, task)
 		}
+	}
+
+	// 检查是否需要只返回顶级项目
+	if projectsOnly, ok := args["projects_only"].(bool); ok && projectsOnly {
+		var projects []Task
+		for _, task := range tasks {
+			// 只保留没有 parent_id 的任务（顶级项目）
+			if task.ParentID == "" {
+				projects = append(projects, task)
+			}
+		}
+		resultJSON, _ := json.MarshalIndent(projects, "", "  ")
+		return string(resultJSON), nil
 	}
 
 	resultJSON, _ := json.MarshalIndent(tasks, "", "  ")

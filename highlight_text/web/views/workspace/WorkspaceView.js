@@ -53,6 +53,11 @@ export class WorkspaceView {
                             ✓ 自动保存中...
                         </span>
                     </div>
+                    <div>
+                        <button id="show-analytics-btn" class="px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded text-sm font-medium transition-all shadow-sm hover:shadow-md">
+                            📊 数据分析
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 三栏内容区 -->
@@ -86,6 +91,37 @@ export class WorkspaceView {
         this.container.querySelector('.workspace-back-btn').addEventListener('click', () => {
             this.app.exitWorkspaceMode();
         });
+
+        // 绑定数据分析按钮
+        this.container.querySelector('#show-analytics-btn').addEventListener('click', () => {
+            // 检查分析区域是否已显示
+            if (this.analyticsContainer.style.display === 'block') {
+                // 如果已显示，则隐藏
+                this.analyticsContainer.style.display = 'none';
+            } else {
+                // 如果未显示，则显示并滚动到该区域
+                this.scrollToAnalytics();
+            }
+        });
+    }
+
+    /**
+     * 平滑滚动到数据分析区域
+     */
+    async scrollToAnalytics() {
+        // 如果分析视图还没初始化,先加载
+        if (!this.analyticsView) {
+            await this.loadAnalytics();
+        }
+
+        // 显示分析区域
+        this.analyticsContainer.style.display = 'block';
+
+        // 平滑滚动到分析视图
+        this.analyticsContainer.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+        });
     }
 
     async initializeViews() {
@@ -110,7 +146,7 @@ export class WorkspaceView {
             const response = await fetch('/api/tasks');
             const tasks = await response.json();
 
-            this.tasks = tasks;
+            this.tasks = Array.isArray(tasks) ? tasks : [];
 
             // 同步到 Gantt 和 Calendar
             this.ganttView.render(this.tasks);
@@ -119,6 +155,9 @@ export class WorkspaceView {
             console.log('Tasks loaded and synced:', this.tasks);
         } catch (error) {
             console.error('Failed to load tasks:', error);
+            this.tasks = []; // 确保即使出错也是空数组
+            this.ganttView.render(this.tasks);
+            this.calendarView.render(this.tasks);
         }
     }
 
@@ -443,6 +482,134 @@ export class WorkspaceView {
     }
 
     /**
+     * 显示创建项目的弹窗(不包含parent_id字段)
+     * @param {Object} options - {start: Date, end: Date}
+     */
+    showCreateProjectModal({ start, end }) {
+        // 移除已存在的弹窗
+        const existingModal = document.querySelector('.project-create-modal');
+        if (existingModal) existingModal.remove();
+
+        // 格式化时间为本地字符串
+        const formatDateTime = (date) => {
+            const d = new Date(date);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hours = String(d.getHours()).padStart(2, '0');
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        };
+
+        // 创建弹窗
+        const modal = document.createElement('div');
+        modal.className = 'project-create-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+
+        modal.innerHTML = `
+            <div class="modal-content" style="background: white; border-radius: 8px; padding: 24px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+                <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">创建新项目</h3>
+
+                <form id="create-project-form">
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">项目名称 *</label>
+                        <input type="text" id="project-title" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="输入项目名称">
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">项目分类</label>
+                        <select id="project-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                            <option value="">默认</option>
+                            <option value="work">工作 (蓝色)</option>
+                            <option value="personal">个人 (绿色)</option>
+                            <option value="study">学习 (橙色)</option>
+                        </select>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">开始时间 *</label>
+                        <input type="datetime-local" id="project-start" required value="${formatDateTime(start)}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">结束时间 *</label>
+                        <input type="datetime-local" id="project-end" required value="${formatDateTime(end)}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                    </div>
+
+                    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                        <button type="button" id="cancel-btn" style="padding: 8px 20px; background: #f5f5f5; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">取消</button>
+                        <button type="submit" style="padding: 8px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">创建</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // 绑定取消按钮
+        modal.querySelector('#cancel-btn').addEventListener('click', () => {
+            modal.remove();
+        });
+
+        // 绑定表单提交
+        modal.querySelector('#create-project-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const title = modal.querySelector('#project-title').value.trim();
+            const type = modal.querySelector('#project-type').value;
+            const startTime = new Date(modal.querySelector('#project-start').value).toISOString();
+            const endTime = new Date(modal.querySelector('#project-end').value).toISOString();
+
+            if (!title) {
+                alert('请输入项目名称');
+                return;
+            }
+
+            // 构建项目参数(不包含parent_id,使其成为顶层项目)
+            const projectArgs = {
+                title: title,
+                dtstart: startTime,
+                dtend: endTime
+            };
+
+            // 如果用户选择了类型，传递给后端；否则传递 "default"
+            projectArgs.type = type || "default";
+
+            try {
+                const result = await this.taskAgent.executeTool('create_task', projectArgs);
+                const data = JSON.parse(result);
+
+                if (data.success) {
+                    modal.remove();
+                    await this.loadAndSyncTasks();
+                } else {
+                    alert('创建项目失败: ' + (data.error || '未知错误'));
+                }
+            } catch (error) {
+                alert('创建项目失败: ' + error.message);
+            }
+        });
+
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    }
+
+    /**
      * 显示创建任务的弹窗
      * @param {Object} options - {start: Date, end: Date, parentId?: string}
      */
@@ -463,7 +630,7 @@ export class WorkspaceView {
         };
 
         // 获取所有可能的父项目
-        const availableParents = this.tasks.filter(t => !t.parent_id);
+        const availableParents = (this.tasks || []).filter(t => !t.parent_id);
 
         // 创建弹窗
         const modal = document.createElement('div');
