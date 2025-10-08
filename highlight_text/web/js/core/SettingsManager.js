@@ -34,6 +34,9 @@ export class SettingsManager {
         // 加载快捷键配置
         this.renderShortcutsSettings();
 
+        // 加载分类管理配置
+        this.renderCategoriesSettings();
+
         // 绑定标签页切换事件
         this.bindSettingsTabEvents();
 
@@ -380,6 +383,91 @@ export class SettingsManager {
     }
 
     /**
+     * 渲染分类管理
+     */
+    renderCategoriesSettings() {
+        const categoriesList = document.getElementById('categoriesList');
+        categoriesList.innerHTML = '';
+
+        const categories = this.app.settings.categories || [];
+
+        categories.forEach((category, index) => {
+            const catItem = document.createElement('div');
+            catItem.className = 'category-item flex items-center gap-3 bg-gray-700 p-3 rounded border border-gray-600';
+            catItem.innerHTML = `
+                <input type="color" value="${escapeHtml(category.color)}" class="category-color p-1 h-10 w-10 bg-gray-800 rounded cursor-pointer" data-index="${index}">
+                <input type="text" value="${escapeHtml(category.name)}" class="category-name flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" placeholder="分类名称" data-index="${index}">
+                <input type="text" value="${escapeHtml(category.id)}" class="category-id w-24 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" placeholder="ID" data-index="${index}" ${category.id === 'default' ? 'readonly' : ''}>
+                <button class="delete-category-btn px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-sm" data-index="${index}" ${category.id === 'default' ? 'disabled' : ''}>
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            `;
+            categoriesList.appendChild(catItem);
+        });
+
+        // 绑定删除按钮事件
+        document.querySelectorAll('.delete-category-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt(e.currentTarget.dataset.index);
+                this.deleteCategory(index);
+            });
+        });
+
+        // 绑定添加按钮事件
+        const addBtn = document.getElementById('addCategoryBtn');
+        addBtn.replaceWith(addBtn.cloneNode(true)); // 移除旧事件
+        document.getElementById('addCategoryBtn').addEventListener('click', () => {
+            this.addCategory();
+        });
+
+        // 重新初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+    }
+
+    /**
+     * 添加分类
+     */
+    addCategory() {
+        const newId = `cat_${Date.now()}`;
+        this.app.settings.categories.push({
+            id: newId,
+            name: '新分类',
+            color: '#808080'
+        });
+        this.renderCategoriesSettings();
+    }
+
+    /**
+     * 删除分类
+     */
+    deleteCategory(index) {
+        if (this.app.settings.categories[index].id === 'default') {
+            alert('不能删除默认分类。');
+            return;
+        }
+        if (confirm('确定要删除这个分类吗？')) {
+            this.app.settings.categories.splice(index, 1);
+            this.renderCategoriesSettings();
+        }
+    }
+
+    /**
+     * 从UI收集分类数据
+     */
+    collectCategoriesFromUI() {
+        const categoryItems = document.querySelectorAll('#categoriesList .category-item');
+        const newCategories = Array.from(categoryItems).map(item => {
+            const name = item.querySelector('.category-name').value;
+            const color = item.querySelector('.category-color').value;
+            const id = item.querySelector('.category-id').value;
+            return { id, name, color };
+        });
+        return newCategories;
+    }
+
+    /**
      * 从模态框保存设置
      */
     async saveSettingsFromModal() {
@@ -387,6 +475,10 @@ export class SettingsManager {
         this.settings.apiKey = document.getElementById('apiKeyInput').value;
         this.settings.endpoint = document.getElementById('apiEndpointInput').value;
         this.settings.model = document.getElementById('modelSelect').value;
+        
+        // 保存分类配置
+        this.settings.categories = this.collectCategoriesFromUI();
+
         this.app.saveSettings();
 
         // 保存划词指令配置
@@ -442,6 +534,11 @@ export class SettingsManager {
             // 更新快捷键管理器
             if (this.app.shortcutManager) {
                 this.app.shortcutManager.loadSettings(this.config.shortcuts);
+            }
+
+            // 更新TaskAgentHandler中的分类
+            if (this.app.workspace) {
+                this.app.workspace.taskAgentHandler.updateCategories(this.settings.categories);
             }
 
             this.hideSettings();

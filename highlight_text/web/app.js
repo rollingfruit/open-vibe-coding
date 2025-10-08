@@ -6,7 +6,8 @@ import { SettingsManager } from './js/core/SettingsManager.js';
 class AIAssistant {
     constructor() {
         this.config = null;
-        this.settings = this.loadSettings();
+        this.settings = {};
+        this.loadSettings();
         this.sessions = []; // 所有会话的数组
         this.activeSessionId = null; // 当前活动会话ID
         this.isStreaming = false;
@@ -89,12 +90,45 @@ class AIAssistant {
     }
 
     loadSettings() {
-        const stored = localStorage.getItem('aiAssistantSettings');
-        return JSON.parse(stored);
+        const savedSettings = localStorage.getItem('appSettings');
+        if (savedSettings) {
+            this.settings = JSON.parse(savedSettings);
+        } else {
+            this.settings = {
+                apiKey: '',
+                endpoint: 'https://api.openai.com/v1/chat/completions',
+                model: 'gpt-4o',
+            };
+        }
+
+        // 初始化或验证分类设置
+        if (!this.settings.categories || !Array.isArray(this.settings.categories) || this.settings.categories.length === 0) {
+            this.settings.categories = [
+              { id: 'work', name: '工作', color: '#3B82F6' }, // 蓝色
+              { id: 'personal', name: '个人', color: '#10B981' }, // 绿色
+              { id: 'study', name: '学习', color: '#F97316' }, // 橙色
+              { id: 'default', name: '默认', color: '#FBBF24' } // 黄色
+            ];
+        }
+
+        // 应用主题
+        if (this.settings.theme) {
+            document.documentElement.setAttribute('data-theme', this.settings.theme);
+        }
     }
 
     saveSettings() {
-        localStorage.setItem('aiAssistantSettings', JSON.stringify(this.settings));
+        localStorage.setItem('appSettings', JSON.stringify(this.settings));
+
+        // Apply theme
+        if (this.settings.theme) {
+            document.documentElement.setAttribute('data-theme', this.settings.theme);
+        }
+
+        // Update workspace styles if it exists
+        if (this.workspace) {
+            this.workspace.updateCategoryStyles();
+        }
     }
 
     loadSessions() {

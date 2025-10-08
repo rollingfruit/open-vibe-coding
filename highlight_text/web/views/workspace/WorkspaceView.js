@@ -34,6 +34,7 @@ export class WorkspaceView {
     async init() {
         this.buildLayout();
         await this.initializeViews();
+        this.updateCategoryStyles();
         await this.loadAndSyncTasks();
         this.setupScrollListener();
     }
@@ -124,12 +125,56 @@ export class WorkspaceView {
         });
     }
 
-    async initializeViews() {
-        // 获取 API 配置
-        const apiSettings = this.app.apiSettings
+    updateCategoryStyles() {
+        const styleId = 'gantt-category-styles';
+        let styleElement = document.getElementById(styleId);
+        if (!styleElement) {
+            styleElement = document.createElement('style');
+            styleElement.id = styleId;
+            document.head.appendChild(styleElement);
+        }
 
+        const categories = this.app.settings.categories || [];
+        const cssRules = categories.map(cat => {
+            // For preview tasks, Frappe Gantt uses a specific pattern.
+            // We define the base color here, and the gantt chart CSS handles the rest.
+            return `
+                .gantt .bar-wrapper.gantt-category-${cat.id} .bar {
+                    fill: ${cat.color};
+                }
+                .gantt .bar-wrapper.gantt-category-${cat.id} .bar-progress {
+                    fill: ${this.shadeColor(cat.color, -20)};
+                }
+            `;
+        }).join('\n');
+
+        styleElement.innerHTML = cssRules;
+    }
+
+    // Helper to darken/lighten a color
+    shadeColor(color, percent) {
+        let R = parseInt(color.substring(1, 3), 16);
+        let G = parseInt(color.substring(3, 5), 16);
+        let B = parseInt(color.substring(5, 7), 16);
+
+        R = parseInt(R * (100 + percent) / 100);
+        G = parseInt(G * (100 + percent) / 100);
+        B = parseInt(B * (100 + percent) / 100);
+
+        R = (R < 255) ? R : 255;
+        G = (G < 255) ? G : 255;
+        B = (B < 255) ? B : 255;
+
+        const RR = ((R.toString(16).length === 1) ? '0' + R.toString(16) : R.toString(16));
+        const GG = ((G.toString(16).length === 1) ? '0' + G.toString(16) : G.toString(16));
+        const BB = ((B.toString(16).length === 1) ? '0' + B.toString(16) : B.toString(16));
+
+        return '#' + RR + GG + BB;
+    }
+
+    async initializeViews() {
         // 初始化 TaskAgent
-        this.taskAgent = new TaskAgentHandler(this.leftColumn, this, apiSettings);
+        this.taskAgent = new TaskAgentHandler(this.leftColumn, this, this.app);
         await this.taskAgent.init();
 
         // 初始化 GanttView
@@ -260,7 +305,7 @@ export class WorkspaceView {
 
         this.analyticsContainer.style.display = 'block';
 
-        this.analyticsView = new AnalyticsView(this.analyticsContainer, this.tasks);
+        this.analyticsView = new AnalyticsView(this.analyticsContainer, this.tasks, this);
         this.analyticsView.init();
     }
 
@@ -373,6 +418,11 @@ export class WorkspaceView {
 
         // 获取所有可能的父项目
         const availableParents = this.tasks.filter(t => !t.parent_id && t.id !== taskToEdit.id);
+        
+        // 获取分类选项
+        const categoryOptions = this.app.settings.categories.map(cat => 
+            `<option value="${cat.id}" ${taskToEdit.type === cat.name ? 'selected' : ''}>${cat.name}</option>`
+        ).join('');
 
         // 创建弹窗
         const modal = document.createElement('div');
@@ -403,10 +453,7 @@ export class WorkspaceView {
                     <div style="margin-bottom: 16px;">
                         <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">任务分类</label>
                         <select id="task-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                            <option value="" ${!taskToEdit.type ? 'selected' : ''}>默认</option>
-                            <option value="work" ${taskToEdit.type === 'work' ? 'selected' : ''}>工作 (蓝色)</option>
-                            <option value="personal" ${taskToEdit.type === 'personal' ? 'selected' : ''}>个人 (绿色)</option>
-                            <option value="study" ${taskToEdit.type === 'study' ? 'selected' : ''}>学习 (橙色)</option>
+                            ${categoryOptions}
                         </select>
                     </div>
 
@@ -453,7 +500,8 @@ export class WorkspaceView {
             e.preventDefault();
 
             const title = modal.querySelector('#task-title').value.trim();
-            const type = modal.querySelector('#task-type').value;
+            const typeId = modal.querySelector('#task-type').value;
+            const selectedCategory = this.app.settings.categories.find(c => c.id === typeId);
             const parentIdValue = modal.querySelector('#task-parent').value;
             const startTime = new Date(modal.querySelector('#task-start').value).toISOString();
             const endTime = new Date(modal.querySelector('#task-end').value).toISOString();
@@ -468,12 +516,18 @@ export class WorkspaceView {
             const updates = {
                 title: title,
                 dtstart: startTime,
-                dtend: endTime
+                dtend: endTime,
+                type: selectedCategory.name,
+                color: selectedCategory.color,
+                content: content,
+                parent_id: parentIdValue,
             };
 
-            if (type) updates.type = type;
-            if (parentIdValue) updates.parent_id = parentIdValue;
-            if (content) updates.content = content;
+            // 在发送到后端前，先更新本地的 task 对象
+            const taskIndex = this.tasks.findIndex(t => t.id === taskToEdit.id);
+            if (taskIndex !== -1) {
+                Object.assign(this.tasks[taskIndex], updates);
+            }
 
             try {
                 await this.saveTaskToBackend(taskToEdit.id, updates);
@@ -512,6 +566,10 @@ export class WorkspaceView {
             return `${year}-${month}-${day}T${hours}:${minutes}`;
         };
 
+        const categoryOptions = this.app.settings.categories.map(cat => 
+            `<option value="${cat.id}">${cat.name}</option>`
+        ).join('');
+
         // 创建弹窗
         const modal = document.createElement('div');
         modal.className = 'project-create-modal';
@@ -541,10 +599,7 @@ export class WorkspaceView {
                     <div style="margin-bottom: 16px;">
                         <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">项目分类</label>
                         <select id="project-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                            <option value="">默认</option>
-                            <option value="work">工作 (蓝色)</option>
-                            <option value="personal">个人 (绿色)</option>
-                            <option value="study">学习 (橙色)</option>
+                            ${categoryOptions}
                         </select>
                     </div>
 
@@ -578,7 +633,8 @@ export class WorkspaceView {
             e.preventDefault();
 
             const title = modal.querySelector('#project-title').value.trim();
-            const type = modal.querySelector('#project-type').value;
+            const typeId = modal.querySelector('#project-type').value;
+            const selectedCategory = this.app.settings.categories.find(c => c.id === typeId);
             const startTime = new Date(modal.querySelector('#project-start').value).toISOString();
             const endTime = new Date(modal.querySelector('#project-end').value).toISOString();
 
@@ -591,11 +647,10 @@ export class WorkspaceView {
             const projectArgs = {
                 title: title,
                 dtstart: startTime,
-                dtend: endTime
+                dtend: endTime,
+                type: selectedCategory.name,
+                color: selectedCategory.color,
             };
-
-            // 如果用户选择了类型，传递给后端；否则传递 "default"
-            projectArgs.type = type || "default";
 
             try {
                 const result = await this.taskAgent.executeTool('create_task', projectArgs);
@@ -643,6 +698,10 @@ export class WorkspaceView {
         // 获取所有可能的父项目
         const availableParents = (this.tasks || []).filter(t => !t.parent_id);
 
+        const categoryOptions = this.app.settings.categories.map(cat => 
+            `<option value="${cat.id}">${cat.name}</option>`
+        ).join('');
+
         // 创建弹窗
         const modal = document.createElement('div');
         modal.className = 'task-create-modal';
@@ -672,10 +731,7 @@ export class WorkspaceView {
                     <div style="margin-bottom: 16px;">
                         <label style="display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;">任务分类</label>
                         <select id="task-type" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                            <option value="">默认</option>
-                            <option value="work">工作 (蓝色)</option>
-                            <option value="personal">个人 (绿色)</option>
-                            <option value="study">学习 (橙色)</option>
+                            ${categoryOptions}
                         </select>
                     </div>
 
@@ -724,7 +780,8 @@ export class WorkspaceView {
             e.preventDefault();
 
             const title = modal.querySelector('#task-title').value.trim();
-            const type = modal.querySelector('#task-type').value;
+            const typeId = modal.querySelector('#task-type').value;
+            const selectedCategory = this.app.settings.categories.find(c => c.id === typeId);
             const parentIdValue = modal.querySelector('#task-parent').value;
             const startTime = new Date(modal.querySelector('#task-start').value).toISOString();
             const endTime = new Date(modal.querySelector('#task-end').value).toISOString();
@@ -738,10 +795,11 @@ export class WorkspaceView {
             const taskArgs = {
                 title: title,
                 dtstart: startTime,
-                dtend: endTime
+                dtend: endTime,
+                type: selectedCategory.name,
+                color: selectedCategory.color,
             };
 
-            if (type) taskArgs.type = type;
             if (parentIdValue) taskArgs.parent_id = parentIdValue;
 
             try {

@@ -2,11 +2,15 @@
  * TaskAgentHandler - 任务规划 Copilot
  * 负责与用户交互,智能规划任务,并协调与 WorkspaceView 的数据同步
  */
+/**
+ * TaskAgentHandler - 任务规划 Copilot
+ * 负责与用户交互,智能规划任务,并协调与 WorkspaceView 的数据同步
+ */
 export class TaskAgentHandler {
-    constructor(uiContainer, workspaceView, apiSettings) {
+    constructor(uiContainer, workspaceView, app) {
         this.container = uiContainer;
         this.workspaceView = workspaceView;
-        this.apiSettings = apiSettings;
+        this.app = app;
 
         // 任务规划队列
         this.planningQueue = [];
@@ -23,7 +27,15 @@ export class TaskAgentHandler {
         this.tools = [];
 
         // System Prompt
-        this.systemPrompt = `你是一个高效的任务规划助理,专门帮助用户安排日程和管理任务。
+        this.systemPrompt = this._generateSystemPrompt(this.app.settings.categories);
+    }
+
+    _generateSystemPrompt(categories) {
+        const categoryDescriptions = categories.map(cat => 
+            `- ${cat.name}: ${cat.id} - ${cat.color}`
+        ).join('\n');
+
+        return `你是一个高效的任务规划助理,专门帮助用户安排日程和管理任务。
 
 **你的工具:**
 - get_current_time: 获取当前准确时间
@@ -32,17 +44,15 @@ export class TaskAgentHandler {
 
 **任务分类:**
 为每个任务选择合适的类型,帮助用户更好地管理不同类别的事务:
-- work: 工作相关任务(会议、项目、报告等) - 蓝色
-- personal: 个人事务(锻炼、购物、娱乐等) - 绿色
-- study: 学习任务(课程、阅读、培训等) - 橙色
-- 如果无法确定类型,可以不指定(将使用默认黄色)
+${categoryDescriptions}
+- 如果无法确定类型,可以不指定(将使用默认分类)
 
 **核心规则 - 批量规划模式:**
 1. 当用户提出多个任务时,**一次性完成所有任务的时间规划**,不要逐个暂停等待确认
 2. 规划步骤:
    - **首先**,必须调用 list_tasks({ projects_only: true }) 获取当前所有已存在的项目列表
    - 调用 list_tasks 获取当前的日程安排(了解空闲时间)
-   - 分析所有任务的性质,判断任务类型(work/personal/study)
+   - 分析所有任务的性质,判断任务类型
    - **任务归属判断**: 判断每个任务是否与获取到的项目列表中的某一个相关
      * 如果任务属于某个已存在的项目,调用 create_task 时必须附加该项目的 id 作为 parent_id
      * 如果任务不属于任何已存在的项目,则创建为顶级任务(即不设置 parent_id)
@@ -75,16 +85,24 @@ export class TaskAgentHandler {
 你: [假设获取到 "2025年Q4营销活动" 和 "新功能A开发" 两个项目]
 你: [调用 list_tasks 查看空闲时间]
 你: [识别"营销文案会议"属于"2025年Q4营销活动"项目,"代码审查"属于"新功能A开发"项目]
-你: [调用 create_task(title='下午营销文案会议', type='work', parent_id='<2025年Q4营销活动的ID>', status='preview', dtstart='...', dtend='...')]
-你: [调用 create_task(title='明天上午代码审查', type='work', parent_id='<新功能A开发的ID>', status='preview', dtstart='...', dtend='...')]
+你: [调用 create_task(title='下午营销文案会议', type='work', parent_id='<2025年Q4营销活动的ID>', status='preview', dtstart='...', dtend='...') ]
+你: [调用 create_task(title='明天上午代码审查', type='work', parent_id='<新功能A开发的ID>', status='preview', dtstart='...', dtend='...') ]
 你: "✅ 好的!为了助您达成这些目标,我已规划了以下行动项:
 1. 【下午营销文案会议】- 关联目标: '2025年Q4营销活动' - 今天 14:00-15:00
 2. 【明天上午代码审查】- 关联目标: '新功能A开发' - 明天 09:00-11:00
 
-这些任务已在日历上以预览模式显示,您可以直接拖拽调整。确认无误后,点击'全部采纳'按钮。"`;
+这些任务已在日历上以预览模式显示,您可以直接拖拽调整。确认无误后,点击'全部采纳'按钮。"
+
+`
+    }
+
+    updateCategories(newCategories) {
+        this.systemPrompt = this._generateSystemPrompt(newCategories);
+        console.log('TaskAgentHandler system prompt updated with new categories.');
     }
 
     async init() {
+
         this.buildUI();
         await this.loadTools();
         this.displayWelcomeMessage();
@@ -199,14 +217,14 @@ export class TaskAgentHandler {
             ];
 
             // 调用 LLM API
-            const response = await fetch(this.apiSettings.endpoint, {
+            const response = await fetch(this.app.apiSettings.endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiSettings.apiKey}`
+                    'Authorization': `Bearer ${this.app.apiSettings.apiKey}`
                 },
                 body: JSON.stringify({
-                    model: this.apiSettings.model,
+                    model: this.app.apiSettings.model,
                     messages: messages,
                     tools: this.tools.map(tool => ({
                         type: 'function',

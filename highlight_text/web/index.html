@@ -497,18 +497,20 @@
                                 <i data-lucide="book-open" class="w-4 h-4"></i>
                                 <span>知识库</span>
                             </button>
-                            <button class="settings-tab-btn w-full text-left px-4 py-2 rounded hover:bg-gray-700 flex items-center gap-2" data-tab="shortcuts">
-                                <i data-lucide="keyboard" class="w-4 h-4"></i>
-                                <span>快捷键</span>
-                            </button>
-                        </nav>
-                    </div>
+                            <button class="settings-tab-btn flex items-center gap-2 px-4 py-2 text-sm text-left rounded-md hover:bg-gray-700" data-tab="shortcuts">
+                        <i data-lucide="keyboard" class="w-4 h-4"></i> 快捷键
+                    </button>
+                    <button class="settings-tab-btn flex items-center gap-2 px-4 py-2 text-sm text-left rounded-md hover:bg-gray-700" data-tab="categories">
+                        <i data-lucide="bookmark" class="w-4 h-4"></i> 分类管理
+                    </button>
+                </nav>
+            </div>
 
-                    <!-- 右侧内容区 -->
-                    <div class="flex-1 overflow-y-auto p-6">
-                        <!-- LLM配置面板 -->
-                        <div id="llmSettingsPanel" class="settings-panel">
-                            <h3 class="text-md font-semibold mb-4">LLM配置</h3>
+            <!-- 右侧内容 -->
+            <div class="flex-1 bg-gray-800 p-6">
+                <!-- LLM 配置 -->
+                <div id="llmSettingsPanel" class="settings-panel space-y-6">
+                    <h3 class="text-xl font-semibold mb-4">LLM 配置</h3>
                             <div class="space-y-4">
                                 <div>
                                     <label class="block text-sm font-medium mb-2">API密钥</label>
@@ -601,6 +603,15 @@
                                     <!-- 快捷键列表将由JS动态生成 -->
                                 </div>
                             </div>
+                        </div>
+
+                        <!-- 分类管理 -->
+                        <div id="categoriesSettingsPanel" class="settings-panel hidden space-y-4">
+                            <h3 class="text-xl font-semibold mb-4">分类管理</h3>
+                            <div id="categoriesList" class="space-y-4"></div>
+                            <button id="addCategoryBtn" class="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm flex items-center gap-2">
+                                <i data-lucide="plus" class="w-4 h-4"></i> 添加新分类
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -64,10 +64,8 @@ func GetTaskTools() []ToolDefinition {
 						"type":        "string",
 						"description": "任务标题",
 					},
-					"type": map[string]interface{}{
-						"type":        "string",
-						"description": "任务类型（work-工作/personal-个人/study-学习，可选）",
-					},
+                    "type":        {"type": "string", "description": "任务的分类名称 (例如：工作, 个人, 学习)"},
+                    "color":       {"type": "string", "description": "任务的颜色代码 (例如 #3B82F6)，可选"},
 					"status": map[string]interface{}{
 						"type":        "string",
 						"description": "任务状态（preview-预览/pending-待处理，默认为pending。使用preview创建待确认的任务）",
@@ -137,7 +135,18 @@ func GetTaskTools() []ToolDefinition {
 					},
 					"updates": map[string]interface{}{
 						"type":        "object",
-						"description": "要更新的字段（支持 title, status, type, parent_id, progress, project, dtstart, dtend, content, review 等）",
+                        "description": "一个包含要更新字段和新值的对象",
+						"properties": map[string]interface{}{
+                            "title":       {"type": "string", "description": "任务的新标题"},
+                            "description": {"type": "string", "description": "任务的新详细描述"},
+                            "due_date":    {"type": "string", "description": "任务的新截止日期，格式为 YYYY-MM-DD"},
+                            "type":        {"type": "string", "description": "任务的新分类名称"},
+                            "color":       {"type": "string", "description": "任务的新颜色代码"},
+                            "priority":    {"type": "string", "description": "任务的新优先级"},
+                            "status":      {"type": "string", "description": "任务的新状态"},
+                            "assignee":    {"type": "string", "description": "任务的新负责人"},
+                            "parent_id":   {"type": "string", "description": "新的父任务ID"},
+						},
 					},
 				},
 				"required": []string{"task_id", "updates"},
@@ -197,14 +206,6 @@ func createTask(args map[string]interface{}, basePath string) (string, error) {
 		return "", fmt.Errorf("缺少必需参数: title")
 	}
 
-	// 项目类型到颜色的映射
-	projectTypeColors := map[string]string{
-		"work":     "#3B82F6", // 蓝色 - 工作
-		"personal": "#10B981", // 绿色 - 个人
-		"study":    "#F97316", // 橙色 - 学习
-		"default":  "#FBBF24", // 黄色 - 默认
-	}
-
 	// 生成任务ID（时间戳 + 随机字符）
 	now := time.Now()
 	taskID := fmt.Sprintf("task_%d_%s", now.Unix(), generateRandomID(5))
@@ -224,17 +225,16 @@ func createTask(args map[string]interface{}, basePath string) (string, error) {
 	}
 
 	// 处理任务类型和颜色
-	taskType := "default"
-	if typeArg, ok := args["type"].(string); ok && typeArg != "" {
-		taskType = strings.ToLower(typeArg)
+	if taskType, ok := args["type"].(string); ok && taskType != "" {
+		task.Type = taskType
+	} else {
+		task.Type = "默认"
 	}
-	task.Type = taskType
 
-	// 根据类型分配颜色
-	if color, exists := projectTypeColors[taskType]; exists {
+	if color, ok := args["color"].(string); ok && color != "" {
 		task.Color = color
 	} else {
-		task.Color = projectTypeColors["default"]
+		task.Color = "#FBBF24" // Default color
 	}
 
 	// 可选字段
@@ -354,6 +354,12 @@ func updateTask(args map[string]interface{}, basePath string) (string, error) {
 		if status == "completed" && task.CompletedAt == "" {
 			task.CompletedAt = time.Now().Format(time.RFC3339)
 		}
+	}
+	if taskType, ok := updates["type"].(string); ok {
+		task.Type = taskType
+	}
+	if color, ok := updates["color"].(string); ok {
+		task.Color = color
 	}
 	if project, ok := updates["project"].(string); ok {
 		task.Project = project

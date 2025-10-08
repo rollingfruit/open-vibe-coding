@@ -427,22 +427,14 @@ export class GanttView {
             if (task.dtstart && task.dtend) {
                 start = new Date(task.dtstart);
                 end = new Date(task.dtend);
-                console.log('Task time info:', task.id, {
-                    dtstart: task.dtstart,
-                    dtend: task.dtend,
-                    parsedStart: start,
-                    parsedEnd: end
-                });
             } else {
                 // 如果没有时间信息，使用当前时间
-                console.warn('Task missing time info:', task.id, task);
                 start = new Date();
                 end = new Date(start.getTime() + 3600000); // 默认1小时
             }
 
             // 验证日期有效性
             if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-                console.warn('Invalid date for task:', task.id, task);
                 start = new Date();
                 end = new Date(start.getTime() + 3600000);
             }
@@ -454,25 +446,17 @@ export class GanttView {
                 else if (task.status === 'in_progress') progress = 50;
             }
 
-            // 计算任务持续时间(小时)
-            const durationHours = (end - start) / (1000 * 60 * 60);
-
             // 构建CSS类名
             let customClass = this.getTaskClass(task);
 
             // 添加任务类型类
-            const taskType = task.type || 'default';
-            customClass += ` task-type-${taskType}`;
+            const taskTypeId = this.workspaceView.app.settings.categories.find(c => c.name === task.type)?.id || 'default';
+            customClass += ` gantt-category-${taskTypeId}`;
 
             // 判断是否为项目(有子任务)
             const isProject = task.children && task.children.length > 0;
             if (isProject) {
                 customClass += ' task-is-project';
-            }
-
-            // 如果任务持续时间超过8小时，添加长任务类
-            if (durationHours > 8) {
-                customClass += ' task-all-day';
             }
 
             // 如果是预览状态，添加预览类
@@ -495,7 +479,6 @@ export class GanttView {
                 custom_class: customClass.trim()
             };
 
-            console.log('Converted to Gantt format:', ganttTask);
             return ganttTask;
         });
     }

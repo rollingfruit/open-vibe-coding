@@ -3,9 +3,10 @@
  * 展示任务完成率、项目分布、复盘评分趋势等数据
  */
 export class AnalyticsView {
-    constructor(container, tasks) {
+    constructor(container, tasks, workspaceView) {
         this.container = container;
         this.tasks = tasks;
+        this.workspaceView = workspaceView;
     }
 
     init() {
@@ -365,21 +366,22 @@ export class AnalyticsView {
     renderTimeDistributionChart() {
         const container = this.container.querySelector('.time-distribution-chart');
 
-        // 按任务类型分组并计算总时长
-        const typeStats = {
-            work: { duration: 0, count: 0, color: '#3B82F6', label: '工作' },
-            personal: { duration: 0, count: 0, color: '#10B981', label: '个人' },
-            study: { duration: 0, count: 0, color: '#F97316', label: '学习' },
-            default: { duration: 0, count: 0, color: '#FBBF24', label: '其他' }
-        };
+        // Dynamically build typeStats from settings
+        const typeStats = {};
+        const categories = this.workspaceView.app.settings.categories || [];
+        categories.forEach(cat => {
+            typeStats[cat.id] = { duration: 0, count: 0, color: cat.color, label: cat.name };
+        });
 
         this.tasks.forEach(task => {
             if (task.dtstart && task.dtend) {
-                const duration = (new Date(task.dtend) - new Date(task.dtstart)) / (1000 * 60 * 60); // 小时
-                const type = task.type || 'default';
-                if (typeStats[type]) {
-                    typeStats[type].duration += duration;
-                    typeStats[type].count++;
+                const duration = (new Date(task.dtend) - new Date(task.dtstart)) / (1000 * 60 * 60); // hours
+                const category = categories.find(c => c.name === task.type);
+                const typeId = category ? category.id : 'default';
+                
+                if (typeStats[typeId]) {
+                    typeStats[typeId].duration += duration;
+                    typeStats[typeId].count++;
                 }
             }
         });
@@ -395,17 +397,17 @@ export class AnalyticsView {
             return;
         }
 
-        // 生成激励性解读
+        // Generate insightful text
         const insight = this.generateTimeDistributionInsight(typeStats, totalDuration);
 
-        // 渲染堆叠条形图
+        // Render stacked bar chart
         let html = '<div style="display: flex; height: 40px; border-radius: 8px; overflow: hidden; margin-bottom: 20px;">';
 
         Object.entries(typeStats).forEach(([type, stat]) => {
             if (stat.duration > 0) {
                 const percentage = (stat.duration / totalDuration) * 100;
                 html += `
-                    <div style="flex: ${stat.duration}; background: ${stat.color}; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 600;">
+                    <div style="flex: ${stat.duration}; background: ${stat.color}; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 600;" title="${stat.label}">
                         ${percentage.toFixed(0)}%
                     </div>
                 `;
@@ -414,7 +416,7 @@ export class AnalyticsView {
 
         html += '</div>';
 
-        // 图例和详细信息
+        // Legend and details
         html += '<div style="display: flex; flex-direction: column; gap: 12px;">';
 
         Object.entries(typeStats).forEach(([type, stat]) => {
@@ -440,7 +442,7 @@ export class AnalyticsView {
 
         html += '</div>';
 
-        // 添加激励性解读
+        // Add insightful text
         if (insight) {
             html += `<div style="margin-top: 16px; padding: 12px; background: linear-gradient(135deg, #E3F2FD 0%, #E8F5E9 100%); border-radius: 8px; border-left: 4px solid #2196F3;">
                 <div style="font-size: 13px; color: #1976D2; line-height: 1.6;">

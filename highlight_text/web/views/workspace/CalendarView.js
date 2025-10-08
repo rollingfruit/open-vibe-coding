@@ -91,19 +91,12 @@ export class CalendarView {
             // 计算任务持续时间(小时)
             const durationHours = (end - start) / (1000 * 60 * 60);
 
-            // 构建CSS类名
-            const taskType = task.type || 'default';
-            let classNames = [`task-type-${taskType}`];
+            const isPreview = task.status === 'preview';
+            const color = task.color || '#FBBF24'; // Default to yellow if no color
 
-            // 如果任务持续时间超过12小时，添加长任务类
-            if (durationHours > 12) {
-                classNames.push('task-long-duration');
-            }
-
-            // 如果是预览状态，添加预览类
-            if (task.status === 'preview') {
-                classNames.push('task-preview');
-            }
+            // 如果是预览状态，添加透明度
+            const eventColor = isPreview ? `${color}80` : color;
+            const eventBorderColor = color;
 
             // 如果时间跨度超过18小时或没有具体时间,设置为全天事件
             const isAllDay = durationHours > 18 || (!task.dtstart && !task.dtend);
@@ -121,13 +114,15 @@ export class CalendarView {
                 start: task.dtstart,
                 end: task.dtend,
                 allDay: isAllDay,
-                className: classNames,
+                backgroundColor: eventColor,
+                borderColor: eventBorderColor,
+                classNames: isPreview ? ['task-preview'] : [],
                 extendedProps: {
                     status: task.status,
                     project: task.project,
                     review: task.review,
                     taskData: task,
-                    taskType: taskType,
+                    taskType: task.type,
                     parentGoalTitle: task.parent_id && taskMap.has(task.parent_id) ? taskMap.get(task.parent_id).title : null
                 }
             };
@@ -160,23 +155,7 @@ export class CalendarView {
         });
     }
 
-    getTaskColor(task) {
-        switch (task.status) {
-            case 'completed': return '#E8F5E9';
-            case 'in_progress': return '#E3F2FD';
-            case 'pending': return '#FFF9C4';
-            default: return '#F5F5F5';
-        }
-    }
-
-    getTaskBorderColor(task) {
-        switch (task.status) {
-            case 'completed': return '#4CAF50';
-            case 'in_progress': return '#2196F3';
-            case 'pending': return '#FFC107';
-            default: return '#9E9E9E';
-        }
-    }
+    
 
     // 拖拽移动事件
     handleEventDrop(info) {
