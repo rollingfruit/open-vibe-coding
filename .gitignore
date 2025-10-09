@@ -1,4 +1,4 @@
-highlight_text/go.mod
+
 highlight_text/ai-helper-web
 highlight_text/dev.md
 .gitignore
@@ -11,7 +11,7 @@ highlight_text/logs/
 .DS_Store
 highlight_text/KnowledgeBase/
 highlight_text/.playwright-mcp/editor-preview-mode.png
-highlight_text/go.sum
+
 highlight_text/node_modules/
 highlight_text/package-lock.json
 highlight_text/highlight_text
