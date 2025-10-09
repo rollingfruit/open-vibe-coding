@@ -155,9 +155,23 @@ cd <project-directory>
 ```bash
 go mod tidy
 go run main.go
+
+```
+也可以：
+
+```bash
+go build -o ai-helper-web main.go
+  ./ai-helper-web
 ```
 
+也可以：
+```bash
+./run.sh
+```
+
+
 服务启动后，你将看到类似以下的输出：
+
 
 ```
 🚀 AI助手Web服务启动成功!
