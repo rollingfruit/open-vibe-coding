@@ -2159,7 +2159,7 @@ class AIAssistant {
         tooltip.style.top = `${finalY}px`;
         console.log('✅ 创建新tooltip元素，位置:', { finalX, finalY });
 
-        // 添加关闭按钮和输入框
+        // 添加关闭按钮、复制按钮和输入框
         tooltip.innerHTML = `
             <div class="flex items-start gap-2 p-3">
                 <input
@@ -2169,6 +2169,14 @@ class AIAssistant {
                     placeholder="输入指令来修改选中的文本..."
                     style="min-width: 300px;"
                 />
+                <button
+                    id="editorTooltipCopyBtn"
+                    class="px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm font-semibold transition flex items-center gap-1"
+                    title="复制选中的文本"
+                >
+                    <i data-lucide="copy" class="w-4 h-4"></i>
+                    <span>复制</span>
+                </button>
                 <button
                     id="editorTooltipSendBtn"
                     class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-semibold transition flex items-center gap-1"
@@ -2195,13 +2203,23 @@ class AIAssistant {
             lucide.createIcons();
         }
 
-        // 保持textarea的选中状态
+        // 保持textarea的选中状态 - 使用更可靠的方式
+        // 先保存当前选区
+        const savedSelection = { start: selectionStart, end: selectionEnd };
+
+        // 保持选中状态的函数
+        const maintainSelection = () => {
+            if (textarea && textarea.isConnected) {
+                textarea.setSelectionRange(savedSelection.start, savedSelection.end);
+            }
+        };
+
+        // 初始设置选中状态
         setTimeout(() => {
-            textarea.focus();
-            textarea.setSelectionRange(selectionStart, selectionEnd);
+            maintainSelection();
             console.log('✅ 恢复文本选中状态');
 
-            // 然后聚焦到输入框（但不清除textarea的选择）
+            // 聚焦到输入框
             const input = document.getElementById('editorTooltipInput');
             if (input) {
                 input.focus();
@@ -2209,10 +2227,19 @@ class AIAssistant {
             }
         }, 50);
 
+        // 当输入框失去焦点时,保持textarea的选中状态
+        const input = document.getElementById('editorTooltipInput');
+        if (input) {
+            input.addEventListener('focus', () => {
+                // 输入框获得焦点时,在背后维持textarea的选中状态
+                setTimeout(maintainSelection, 10);
+            });
+        }
+
         // 绑定按钮事件
         const sendBtn = document.getElementById('editorTooltipSendBtn');
+        const copyBtn = document.getElementById('editorTooltipCopyBtn');
         const closeBtn = document.getElementById('editorTooltipCloseBtn');
-        const input = document.getElementById('editorTooltipInput');
 
         const closeTooltip = () => {
             tooltip.remove();
@@ -2232,8 +2259,56 @@ class AIAssistant {
             await this.processEditorSelectionWithLLM(selectedText, instruction, textarea, selectionStart, selectionEnd);
         };
 
+        const handleCopy = async () => {
+            try {
+                await navigator.clipboard.writeText(selectedText);
+                console.log('✅ 文本已复制到剪贴板');
+
+                // 显示复制成功提示
+                if (copyBtn) {
+                    const originalHTML = copyBtn.innerHTML;
+                    copyBtn.innerHTML = `
+                        <i data-lucide="check" class="w-4 h-4"></i>
+                        <span>已复制</span>
+                    `;
+                    copyBtn.classList.remove('bg-gray-600', 'hover:bg-gray-500');
+                    copyBtn.classList.add('bg-green-600');
+
+                    // 重新初始化图标
+                    if (window.lucide) {
+                        lucide.createIcons();
+                    }
+
+                    // 2秒后恢复原状
+                    setTimeout(() => {
+                        copyBtn.innerHTML = originalHTML;
+                        copyBtn.classList.remove('bg-green-600');
+                        copyBtn.classList.add('bg-gray-600', 'hover:bg-gray-500');
+                        if (window.lucide) {
+                            lucide.createIcons();
+                        }
+                    }, 2000);
+                }
+
+                // 保持文本选中状态
+                maintainSelection();
+            } catch (err) {
+                console.error('❌ 复制失败:', err);
+                if (this.uiManager) {
+                    this.uiManager.showNotification('复制失败,请手动复制', 'error');
+                }
+            }
+        };
+
         if (sendBtn) {
             sendBtn.addEventListener('click', handleSend);
+        }
+
+        if (copyBtn) {
+            copyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleCopy();
+            });
         }
 
         if (closeBtn) {
@@ -2267,6 +2342,26 @@ class AIAssistant {
         setTimeout(() => {
             document.addEventListener('click', closeOnClickOutside);
         }, 200);
+
+        // 添加一个周期性的选中状态维护（避免意外失去选中）
+        const selectionMaintainer = setInterval(() => {
+            if (!document.body.contains(tooltip)) {
+                // tooltip已被移除,清除定时器
+                clearInterval(selectionMaintainer);
+                return;
+            }
+            // 如果当前焦点在输入框上,保持textarea的选中状态
+            if (document.activeElement === input) {
+                maintainSelection();
+            }
+        }, 100);
+
+        // 当tooltip被移除时清除定时器
+        const originalRemove = tooltip.remove.bind(tooltip);
+        tooltip.remove = function() {
+            clearInterval(selectionMaintainer);
+            originalRemove();
+        };
     }
 
     /**

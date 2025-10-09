@@ -36,3 +36,15 @@ Directory structure:
     │           └── executor.go
     ├── README.md
     └── main.go
+
+
+个人：
+项目类型包括
+---
+type: "默认"
+type: "工作"
+type: "学习与自律"
+type: "社交与沟通"
+type: "财务"
+type: "个人与爱好"
+---
