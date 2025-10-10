@@ -406,7 +406,7 @@ JSON格式：
 
                         // 直接更新编辑器内容，不显示Diff审查页面
                         console.log('🎨 准备直接更新编辑器内容...');
-                        await this.mainApp.updateEditorContentDirectly(
+                        await this.mainApp.noteManager.updateEditorContentDirectly(
                             diffResult.noteId,
                             diffResult.newContent,  // 使用小写的 newContent
                             diffResult.diffData
@@ -994,13 +994,13 @@ ${originalContent}
             this.addTraceStep('thought', '正在流式改写内容，请稍候...');
 
             // 准备流式渲染UI
-            await this.mainApp.prepareForStreaming(originalContent);
+            await this.mainApp.noteManager.prepareForStreaming(originalContent);
 
             // 调用流式LLM并实时渲染Diff
             const finalContent = await this.renderStreamingDiff(originalContent, prompt);
 
             // 完成流式渲染
-            await this.mainApp.finalizeStreaming(noteId, finalContent, originalContent);
+            await this.mainApp.noteManager.finalizeStreaming(noteId, finalContent, originalContent);
 
             this.addTraceStep('final', '内容改写完成');
         } catch (error) {

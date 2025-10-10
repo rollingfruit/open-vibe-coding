@@ -64,8 +64,14 @@ func GetTaskTools() []ToolDefinition {
 						"type":        "string",
 						"description": "任务标题",
 					},
-                    "type":        {"type": "string", "description": "任务的分类名称 (例如：工作, 个人, 学习)"},
-                    "color":       {"type": "string", "description": "任务的颜色代码 (例如 #3B82F6)，可选"},
+					"type": map[string]interface{}{
+						"type":        "string",
+						"description": "任务的分类名称 (例如：工作, 个人, 学习)",
+					},
+					"color": map[string]interface{}{
+						"type":        "string",
+						"description": "任务的颜色代码 (例如 #3B82F6)，可选",
+					},
 					"status": map[string]interface{}{
 						"type":        "string",
 						"description": "任务状态（preview-预览/pending-待处理，默认为pending。使用preview创建待确认的任务）",
@@ -135,17 +141,44 @@ func GetTaskTools() []ToolDefinition {
 					},
 					"updates": map[string]interface{}{
 						"type":        "object",
-                        "description": "一个包含要更新字段和新值的对象",
+						"description": "一个包含要更新字段和新值的对象",
 						"properties": map[string]interface{}{
-                            "title":       {"type": "string", "description": "任务的新标题"},
-                            "description": {"type": "string", "description": "任务的新详细描述"},
-                            "due_date":    {"type": "string", "description": "任务的新截止日期，格式为 YYYY-MM-DD"},
-                            "type":        {"type": "string", "description": "任务的新分类名称"},
-                            "color":       {"type": "string", "description": "任务的新颜色代码"},
-                            "priority":    {"type": "string", "description": "任务的新优先级"},
-                            "status":      {"type": "string", "description": "任务的新状态"},
-                            "assignee":    {"type": "string", "description": "任务的新负责人"},
-                            "parent_id":   {"type": "string", "description": "新的父任务ID"},
+							"title": map[string]interface{}{
+								"type":        "string",
+								"description": "任务的新标题",
+							},
+							"description": map[string]interface{}{
+								"type":        "string",
+								"description": "任务的新详细描述",
+							},
+							"due_date": map[string]interface{}{
+								"type":        "string",
+								"description": "任务的新截止日期，格式为 YYYY-MM-DD",
+							},
+							"type": map[string]interface{}{
+								"type":        "string",
+								"description": "任务的新分类名称",
+							},
+							"color": map[string]interface{}{
+								"type":        "string",
+								"description": "任务的新颜色代码",
+							},
+							"priority": map[string]interface{}{
+								"type":        "string",
+								"description": "任务的新优先级",
+							},
+							"status": map[string]interface{}{
+								"type":        "string",
+								"description": "任务的新状态",
+							},
+							"assignee": map[string]interface{}{
+								"type":        "string",
+								"description": "任务的新负责人",
+							},
+							"parent_id": map[string]interface{}{
+								"type":        "string",
+								"description": "新的父任务ID",
+							},
 						},
 					},
 				},
