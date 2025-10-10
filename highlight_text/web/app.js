@@ -2,14 +2,16 @@ import { DiffViewer } from './js/diff/DiffViewer.js';
 import { escapeHtml, unescapeUnicodeChars } from './js/utils/helpers.js';
 import { UIManager } from './js/core/UIManager.js';
 import { SettingsManager } from './js/core/SettingsManager.js';
+import { SessionManager } from './js/core/SessionManager.js';
 
 class AIAssistant {
     constructor() {
         this.config = null;
         this.settings = {};
         this.loadSettings();
-        this.sessions = []; // 所有会话的数组
-        this.activeSessionId = null; // 当前活动会话ID
+        this.sessionManager = new SessionManager();
+        this.sessions = []; // 保留引用以便其他代码使用
+        this.activeSessionId = null; // 保留引用
         this.isStreaming = false;
         this.isSearchActive = false; // 是否正在搜索模式
         this.searchIndex = null; // 搜索索引（可选）
@@ -132,25 +134,16 @@ class AIAssistant {
     }
 
     loadSessions() {
-        const stored = localStorage.getItem('aiAssistantSessions');
-        if (stored) {
-            this.sessions = JSON.parse(stored);
-        }
-
-        // 如果没有会话，创建一个默认会话
-        if (this.sessions.length === 0) {
-            this.createNewSession('新对话', true);
-        } else {
-            // 设置最后一个会话为活动会话
-            this.activeSessionId = this.sessions[this.sessions.length - 1].id;
-        }
+        const { sessions, activeSessionId } = this.sessionManager.loadSessions();
+        this.sessions = sessions;  // 保留引用以便其他代码使用
+        this.activeSessionId = activeSessionId;  // 保留引用
 
         this.renderSessionList();
         this.renderActiveSessionMessages();
         this.updateCurrentSessionTitle();
 
         // 检查并显示摘要
-        const activeSession = this.getActiveSession();
+        const activeSession = this.sessionManager.getActiveSession();
         if (activeSession && activeSession.summary) {
             this.showSummary(activeSession.summary);
         }
@@ -163,26 +156,18 @@ class AIAssistant {
     }
 
     saveSessions() {
-        localStorage.setItem('aiAssistantSessions', JSON.stringify(this.sessions));
+        this.sessionManager.saveSessions();
     }
 
     // 会话管理方法
     createNewSession(title = null, isDefault = false) {
-        const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        const newSession = {
-            id: sessionId,
-            title: title || '新对话',
-            messages: [],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            totalTokens: 0  // 用于Agent模式的精确token统计
-        };
+        const { session, isDefault: isDefaultSession } = this.sessionManager.createNewSession(title, isDefault);
 
-        this.sessions.push(newSession);
-        this.activeSessionId = sessionId;
+        // 更新本地引用
+        this.sessions = this.sessionManager.getAllSessions();
+        this.activeSessionId = this.sessionManager.getActiveSessionId();
 
         if (!isDefault) {
-            this.saveSessions();
             this.renderSessionList();
             this.updateCurrentSessionTitle();
 
@@ -200,11 +185,13 @@ class AIAssistant {
             this.uiManager.showNotification('已创建新会话', 'success');
         }
 
-        return newSession;
+        return session;
     }
 
     switchSession(sessionId) {
-        this.activeSessionId = sessionId;
+        this.sessionManager.switchSession(sessionId);
+        this.activeSessionId = sessionId;  // 同步引用
+
         this.renderActiveSessionMessages();
         this.renderSessionList(); // 更新选中状态
         this.updateCurrentSessionTitle();
@@ -213,7 +200,7 @@ class AIAssistant {
         this.exitSearchMode();
 
         // 检查并显示摘要
-        const activeSession = this.getActiveSession();
+        const activeSession = this.sessionManager.getActiveSession();
         if (activeSession && activeSession.summary) {
             this.showSummary(activeSession.summary);
         } else {
@@ -228,18 +215,13 @@ class AIAssistant {
     }
 
     getActiveSession() {
-        return this.sessions.find(session => session.id === this.activeSessionId);
+        return this.sessionManager.getActiveSession();
     }
 
     updateSessionTitle(sessionId, newTitle) {
-        const session = this.sessions.find(s => s.id === sessionId);
-        if (session) {
-            session.title = newTitle;
-            session.updatedAt = new Date().toISOString();
-            this.saveSessions();
-            this.renderSessionList();
-            this.updateCurrentSessionTitle();
-        }
+        this.sessionManager.updateSessionTitle(sessionId, newTitle);
+        this.renderSessionList();
+        this.updateCurrentSessionTitle();
     }
 
     updateCurrentSessionTitle() {
@@ -254,81 +236,18 @@ class AIAssistant {
      * 添加token到当前会话
      */
     addTokensToCurrentSession(tokenCount) {
-        const activeSession = this.getActiveSession();
-        if (activeSession) {
-            // 初始化totalTokens字段（兼容旧数据）
-            if (typeof activeSession.totalTokens !== 'number') {
-                activeSession.totalTokens = 0;
-            }
-            activeSession.totalTokens += tokenCount;
-            activeSession.updatedAt = new Date().toISOString();
-            // 不在这里调用saveSessions，由调用方决定何时保存
-        }
+        this.sessionManager.addTokensToCurrentSession(tokenCount);
     }
 
     updateTokenUsage() {
-        const activeSession = this.getActiveSession();
-        if (!activeSession || !this.config || !this.config.apiSettings) {
+        if (!this.config || !this.config.apiSettings) {
             return;
         }
 
-        // 使用maxContextTokens作为会话支持的最大token数
         const maxTokens = this.config.apiSettings.maxContextTokens || 20000;
-        let currentTokens = 0;
+        const tokenData = this.sessionManager.calculateTokenUsage(maxTokens);
 
-        // 检查是否是Agent模式（会话中有agent_开头的消息类型）
-        const hasAgentMessages = activeSession.messages.some(msg => msg.type && msg.type.startsWith('agent_'));
-
-        if (hasAgentMessages && typeof activeSession.totalTokens === 'number') {
-            // Agent模式：使用精确的token统计
-            currentTokens = activeSession.totalTokens;
-        } else if (activeSession.summary) {
-            // 如果已压缩，只计算摘要的长度
-            currentTokens = activeSession.summary.length;
-            // 加上压缩点之后的新消息
-            if (activeSession.summarySplitIndex !== undefined) {
-                const newMessages = activeSession.messages.slice(activeSession.summarySplitIndex);
-                currentTokens += newMessages.reduce((sum, msg) => sum + msg.content.length, 0);
-            }
-        } else {
-            // 未压缩，计算所有消息的长度
-            currentTokens = activeSession.messages.reduce((sum, msg) => sum + msg.content.length, 0);
-        }
-
-        // 计算百分比
-        const percentage = Math.min(100, Math.round((currentTokens / maxTokens) * 100));
-
-        // 更新UI
-        const tokenPercentage = document.getElementById('tokenPercentage');
-        const tokenProgressCircle = document.getElementById('tokenProgressCircle');
-        const tokenIndicator = document.getElementById('tokenIndicator');
-        const compressBtn = document.getElementById('compressContextBtn');
-
-        if (tokenPercentage && tokenProgressCircle && tokenIndicator && compressBtn) {
-            tokenPercentage.textContent = `${percentage}%`;
-
-            // 计算圆形进度条的stroke-dashoffset
-            const circumference = 2 * Math.PI * 16; // 半径为16
-            const offset = circumference - (percentage / 100) * circumference;
-            tokenProgressCircle.style.strokeDashoffset = offset;
-
-            // 根据百分比改变颜色
-            tokenIndicator.classList.remove('warning', 'danger');
-            if (percentage >= 80) {
-                tokenIndicator.classList.add('danger');
-                // 显示压缩按钮（仅当未压缩过）
-                if (!activeSession.summary) {
-                    compressBtn.classList.remove('hidden');
-                } else {
-                    compressBtn.classList.add('hidden');
-                }
-            } else if (percentage >= 60) {
-                tokenIndicator.classList.add('warning');
-                compressBtn.classList.add('hidden');
-            } else {
-                compressBtn.classList.add('hidden');
-            }
-        }
+        this.uiManager.updateTokenUsage(tokenData);
     }
 
     async compressContext() {
@@ -382,12 +301,7 @@ class AIAssistant {
             }
 
             // 保存摘要和压缩点
-            activeSession.summary = summary;
-            activeSession.summarySplitIndex = activeSession.messages.length;
-            activeSession.updatedAt = new Date().toISOString();
-
-            // 保存到localStorage
-            this.saveSessions();
+            this.sessionManager.saveContextSummary(summary);
 
             // 更新UI
             this.showSummary(summary);
@@ -402,41 +316,19 @@ class AIAssistant {
     }
 
     showSummary(summary) {
-        const summaryContainer = document.getElementById('summaryContainer');
-        const summaryContent = document.getElementById('summaryContent');
-
-        if (summaryContainer && summaryContent) {
-            summaryContent.innerHTML = escapeHtml(summary).replace(/\n/g, '<br>');
-            summaryContainer.classList.remove('hidden');
-        }
+        this.uiManager.showSummary(summary);
     }
 
     hideSummary() {
-        const summaryContainer = document.getElementById('summaryContainer');
-        if (summaryContainer) {
-            summaryContainer.classList.add('hidden');
-        }
+        this.uiManager.hideSummary();
     }
 
     generateSessionTitle(firstMessage) {
-        // 从第一条消息生成会话标题
-        if (!firstMessage) return '新对话';
-
-        const truncated = firstMessage.length > 20 ?
-            firstMessage.substring(0, 20) + '...' :
-            firstMessage;
-
-        return truncated;
+        return this.sessionManager.generateSessionTitle(firstMessage);
     }
 
 
     deleteSession(sessionId) {
-        // 防止删除最后一个会话
-        if (this.sessions.length <= 1) {
-            this.uiManager.showNotification('至少需要保留一个会话', 'error');
-            return;
-        }
-
         const session = this.sessions.find(s => s.id === sessionId);
         if (!session) {
             return;
@@ -447,23 +339,25 @@ class AIAssistant {
             return;
         }
 
-        // 从数组中移除会话
-        this.sessions = this.sessions.filter(s => s.id !== sessionId);
+        const result = this.sessionManager.deleteSession(sessionId);
 
-        // 如果删除的是当前活动会话，切换到最新的会话
-        if (this.activeSessionId === sessionId) {
-            if (this.sessions.length > 0) {
-                this.activeSessionId = this.sessions[this.sessions.length - 1].id;
-                this.renderActiveSessionMessages();
-                this.updateCurrentSessionTitle();
-            }
+        if (!result.success) {
+            this.uiManager.showNotification(result.message, 'error');
+            return;
         }
 
-        // 保存更新并重新渲染列表
-        this.saveSessions();
-        this.renderSessionList();
+        // 更新本地引用
+        this.sessions = this.sessionManager.getAllSessions();
+        this.activeSessionId = this.sessionManager.getActiveSessionId();
 
-        this.uiManager.showNotification('会话已删除', 'success');
+        // 如果需要更新UI
+        if (result.shouldUpdateUI) {
+            this.renderActiveSessionMessages();
+            this.updateCurrentSessionTitle();
+        }
+
+        this.renderSessionList();
+        this.uiManager.showNotification(result.message, 'success');
     }
 
     // 搜索功能方法
@@ -643,134 +537,26 @@ class AIAssistant {
     // 抽屉折叠/展开切换
     toggleDrawerCollapse() {
         this.uiManager.toggleDrawerCollapse(
-            () => this.renderCollapsedSessionList(),
+            () => this.uiManager.renderCollapsedSessionList(
+                this.sessions,
+                this.activeSessionId,
+                (id) => this.switchSession(id),
+                (id) => this.deleteSession(id)
+            ),
             () => this.exitSearchMode(),
             () => this.renderSessionList()
         );
     }
 
     // 渲染折叠状态下的会话图标列表
-    renderCollapsedSessionList() {
-        const collapsedList = document.getElementById('collapsedSessionList');
-        collapsedList.innerHTML = '';
-
-        this.sessions.slice().reverse().forEach((session, index) => {
-            const iconItem = document.createElement('div');
-            iconItem.className = `collapsed-session-item ${
-                session.id === this.activeSessionId ? 'active' : ''
-            }`;
-
-            // 生成会话图标（取标题首字符或默认图标）
-            const iconText = session.title === '新对话' ? '💬' :
-                            (session.title.charAt(0) || '💬');
-
-            iconItem.innerHTML = `
-                <span class="session-icon">${iconText}</span>
-                <div class="delete-btn-collapsed" data-session-id="${session.id}">
-                    <i data-lucide="x" class="w-3 h-3"></i>
-                </div>
-                <div class="tooltip-collapsed">${escapeHtml(session.title)}</div>
-            `;
-
-            // 点击切换会话
-            iconItem.addEventListener('click', (e) => {
-                if (e.target.classList.contains('delete-btn-collapsed')) {
-                    return;
-                }
-                this.switchSession(session.id);
-            });
-
-            // 删除按钮事件
-            const deleteBtn = iconItem.querySelector('.delete-btn-collapsed');
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.deleteSession(session.id);
-            });
-
-            collapsedList.appendChild(iconItem);
-        });
-
-        // Reinitialize icons for collapsed list
-        if (typeof lucide !== 'undefined') {
-            lucide.createIcons();
-        }
-    }
-
     // 重写renderSessionList方法，考虑折叠状态
     renderSessionList() {
-        if (this.uiManager.isDrawerCollapsed) {
-            this.renderCollapsedSessionList();
-            return;
-        }
-
-        const sessionList = document.getElementById('sessionList');
-        sessionList.innerHTML = '';
-
-        this.sessions.slice().reverse().forEach(session => {
-            const listItem = document.createElement('li');
-            listItem.className = `session-item cursor-pointer p-3 rounded hover:bg-gray-700 transition-colors ${
-                session.id === this.activeSessionId ? 'bg-blue-600' : ''
-            }`;
-
-            listItem.innerHTML = `
-                <div class="flex justify-between items-start">
-                    <div class="flex-1 min-w-0">
-                        <div class="session-title font-medium text-sm truncate">${escapeHtml(session.title)}</div>
-                        <div class="session-info text-xs text-gray-400 mt-1 flex items-center gap-2">
-                            <span class="flex items-center gap-1">
-                                <i data-lucide="message-circle" class="w-3 h-3"></i>
-                                <span>${session.messages.length}</span>
-                            </span>
-                            <span class="flex items-center gap-1">
-                                <i data-lucide="clock" class="w-3 h-3"></i>
-                                <span>${new Date(session.updatedAt).toLocaleDateString()}</span>
-                            </span>
-                        </div>
-                    </div>
-                    <button class="delete-session-btn opacity-0 transition-opacity duration-200 text-gray-400 hover:text-red-400 p-1"
-                            data-session-id="${session.id}"
-                            title="删除会话">
-                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                    </button>
-                </div>
-            `;
-
-            // 点击会话项切换会话
-            listItem.addEventListener('click', (e) => {
-                // 如果点击的是删除按钮，不执行切换
-                if (e.target.classList.contains('delete-session-btn')) {
-                    return;
-                }
-                this.switchSession(session.id);
-            });
-
-            // 悬浮显示删除按钮
-            listItem.addEventListener('mouseenter', () => {
-                const deleteBtn = listItem.querySelector('.delete-session-btn');
-                deleteBtn.classList.remove('opacity-0');
-                deleteBtn.classList.add('opacity-100');
-            });
-
-            listItem.addEventListener('mouseleave', () => {
-                const deleteBtn = listItem.querySelector('.delete-session-btn');
-                deleteBtn.classList.remove('opacity-100');
-                deleteBtn.classList.add('opacity-0');
-            });
-
-            // 删除按钮事件
-            const deleteBtn = listItem.querySelector('.delete-session-btn');
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.deleteSession(session.id);
-            });
-
-            sessionList.appendChild(listItem);
-        });
-
-        // Reinitialize icons for session list
-        if (typeof lucide !== 'undefined') {
-            lucide.createIcons();
-        }
+        this.uiManager.renderSessionList(
+            this.sessions,
+            this.activeSessionId,
+            (id) => this.switchSession(id),
+            (id) => this.deleteSession(id)
+        );
     }
 
     renderActiveSessionMessages() {
@@ -1380,18 +1166,6 @@ class AIAssistant {
         }
     }
 
-    /**
-     * 构建快捷键字符串（用于设置界面）
-     * @param {KeyboardEvent} event
-     * @returns {string} 例如 "Ctrl+B", "Ctrl+Shift+N"
-     */
-
-    /**
-     * 检查快捷键冲突
-     * @param {string} keyString - 快捷键字符串
-     * @param {number} currentIndex - 当前编辑的快捷键索引
-     * @returns {object|null} 冲突的快捷键对象，或null
-     */
 
     clearChat() {
         if (confirm('确定要清空聊天记录吗？')) {
@@ -1635,7 +1409,7 @@ class AIAssistant {
                                 fullResponse += delta;
                                 // 直接调用完整的更新函数，不再需要 shouldRerenderContent 和 simpleUpdateContent
                                 this.updateMessageContent(contentElement, fullResponse);
-                                this.scrollToBottom();
+                                this.uiManager.scrollToBottom();
                             }
                         } catch (e) {
                             // Ignore parsing errors for incomplete JSON
@@ -1676,47 +1450,13 @@ class AIAssistant {
     }
 
     addMessage(content, type, isStreaming = false, imageUrl = null) {
-        const messagesContainer = document.getElementById('messages');
-        const timestamp = new Date().toLocaleTimeString();
-
-        const messageElement = document.createElement('div');
-        messageElement.className = `message-bubble ${type}-message animate__animated animate__fadeInUp`;
-
-        if (type === 'user') {
-            let imageHtml = '';
-            if (imageUrl) {
-                imageHtml = `<img src="${imageUrl}" class="message-image" onclick="window.open('${imageUrl}', '_blank')">`;
-            }
-            const userAvatar = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E`;
-            messageElement.innerHTML = `
-                <div class="mb-2 flex items-center gap-2">
-                    <img src="${userAvatar}" class="w-6 h-6" alt="User">
-                    <span class="text-blue-400 font-semibold">你</span>
-                    <span class="text-gray-400 text-sm ml-2">${timestamp}</span>
-                </div>
-                <div class="message-content">
-                    ${content ? `<p>${escapeHtml(content)}</p>` : ''}
-                    ${imageHtml}
-                </div>
-            `;
-        } else {
-            const aiAvatar = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 8V4H8'/%3E%3Crect width='16' height='12' x='4' y='8' rx='2'/%3E%3Cpath d='M2 14h2'/%3E%3Cpath d='M20 14h2'/%3E%3Cpath d='M15 13v2'/%3E%3Cpath d='M9 13v2'/%3E%3C/svg%3E`;
-            messageElement.innerHTML = `
-                <div class="mb-2 flex items-center gap-2">
-                    <img src="${aiAvatar}" class="w-6 h-6" alt="AI">
-                    <span class="text-green-400 font-semibold">AI助手</span>
-                    <span class="text-gray-400 text-sm ml-2">${timestamp}</span>
-                </div>
-                <div class="message-content ${isStreaming ? 'typewriter' : ''}">
-                    ${content ? this.formatMessage(content) : '<span class="text-gray-400">正在思考...</span>'}
-                </div>
-            `;
-        }
-
-        messagesContainer.appendChild(messageElement);
-        this.scrollToBottom();
-
-        return messageElement;
+        return this.uiManager.addMessage(
+            content,
+            type,
+            isStreaming,
+            imageUrl,
+            (c) => this.formatMessage(c)
+        );
     }
 
     
@@ -2533,120 +2273,18 @@ ${selectedText}`;
     }
 
     showTooltip(x, y, selectedText, messageElement) {
-        this.hideTooltip();
-
-        if (!this.config || !this.config.commands) {
-            console.log('Config not loaded yet');
-            return;
-        }
-
-        const template = document.getElementById('tooltipTemplate');
-        if (!template) {
-            console.log('Tooltip template not found');
-            return;
-        }
-
-        // 保存当前选区，用于后续恢复
-        const selection = window.getSelection();
-        const range = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
-
-        const tooltip = template.content.cloneNode(true).querySelector('.tooltip');
-        const buttonsContainer = tooltip.querySelector('div.flex.flex-wrap');
-        const customInput = tooltip.querySelector('.custom-prompt-input');
-        const customButton = tooltip.querySelector('.custom-prompt-btn');
-
-        // 根据配置生成快捷按钮
-        this.config.commands.forEach(command => {
-            const button = document.createElement('button');
-            button.className = 'px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-sm whitespace-nowrap';
-            button.textContent = command.label;
-            button.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.handleFollowup(selectedText, command, messageElement);
-                this.hideTooltip();
-            });
-            buttonsContainer.appendChild(button);
-        });
-
-        // 处理自定义输入框
-        const handleCustomPrompt = () => {
-            const customPrompt = customInput.value.trim();
-            if (customPrompt) {
-                const customCommand = {
-                    label: '自定义',
-                    prompt: customPrompt + '\n'
-                };
-                this.handleFollowup(selectedText, customCommand, messageElement);
-                this.hideTooltip();
-            }
-        };
-
-        customButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            handleCustomPrompt();
-        });
-
-        customInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                e.stopPropagation();
-                handleCustomPrompt();
-            }
-        });
-
-        // 阻止输入框点击事件冒泡
-        customInput.addEventListener('click', (e) => {
-            e.stopPropagation();
-        });
-
-        // 计算tooltip位置，确保在视窗内
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-        const tooltipWidth = 300; // 预估宽度
-        const tooltipHeight = 50; // 预估高度
-
-        let finalX = Math.min(x, viewportWidth - tooltipWidth);
-        let finalY = Math.max(y - tooltipHeight - 10, 10);
-
-        // 如果在顶部空间不够，显示在下方
-        if (finalY < 10) {
-            finalY = y + 20;
-        }
-
-        // 定位tooltip
-        tooltip.style.position = 'fixed';
-        tooltip.style.left = finalX + 'px';
-        tooltip.style.top = finalY + 'px';
-        tooltip.style.zIndex = '1000';
-        tooltip.id = 'activeTooltip';
-
-        document.body.appendChild(tooltip);
-
-        // 自动聚焦到输入框，同时恢复文本选中状态
-        setTimeout(() => {
-            // 恢复notePreview的文本选中状态
-            if (range) {
-                const selection = window.getSelection();
-                selection.removeAllRanges();
-                selection.addRange(range);
-                console.log('✅ 恢复notePreview文本选中状态');
-            }
-
-            // 聚焦到输入框
-            const activeInput = document.querySelector('#activeTooltip .custom-prompt-input');
-            if (activeInput) {
-                activeInput.focus();
-            }
-        }, 50);
-
-        console.log('Tooltip shown at:', finalX, finalY, 'for text:', selectedText.substring(0, 50));
+        this.uiManager.showTooltip(
+            x,
+            y,
+            selectedText,
+            messageElement,
+            this.config.commands,
+            (text, cmd, elem) => this.handleFollowup(text, cmd, elem)
+        );
     }
 
     hideTooltip() {
-        const tooltip = document.getElementById('activeTooltip');
-        if (tooltip) {
-            tooltip.remove();
-        }
+        this.uiManager.hideTooltip();
     }
 
     async handleFollowup(selectedText, command, originalMessage) {
@@ -2762,20 +2400,7 @@ ${selectedText}`;
     }
 
     createFollowupModal() {
-        const template = document.getElementById('followupModalTemplate');
-        const modal = template.content.cloneNode(true).querySelector('.followup-modal');
-
-        modal.querySelector('.close-followup').addEventListener('click', () => {
-            modal.remove();
-        });
-
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-            }
-        });
-
-        return modal;
+        return this.uiManager.createFollowupModal();
     }
 
     async logInteraction(userInput, aiResponse, type, messagesToSend = null) {
@@ -2823,11 +2448,6 @@ ${selectedText}`;
         const sendBtn = document.getElementById('sendBtn');
         sendBtn.disabled = !enabled;
         sendBtn.textContent = enabled ? '发送' : '生成中...';
-    }
-
-    scrollToBottom() {
-        const container = document.getElementById('chatContainer');
-        container.scrollTop = container.scrollHeight;
     }
 
     toggleAgentMode() {
@@ -3128,134 +2748,14 @@ ${selectedText}`;
     // 渲染节点轴
     renderNodeAxis() {
         const activeSession = this.getActiveSession();
-        const svg = document.getElementById('nodeAxisSvg');
-
-        if (!svg) return;
-
-        // 如果没有会话或消息，清空SVG
-        if (!activeSession || !activeSession.messages || activeSession.messages.length === 0) {
-            svg.innerHTML = '';
-            svg.setAttribute('height', '0');
-            return;
-        }
-
-        const messages = activeSession.messages;
-        const nodeSpacing = 40; // 节点间距
-        const userNodeRadius = 7; // 用户节点半径（大圆）
-        const aiNodeRadius = 5; // AI节点半径（小圆）
-        const clickAreaRadius = 12; // 点击区域半径
-        const startX = 30; // 起始X位置
-        const startY = 20; // 起始Y位置
-        const branchLength = 20; // 分叉长度
-
-        // 计算SVG高度
-        const svgHeight = startY + (messages.length * nodeSpacing) + 20;
-        svg.setAttribute('height', svgHeight);
-
-        // 清空SVG内容
-        svg.innerHTML = '';
-
-        // 绘制节点和连线
-        messages.forEach((message, index) => {
-            const y = startY + (index * nodeSpacing);
-            const isUser = message.role === 'user';
-            const nodeRadius = isUser ? userNodeRadius : aiNodeRadius;
-
-            // 绘制连线（除了第一个节点）
-            if (index > 0) {
-                const prevY = startY + ((index - 1) * nodeSpacing);
-                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                line.setAttribute('x1', startX);
-                line.setAttribute('y1', prevY);
-                line.setAttribute('x2', startX);
-                line.setAttribute('y2', y);
-                line.setAttribute('class', 'node-axis-line');
-                svg.appendChild(line);
-            }
-
-            // 判断是否有追问
-            const hasFollowups = message.followups && message.followups.length > 0;
-
-            // 创建节点组
-            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-            group.setAttribute('data-message-index', index);
-            group.setAttribute('data-message-id', message.messageId || '');
-
-            // 绘制透明的大点击区域
-            const clickArea = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            clickArea.setAttribute('cx', startX);
-            clickArea.setAttribute('cy', y);
-            clickArea.setAttribute('r', clickAreaRadius);
-            clickArea.setAttribute('class', 'node-axis-clickarea');
-            group.appendChild(clickArea);
-
-            // 绘制主节点
-            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            circle.setAttribute('cx', startX);
-            circle.setAttribute('cy', y);
-            circle.setAttribute('r', nodeRadius);
-
-            // 设置样式类
-            let circleClass = `node-axis-circle ${isUser ? 'user' : 'ai'}`;
-            if (hasFollowups) {
-                circleClass += ' has-followup';
-            }
-            circle.setAttribute('class', circleClass);
-
-            group.appendChild(circle);
-            svg.appendChild(group);
-
-            // 如果有追问，绘制分叉
-            if (hasFollowups) {
-                // 绘制分叉横线
-                const branchLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                branchLine.setAttribute('x1', startX + nodeRadius);
-                branchLine.setAttribute('y1', y);
-                branchLine.setAttribute('x2', startX + nodeRadius + branchLength);
-                branchLine.setAttribute('y2', y);
-                branchLine.setAttribute('class', 'node-axis-line');
-                svg.appendChild(branchLine);
-
-                // 创建分支节点组
-                const branchGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-                branchGroup.setAttribute('data-message-index', index);
-                branchGroup.setAttribute('data-message-id', message.messageId || '');
-                branchGroup.setAttribute('data-is-branch', 'true');
-
-                // 分支节点的点击区域
-                const branchClickArea = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                branchClickArea.setAttribute('cx', startX + nodeRadius + branchLength);
-                branchClickArea.setAttribute('cy', y);
-                branchClickArea.setAttribute('r', clickAreaRadius * 0.8);
-                branchClickArea.setAttribute('class', 'node-axis-clickarea');
-                branchGroup.appendChild(branchClickArea);
-
-                // 绘制分叉节点
-                const branchCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                branchCircle.setAttribute('cx', startX + nodeRadius + branchLength);
-                branchCircle.setAttribute('cy', y);
-                branchCircle.setAttribute('r', 4); // 分叉节点最小
-                branchCircle.setAttribute('class', 'node-axis-circle branch');
-                branchGroup.appendChild(branchCircle);
-
-                svg.appendChild(branchGroup);
-            }
-        });
+        const messages = activeSession ? activeSession.messages : [];
+        this.uiManager.renderNodeAxis(messages);
     }
 
     // 切换节点轴折叠状态
     toggleNodeAxis() {
         this.isNodeAxisCollapsed = !this.isNodeAxisCollapsed;
-        const content = document.getElementById('nodeAxisContent');
-        const icon = document.getElementById('nodeAxisToggleIcon');
-
-        if (this.isNodeAxisCollapsed) {
-            content.style.display = 'none';
-            icon.style.transform = 'rotate(-90deg)';
-        } else {
-            content.style.display = 'block';
-            icon.style.transform = 'rotate(0deg)';
-        }
+        this.uiManager.toggleNodeAxis(this.isNodeAxisCollapsed);
     }
 
     // 处理节点点击事件
@@ -3582,41 +3082,21 @@ ${selectedText}`;
      * 切换到编辑模式
      */
     async switchToEditorMode(noteId) {
+        // 业务逻辑：切换模式状态
         this.viewMode = 'editor';
         this.activeNoteId = noteId;
 
-        // 切换body类
-        document.body.classList.remove('view-mode-chat');
-        document.body.classList.add('view-mode-editor');
+        // UI操作：调用UIManager
+        this.uiManager.switchToEditorMode();
 
-        // 确保右侧知识库显示（如果之前被折叠）
-        const rightSidebar = document.getElementById('right-sidebar');
-        if (rightSidebar) {
-            rightSidebar.classList.remove('hidden', 'collapsed');
-        }
-
-        // 隐藏聊天区域主体
-        const chatContainer = document.getElementById('chatContainer');
-        const editorContainer = document.getElementById('editor-container');
-
-        if (chatContainer) chatContainer.classList.add('hidden');
-        if (editorContainer) editorContainer.classList.remove('hidden');
-
-        // 清空Copilot面板（准备显示新对话）
-        const copilotMessages = document.getElementById('copilotMessages');
-        if (copilotMessages) {
-            copilotMessages.innerHTML = '<div class="text-gray-400 text-sm">在编辑器中提问，Copilot将帮助你写作和组织知识...</div>';
-        }
-
-        // 清空Copilot上下文文件标签，并添加当前文档
+        // 业务逻辑：清空Copilot上下文文件标签，并添加当前文档
         this.copilotContextFiles = [];
-        // 自动添加当前打开的文档到上下文
         if (noteId) {
             this.copilotContextFiles.push(noteId);
         }
         this.renderCopilotContextTags();
 
-        // 加载笔记内容
+        // 业务逻辑：加载笔记内容
         try {
             const response = await fetch(`http://localhost:8080/api/notes/${noteId}`);
             const content = await response.text();
@@ -3665,31 +3145,16 @@ ${selectedText}`;
      * 切换回聊天模式
      */
     switchToChatMode() {
-        // 清除自动保存定时器
+        // 业务逻辑：清除自动保存定时器
         clearTimeout(this.autoSaveTimeout);
 
+        // 业务逻辑：切换模式状态
         this.viewMode = 'chat';
         this.activeNoteId = null;
         this.editorInstance = null;
 
-        // 切换body类
-        document.body.classList.remove('view-mode-editor');
-        document.body.classList.add('view-mode-chat');
-
-        // 右侧知识库保持可用，不隐藏（用户可以通过折叠按钮控制）
-
-        // 显示聊天容器，隐藏编辑器
-        const chatContainer = document.getElementById('chatContainer');
-        const editorContainer = document.getElementById('editor-container');
-
-        if (chatContainer) chatContainer.classList.remove('hidden');
-        if (editorContainer) editorContainer.classList.add('hidden');
-
-        // 清空消息输入框
-        const messageInput = document.getElementById('messageInput');
-        if (messageInput) {
-            messageInput.value = '';
-        }
+        // UI操作：调用UIManager
+        this.uiManager.switchToChatMode();
     }
 
     /**
