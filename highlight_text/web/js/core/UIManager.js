@@ -386,13 +386,11 @@ export class UIManager {
         this.hideTooltip();
 
         if (!commands) {
-            console.log('Commands not provided');
             return;
         }
 
         const template = document.getElementById('tooltipTemplate');
         if (!template) {
-            console.log('Tooltip template not found');
             return;
         }
 
@@ -483,7 +481,6 @@ export class UIManager {
                 const selection = window.getSelection();
                 selection.removeAllRanges();
                 selection.addRange(range);
-                console.log('✅ 恢复notePreview文本选中状态');
             }
 
             // 聚焦到输入框
@@ -493,7 +490,6 @@ export class UIManager {
             }
         }, 50);
 
-        console.log('Tooltip shown at:', finalX, finalY, 'for text:', selectedText.substring(0, 50));
     }
 
     /**

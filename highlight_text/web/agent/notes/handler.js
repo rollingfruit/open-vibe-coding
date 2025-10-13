@@ -357,7 +357,6 @@ JSON格式：
         }
 
         try {
-            console.log('🚀 执行后端工具:', toolName, 'args:', args);
             const response = await fetch('http://localhost:8080/agent/execute', {
                 method: 'POST',
                 headers: {
@@ -373,7 +372,6 @@ JSON格式：
             });
 
             const result = await response.json();
-            console.log('📥 后端返回:', { success: result.success, toolName });
 
             // 处理带diff的工具执行结果
             const diffTools = ['update_note', 'create_note', 'replace_lines', 'insert_lines', 'delete_lines'];
@@ -384,37 +382,29 @@ JSON格式：
             });
 
             if (result.success && diffTools.includes(toolName)) {
-                console.log('✅ 工具执行成功，开始处理diff:', toolName);
-                console.log('📦 后端返回结果:', result);
 
                 try {
                     // 解析返回的JSON结果
                     const diffResult = JSON.parse(result.output);
-                    console.log('📊 解析后的diff结果:', diffResult);
 
                     // 注意：后端返回的字段是 newContent（小写开头）
                     if (diffResult.newContent !== undefined) {
-                        console.log('✅ 找到新内容，直接更新编辑器');
 
                         // 先刷新笔记列表（如果是新创建的笔记）
                         if (toolName === 'create_note') {
-                            console.log('🔄 刷新笔记列表（新创建的笔记）');
                             await this.mainApp.loadNotes();
                             // 等待笔记列表更新
                             await new Promise(resolve => setTimeout(resolve, 200));
                         }
 
                         // 直接更新编辑器内容，不显示Diff审查页面
-                        console.log('🎨 准备直接更新编辑器内容...');
                         await this.mainApp.noteManager.updateEditorContentDirectly(
                             diffResult.noteId,
                             diffResult.newContent,  // 使用小写的 newContent
                             diffResult.diffData
                         );
-                        console.log('✨ 编辑器内容更新完成');
                     } else {
                         console.warn('⚠️ 没有新内容数据');
-                        console.log('完整的diffResult:', JSON.stringify(diffResult, null, 2));
                     }
                 } catch (parseError) {
                     console.error('❌ 无法解析diff结果:', parseError);
@@ -492,7 +482,6 @@ JSON格式：
                             newStatus = 'completed';
                         }
                         taskToUpdate.status = newStatus;
-                        console.log(`✅ 更新任务: "${taskToUpdate.task}" -> ${newStatus}`);
                     } else {
                         // 如果在现有列表中找不到，可能是新任务，添加到列表末尾
                         let newStatus = updatedTask.status || 'pending';
@@ -1072,7 +1061,6 @@ ${originalContent}
         // 检测是否是内容改写任务（优先使用流式Diff视图）
         const isContentRewrite = this.detectContentRewriteTask(initialTask);
         if (isContentRewrite && editorContext && editorContext.fullText) {
-            console.log('🌊 检测到内容改写任务，启用流式Diff视图');
             await this.handleContentRewriteStreaming(initialTask, editorContext);
             return;
         }

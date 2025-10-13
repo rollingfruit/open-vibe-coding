@@ -484,7 +484,6 @@ class NoteManager {
      * 处理Wiki链接点击
      */
     async handleWikiLinkClick(noteId) {
-        console.log('点击Wiki链接:', noteId);
 
         // 检查笔记是否存在
         const note = this.notes.find(n => n.id === noteId);
@@ -505,7 +504,6 @@ class NoteManager {
      * 处理标签点击
      */
     async handleTagClick(tag) {
-        console.log('点击标签:', tag);
 
         // 切换到知识库面板并搜索该标签
         const rightSidebar = document.getElementById('right-sidebar');
@@ -1007,7 +1005,6 @@ tags: []
      * @param {string} originalContent - 原始内容
      */
     async prepareForStreaming(originalContent) {
-        console.log('🎬 准备流式Diff渲染');
 
         const noteEditor = document.getElementById('noteEditor');
         const notePreview = document.getElementById('notePreview');
@@ -1020,7 +1017,6 @@ tags: []
         // ✨ 保存原始内容作为Diff基准（如果还没保存的话）
         if (this.contentBeforeLLMUpdate === null || this.contentBeforeLLMUpdate === undefined) {
             this.contentBeforeLLMUpdate = originalContent;
-            console.log('📌 保存初始内容作为 Diff 基准');
         }
 
         // 隐藏编辑器和预览
@@ -1044,7 +1040,6 @@ tags: []
         streamingDiffContainer.classList.remove('hidden');
         streamingDiffContainer.innerHTML = '<div class="p-4 text-gray-400">🌊 正在流式生成内容...</div>';
 
-        console.log('✅ 流式Diff容器准备完成');
     }
 
     /**
@@ -1054,7 +1049,6 @@ tags: []
      * @param {string} originalContent - 原始内容
      */
     async finalizeStreaming(noteId, finalContent, originalContent) {
-        console.log('🏁 完成流式Diff渲染');
 
         const noteEditor = document.getElementById('noteEditor');
         const streamingDiffContainer = document.getElementById('streamingDiffContainer');
@@ -1082,7 +1076,6 @@ tags: []
                 throw new Error('保存失败');
             }
 
-            console.log('✅ 内容已保存到后端');
         } catch (error) {
             console.error('保存失败:', error);
             this.app.uiManager.showNotification('保存失败: ' + error.message, 'error');
@@ -1110,7 +1103,6 @@ tags: []
         }
 
         this.app.uiManager.showNotification('内容改写完成', 'success');
-        console.log('✅ 流式Diff渲染完成');
     }
 
     /**
@@ -1120,11 +1112,9 @@ tags: []
      * @param {Array} diffData - Diff数据（用于回退功能）
      */
     async updateEditorContentDirectly(noteId, newContent, diffData) {
-        console.log('✨ 累积 Diff 模式：更新编辑器内容', { noteId, newContentLength: newContent?.length });
 
         // 确保在编辑器模式
         if (this.app.viewMode !== 'editor' || this.activeNoteId !== noteId) {
-            console.log('🔄 切换到编辑器模式');
             await this.switchToEditorMode(noteId);
             await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -1144,7 +1134,6 @@ tags: []
         }
 
         // ✨ 使用 DiffViewer 显示累积 Diff
-        console.log('✅ 准备显示Diff视图...');
         this.diffViewer.show({
             originalContent: this.contentBeforeLLMUpdate,
             newContent: newContent,
@@ -1154,7 +1143,6 @@ tags: []
                 this.saveActiveNote();
             },
             onClose: () => {
-                console.log('Diff view closed.');
             }
         });
 
@@ -1179,7 +1167,6 @@ tags: []
             finishDiffReviewBtn.classList.add('hidden');
         }
 
-        console.log('✅ 编辑器内容已直接更新');
     }
 
     /**
@@ -1190,7 +1177,6 @@ tags: []
      * @returns {Promise<boolean>} - 是否应用更改
      */
     async showInlineDiffInEditor(noteEditor, diffData, newContent) {
-        console.log('📊 在编辑器位置显示内联 Diff');
 
         return new Promise((resolve) => {
             // 隐藏编辑器
@@ -1304,7 +1290,6 @@ tags: []
             applyBtn.addEventListener('click', () => cleanupAndResolve(true));
             cancelBtn.addEventListener('click', () => cleanupAndResolve(false));
 
-            console.log('✅ 内联 Diff 已显示，等待用户操作');
         });
     }
 
@@ -1312,7 +1297,6 @@ tags: []
      * 完成diff审查
      */
     async finishDiffReview() {
-        console.log('✅ 完成审查，关闭diff视图');
         this.closeDiffView();
         this.app.uiManager.showNotification('审查完成', 'success');
     }
@@ -1325,7 +1309,6 @@ tags: []
             return;
         }
 
-        console.log('🔄 全部回退变更');
 
         // 优先使用保存的修改前内容
         let originalContent = this.contentBeforeLLMUpdate;
@@ -1488,14 +1471,12 @@ tags: []
             this.notesWebSocket = new WebSocket(wsUrl);
 
             this.notesWebSocket.onopen = () => {
-                console.log('知识库WebSocket连接已建立');
             };
 
             this.notesWebSocket.onmessage = (event) => {
                 try {
                     const message = JSON.parse(event.data);
                     if (message.type === 'refresh_notes') {
-                        console.log('收到知识库更新通知，刷新笔记列表');
                         this.loadNotes();
                     }
                 } catch (error) {
@@ -1508,7 +1489,6 @@ tags: []
             };
 
             this.notesWebSocket.onclose = () => {
-                console.log('WebSocket连接已关闭，5秒后重连...');
                 setTimeout(connectWebSocket, 5000);
             };
         };

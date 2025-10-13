@@ -65,7 +65,6 @@ export class CalendarView {
         });
 
         this.calendar.render();
-        console.log('FullCalendar initialized');
     }
 
     render(tasks) {
@@ -132,7 +131,6 @@ export class CalendarView {
         this.calendar.removeAllEvents();
         this.calendar.addEventSource(events);
 
-        console.log('Calendar rendered with', events.length, 'events');
     }
 
     /**
@@ -163,7 +161,6 @@ export class CalendarView {
         const newStart = info.event.start.toISOString();
         const newEnd = info.event.end ? info.event.end.toISOString() : newStart;
 
-        console.log('Event dropped:', taskId, newStart, newEnd);
 
         // 更新任务状态
         this.workspaceView.updateTaskState(taskId, {
@@ -178,7 +175,6 @@ export class CalendarView {
         const newStart = info.event.start.toISOString();
         const newEnd = info.event.end ? info.event.end.toISOString() : newStart;
 
-        console.log('Event resized:', taskId, newStart, newEnd);
 
         // 更新任务状态
         this.workspaceView.updateTaskState(taskId, {
@@ -308,7 +304,6 @@ export class CalendarView {
 
     async deleteTask(taskId) {
         try {
-            console.log('Deleting task:', taskId);
             const response = await fetch('/agent/tasks/execute', {
                 method: 'POST',
                 headers: {
@@ -320,7 +315,6 @@ export class CalendarView {
                 })
             });
 
-            console.log('Delete response status:', response.status);
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -329,7 +323,6 @@ export class CalendarView {
             }
 
             const result = await response.json();
-            console.log('Delete result:', result);
 
             // 检查返回的数据格式
             let data = result;
@@ -342,7 +335,6 @@ export class CalendarView {
             }
 
             if (data.success) {
-                console.log(`成功删除 ${data.deleted_count} 个任务`);
                 // 重新加载任务
                 await this.workspaceView.loadAndSyncTasks();
             } else {

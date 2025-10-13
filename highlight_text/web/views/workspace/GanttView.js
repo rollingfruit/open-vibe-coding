@@ -188,7 +188,6 @@ export class GanttView {
         // 步骤2: 生成用于渲染的扁平列表(根据展开状态)
         let displayTasks = this.generateDisplayList(projects);
 
-        console.log('Display tasks:', displayTasks.length, 'tasks will be shown');
 
         // 步骤3: 将任务分为活跃任务和已完成任务
         const activeTasks = displayTasks.filter(task => task.status !== 'completed');
@@ -269,15 +268,12 @@ export class GanttView {
                         this.handleDateChange(task, start, end);
                     },
                     on_progress_change: (task, progress) => {
-                        console.log('Progress changed:', task.id, progress);
                     },
                     on_click: (task) => {
                         // 单击事件：不做任何操作，避免与双击编辑冲突
-                        console.log('Task clicked:', task.id);
                     }
                 });
 
-                console.log('Active Gantt initialized with', activeGanttTasks.length, 'tasks');
             } catch (error) {
                 console.error('Failed to initialize Active Gantt:', error);
                 ganttContainer.innerHTML = `
@@ -317,14 +313,11 @@ export class GanttView {
                         this.handleDateChange(task, start, end);
                     },
                     on_progress_change: (task, progress) => {
-                        console.log('Progress changed:', task.id, progress);
                     },
                     on_click: (task) => {
                         // 单击事件：不做任何操作，避免与双击编辑冲突
-                        console.log('Task clicked:', task.id);
                     }
                 });
-                console.log('Active Gantt re-initialized with', activeGanttTasks.length, 'tasks');
             } catch (error) {
                 console.error('Failed to re-initialize Active Gantt:', error);
             }
@@ -399,7 +392,6 @@ export class GanttView {
                             }
                         }
                     });
-                    console.log('Completed Gantt initialized with', completedGanttTasks.length, 'tasks');
                 } catch (error) {
                     console.error('Failed to initialize Completed Gantt:', error);
                 }
@@ -705,7 +697,6 @@ export class GanttView {
                     this.handleDateChange(task, start, end);
                 },
                 on_click: (task) => {
-                    console.log('Subtask clicked:', task.id);
                 }
             });
         } catch (error) {
@@ -762,7 +753,6 @@ export class GanttView {
     }
 
     handleDateChange(ganttTask, start, end) {
-        console.log('Date changed:', ganttTask.id, start, end);
 
         // 更新任务状态
         this.workspaceView.updateTaskState(ganttTask.id, {
@@ -774,7 +764,6 @@ export class GanttView {
     changeViewMode(mode) {
         if (this.gantt) {
             this.gantt.change_view_mode(mode);
-            console.log('View mode changed to:', mode);
         }
     }
 
@@ -818,7 +807,6 @@ export class GanttView {
 
                 // 检查是否是占位任务
                 if (taskId === 'placeholder-task') {
-                    console.log('Double-clicked placeholder task, opening create project modal');
                     this.workspaceView.showCreateProjectModal({ start: new Date(), end: new Date() });
                     return;
                 }
@@ -830,9 +818,7 @@ export class GanttView {
                     const isProject = task.children && task.children.length > 0;
 
                     if (isProject) {
-                        console.log('Double-clicked project, opening edit modal');
                     } else {
-                        console.log('Double-clicked task, opening edit modal');
                     }
 
                     this.workspaceView.showEditTaskModal(task);
@@ -996,7 +982,6 @@ export class GanttView {
             item.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const action = item.getAttribute('data-action');
-                console.log(`[GanttView] Menu action clicked: ${action}`);
                 await this.handleMenuAction(action, task);
                 // menu.remove(); // Temporarily disabled for debugging
             });
@@ -1066,7 +1051,6 @@ export class GanttView {
 
     async deleteTask(taskId) {
         try {
-            console.log('Deleting task:', taskId);
             const response = await fetch('/agent/tasks/execute', {
                 method: 'POST',
                 headers: {
@@ -1078,7 +1062,6 @@ export class GanttView {
                 })
             });
 
-            console.log('Delete response status:', response.status);
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -1087,7 +1070,6 @@ export class GanttView {
             }
 
             const result = await response.json();
-            console.log('Delete result:', result);
 
             // 检查返回的数据格式
             let data = result;
@@ -1100,7 +1082,6 @@ export class GanttView {
             }
 
             if (data.success) {
-                console.log(`成功删除 ${data.deleted_count} 个任务`);
                 // 重新加载任务
                 await this.workspaceView.loadAndSyncTasks();
             } else {

@@ -453,7 +453,6 @@ class ChatManager {
 
 
     addCopyButtons() {
-        console.log('🔧 addCopyButtons 被调用');
 
         // Reinitialize Lucide icons for code block buttons
         if (typeof lucide !== 'undefined') {
@@ -469,30 +468,22 @@ class ChatManager {
 
         // 复制按钮事件
         const copyButtons = document.querySelectorAll('.copy-code-btn');
-        console.log('📋 找到复制按钮数量:', copyButtons.length);
 
         copyButtons.forEach(btn => {
             btn.replaceWith(btn.cloneNode(true));
         });
 
         const copyButtonsAfterClone = document.querySelectorAll('.copy-code-btn');
-        console.log('📋 克隆后复制按钮数量:', copyButtonsAfterClone.length);
 
         copyButtonsAfterClone.forEach((btn, index) => {
-            console.log(`📌 为第 ${index + 1} 个复制按钮绑定事件`);
             btn.addEventListener('click', () => {
-                console.log('🖱️ 复制按钮被点击');
                 const codeId = btn.getAttribute('data-code-id');
-                console.log('📋 代码ID:', codeId);
                 const code = window.codeStorage ? window.codeStorage.get(codeId) : '';
-                console.log('📝 获取到的代码:', code ? `${code.length} 字符` : '不存在');
                 if (code) {
                     navigator.clipboard.writeText(code).then(() => {
-                        console.log('✅ 代码已复制到剪贴板');
                         this.app.uiManager.showNotification('代码已复制', 'success');
                     });
                 } else {
-                    console.log('❌ 代码不存在');
                     this.app.uiManager.showNotification('代码不存在', 'error');
                 }
             });
@@ -505,16 +496,11 @@ class ChatManager {
 
         document.querySelectorAll('.render-html-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                console.log('🎨 渲染按钮被点击');
                 const codeId = btn.getAttribute('data-code-id');
-                console.log('📋 代码ID:', codeId);
                 const htmlCode = window.codeStorage ? window.codeStorage.get(codeId) : '';
-                console.log('📝 HTML代码:', htmlCode ? `${htmlCode.length} 字符` : '不存在');
                 if (htmlCode) {
-                    console.log('✅ 准备显示HTML预览');
                     this.showHtmlPreview(htmlCode);
                 } else {
-                    console.log('❌ HTML代码不存在');
                     this.app.uiManager.showNotification('HTML代码不存在', 'error');
                 }
             });
@@ -527,16 +513,11 @@ class ChatManager {
 
         document.querySelectorAll('.fullscreen-html-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                console.log('🖼️ 全屏按钮被点击');
                 const codeId = btn.getAttribute('data-code-id');
-                console.log('📋 代码ID:', codeId);
                 const htmlCode = window.codeStorage ? window.codeStorage.get(codeId) : '';
-                console.log('📝 HTML代码:', htmlCode ? `${htmlCode.length} 字符` : '不存在');
                 if (htmlCode) {
-                    console.log('✅ 准备全屏预览');
                     this.showFullscreenHtmlPreview(htmlCode);
                 } else {
-                    console.log('❌ HTML代码不存在');
                     this.app.uiManager.showNotification('HTML代码不存在', 'error');
                 }
             });

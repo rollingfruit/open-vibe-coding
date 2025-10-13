@@ -197,7 +197,6 @@ export class WorkspaceView {
             this.ganttView.render(this.tasks);
             this.calendarView.render(this.tasks);
 
-            console.log('Tasks loaded and synced:', this.tasks);
         } catch (error) {
             console.error('Failed to load tasks:', error);
             this.tasks = []; // 确保即使出错也是空数组
@@ -221,7 +220,6 @@ export class WorkspaceView {
         // 更新本地任务数据
         Object.assign(this.tasks[taskIndex], updatedData);
 
-        console.log('Task state updated:', taskId, updatedData);
 
         // 如果是目标达成,触发庆祝动画
         if (isGoal && wasIncomplete && isNowComplete) {
@@ -281,7 +279,6 @@ export class WorkspaceView {
         }
 
         const result = await response.json();
-        console.log('Task saved to backend:', result);
         return result;
     }
 

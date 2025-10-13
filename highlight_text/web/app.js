@@ -1067,7 +1067,6 @@ class AIAssistant {
         if (noteSearch) {
             noteSearch.addEventListener('input', (e) => {
                 // TODO: 实现笔记搜索
-                console.log('搜索笔记:', e.target.value);
             });
         }
 
@@ -1188,27 +1187,15 @@ class AIAssistant {
 
             // 编辑器右键划词功能
             noteEditor.addEventListener('contextmenu', (e) => {
-                console.log('🖱️ noteEditor右键事件触发');
-                console.log('  - 事件目标:', e.target);
-                console.log('  - 事件目标ID:', e.target.id);
-                console.log('  - editorInstance:', this.noteManager.editorInstance);
-
                 // 对于textarea，使用selectionStart和selectionEnd获取选中文本
                 const textarea = e.target;
                 const start = textarea.selectionStart;
                 const end = textarea.selectionEnd;
                 const selectedText = textarea.value.substring(start, end).trim();
 
-                console.log('📝 选中文本:', selectedText);
-                console.log('📍 选区位置:', { start, end });
-                console.log('📏 选中文本长度:', selectedText.length);
-
                 if (selectedText && selectedText.length > 0) {
-                    console.log('✅ 检测到选中文本，显示菜单');
                     e.preventDefault(); // 阻止默认右键菜单
                     this.handleEditorContextMenu(e, selectedText);
-                } else {
-                    console.log('❌ 未检测到选中文本，允许默认右键菜单');
                 }
             });
 
@@ -1281,7 +1268,6 @@ class AIAssistant {
                     this.noteManager.addCopilotContextFile(actualPath);
                 } else if (itemType === 'folder' && filePath) {
                     // TODO: 处理文件夹拖拽
-                    console.log('文件夹拖拽暂不支持添加到上下文');
                 }
             });
         }
@@ -1477,8 +1463,6 @@ class AIAssistant {
         // 创建工作台视图
         this.workspaceView = new WorkspaceView('#workspace-container', this);
         await this.workspaceView.init();
-
-        console.log('Entered workspace mode');
     }
 
     exitWorkspaceMode() {
@@ -1494,8 +1478,6 @@ class AIAssistant {
 
         // 销毁工作台视图
         this.workspaceView = null;
-
-        console.log('Exited workspace mode');
     }
 
     // ==================== 划词追问相关方法 ====================
@@ -1609,9 +1591,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 处理页面可见性变化，暂停/恢复流
 document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-        console.log('Page is hidden');
-    } else {
-        console.log('Page is visible');
-    }
+    // 页面可见性变化处理（可用于暂停/恢复流）
 });

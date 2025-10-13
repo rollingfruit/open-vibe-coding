@@ -98,7 +98,6 @@ ${categoryDescriptions}
 
     updateCategories(newCategories) {
         this.systemPrompt = this._generateSystemPrompt(newCategories);
-        console.log('TaskAgentHandler system prompt updated with new categories.');
     }
 
     async init() {
@@ -157,7 +156,6 @@ ${categoryDescriptions}
             const response = await fetch('/agent/tasks/tools');
             const data = await response.json();
             this.tools = data.tools || [];
-            console.log('Loaded task tools:', this.tools);
         } catch (error) {
             console.error('Failed to load task tools:', error);
         }
@@ -239,9 +237,7 @@ ${categoryDescriptions}
             });
 
             const data = await response.json();
-            console.log('LLM响应数据:', data);
             const assistantMessage = data.choices[0].message;
-            console.log('助手消息:', assistantMessage);
 
             // 检查是否有思考过程（thought字段）- 支持ReAct模式
             if (assistantMessage.thought) {
@@ -293,7 +289,6 @@ ${categoryDescriptions}
             const toolName = toolCall.function.name;
             const toolArgs = JSON.parse(toolCall.function.arguments);
 
-            console.log(`Calling tool: ${toolName}`, toolArgs);
 
             // 渲染工具调用的行动步骤
             this._renderTraceStep({
@@ -567,7 +562,6 @@ ${categoryDescriptions}
                 console.error('Failed to save conversation log:', await response.text());
             } else {
                 const result = await response.json();
-                console.log('Conversation log saved:', result.filename);
             }
         } catch (error) {
             console.error('Error saving conversation log:', error);

@@ -152,7 +152,6 @@ class AgentHandler {
 
             if (response.ok) {
                 const result = await response.json();
-                console.log('Agent日志已保存:', result.filename);
                 this.mainApp.showNotification(`日志已保存: ${result.filename}`, 'success');
             } else {
                 console.error('保存日志失败');

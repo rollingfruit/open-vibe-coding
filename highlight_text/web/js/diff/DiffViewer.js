@@ -497,7 +497,6 @@ export class DiffViewer {
      * @private
      */
     _handleRevertBlock(blockIndex, allBlocks) {
-        console.log('🔄 撤销变更块:', blockIndex);
 
         const blockToRevert = allBlocks[blockIndex];
         if (!blockToRevert || !blockToRevert.hasChanges) {
