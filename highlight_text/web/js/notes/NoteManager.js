@@ -20,6 +20,7 @@
 
 import { escapeHtml } from '../utils/helpers.js';
 import { DiffViewer } from '../diff/DiffViewer.js';
+import { NotePreview } from './NotePreview.js';
 
 /**
  * NoteManager - 管理所有笔记相关的功能
@@ -38,6 +39,7 @@ class NoteManager {
         this.contentBeforeLLMUpdate = null;
         this.copilotContextFiles = [];
         this.diffViewer = null;
+        this.notePreview = null; // 将由外部初始化
         this.currentDiffData = null;
     }
 
@@ -605,20 +607,15 @@ class NoteManager {
     toggleEditorPreview() {
         this.isEditorPreview = !this.isEditorPreview;
 
-        const notePreview = document.getElementById('notePreview');
         const togglePreviewBtn = document.getElementById('togglePreviewBtn');
 
         if (this.isEditorPreview) {
-            // 显示预览
-            notePreview.classList.remove('hidden');
+            this.notePreview?.show();
             togglePreviewBtn.classList.add('bg-blue-600');
             togglePreviewBtn.classList.remove('bg-gray-700');
-
-            // 立即更新预览内容
-            this.updateEditorPreview();
+            this.updateEditorPreview(); // 立即更新一次
         } else {
-            // 隐藏预览
-            notePreview.classList.add('hidden');
+            this.notePreview?.hide();
             togglePreviewBtn.classList.remove('bg-blue-600');
             togglePreviewBtn.classList.add('bg-gray-700');
         }
@@ -628,48 +625,13 @@ class NoteManager {
      * 更新编辑器预览
      */
     updateEditorPreview() {
-        if (!this.isEditorPreview) return;
+        if (!this.isEditorPreview || !this.notePreview) return;
 
         const noteEditor = document.getElementById('noteEditor');
-        const notePreview = document.getElementById('notePreview');
-
-        if (!noteEditor || !notePreview) return;
+        if (!noteEditor) return;
 
         const content = noteEditor.value;
-
-        // 使用formatMessage渲染Markdown
-        const html = this.app.formatMessage(content);
-        notePreview.innerHTML = html;
-
-        // 为预览中的图片设置宽度（从URL的#zoom参数读取，或使用默认60%）
-        notePreview.querySelectorAll('img').forEach(img => {
-            // 检查图片src是否包含#zoom参数
-            const src = img.src;
-            const zoomMatch = src.match(/#zoom=(\d+)/);
-
-            if (zoomMatch) {
-                // 如果有zoom参数，使用该值
-                img.style.width = `${zoomMatch[1]}%`;
-            } else if (!img.style.width) {
-                // 否则使用默认值
-                img.style.width = '60%';
-            }
-        });
-
-        // 重新添加复制按钮和代码高亮
-        this.app.addCopyButtons();
-
-        // 重新初始化代码高亮
-        if (typeof hljs !== 'undefined') {
-            notePreview.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-            });
-        }
-
-        // 重新初始化图标
-        if (window.lucide) {
-            lucide.createIcons();
-        }
+        this.notePreview.update(content);
     }
 
     /**

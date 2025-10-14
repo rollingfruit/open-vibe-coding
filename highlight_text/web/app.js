@@ -4,6 +4,7 @@ import { UIManager } from './js/core/UIManager.js';
 import { SettingsManager } from './js/core/SettingsManager.js';
 import { SessionManager } from './js/core/SessionManager.js';
 import { NoteManager } from './js/notes/NoteManager.js';
+import { NotePreview } from './js/notes/NotePreview.js';
 import { ChatManager } from './js/core/ChatManager.js';
 
 class AIAssistant {
@@ -63,6 +64,7 @@ class AIAssistant {
         // 初始化NoteManager
         this.noteManager = new NoteManager(this);
         this.noteManager.diffViewer = new DiffViewer(noteEditor);
+        this.noteManager.notePreview = new NotePreview(document.getElementById('notePreview'), this);
 
         // 初始化ChatManager
         this.chatManager = new ChatManager(this);

@@ -122,6 +122,8 @@ gitingest \
 -i /web/index.html \
 -i /web/app.js \
 -i /web/agent/notes/handler.js \
+-i /web/js/notes/NoteManager.js \
+-i /web/js/core/SessionManager.js \
 -i /web/js/diff/DiffViewer.js \
 -i /web/shortcuts.js \
 -i /web/js/core/UIManager.js \
