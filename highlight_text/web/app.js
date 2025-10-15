@@ -1,4 +1,3 @@
-import { DiffViewer } from './js/diff/DiffViewer.js';
 import { escapeHtml, unescapeUnicodeChars } from './js/utils/helpers.js';
 import { UIManager } from './js/core/UIManager.js';
 import { SettingsManager } from './js/core/SettingsManager.js';
@@ -6,6 +5,8 @@ import { SessionManager } from './js/core/SessionManager.js';
 import { NoteManager } from './js/notes/NoteManager.js';
 import { NotePreview } from './js/notes/NotePreview.js';
 import { ChatManager } from './js/core/ChatManager.js';
+import { StreamingDiffService } from './js/services/StreamingDiffService.js';
+import { LLMService } from './js/services/LLMService.js';
 
 class AIAssistant {
     constructor() {
@@ -63,13 +64,17 @@ class AIAssistant {
 
         // 初始化NoteManager
         this.noteManager = new NoteManager(this);
-        this.noteManager.diffViewer = new DiffViewer(noteEditor);
         this.noteManager.notePreview = new NotePreview(document.getElementById('notePreview'), this);
+        this.noteManager.streamingDiffService = new StreamingDiffService(noteEditor, this);
 
         // 初始化ChatManager
         this.chatManager = new ChatManager(this);
 
+        // 初始化LLMService
+        this.llmService = new LLMService(this.settings);
+
         this.bindEvents();
+        this.noteManager.bindEditorEvents(); // 绑定编辑器相关事件
         this.uiManager.loadThemePreference();
         this.checkUrlParams();
         this.loadSessions();
@@ -977,302 +982,6 @@ class AIAssistant {
         document.getElementById('chatContainer').addEventListener('scroll', () => {
             this.uiManager.hideTooltip();
         });
-
-        // ====== 知识库相关事件 ======
-
-        // 返回聊天按钮
-        const backToChatBtn = document.getElementById('backToChatBtn');
-        if (backToChatBtn) {
-            backToChatBtn.addEventListener('click', () => {
-                this.noteManager.switchToChatMode();
-            });
-        }
-
-        // 保存笔记按钮
-        const saveNoteBtn = document.getElementById('saveNoteBtn');
-        if (saveNoteBtn) {
-            saveNoteBtn.addEventListener('click', () => {
-                this.noteManager.saveActiveNote();
-            });
-        }
-
-        // 全部回退按钮
-        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
-        if (rejectAllChangesBtn) {
-            rejectAllChangesBtn.addEventListener('click', () => {
-                this.noteManager.rejectAllChanges();
-            });
-        }
-
-        // 完成审查按钮
-        const finishDiffReviewBtn = document.getElementById('finishDiffReviewBtn');
-        if (finishDiffReviewBtn) {
-            finishDiffReviewBtn.addEventListener('click', () => {
-                this.noteManager.finishDiffReview();
-            });
-        }
-
-        // 新建笔记按钮
-        const newNoteBtn = document.getElementById('newNoteBtn');
-        if (newNoteBtn) {
-            newNoteBtn.addEventListener('click', () => {
-                this.noteManager.createNewNote();
-            });
-        }
-
-        // 新建文件夹按钮
-        const newFolderBtn = document.getElementById('newFolderBtn');
-        if (newFolderBtn) {
-            newFolderBtn.addEventListener('click', () => {
-                this.noteManager.createNewFolder();
-            });
-        }
-
-        // 知识库抽屉折叠/展开按钮
-        const toggleKnowledgeDrawerBtn = document.getElementById('toggleKnowledgeDrawerBtn');
-        if (toggleKnowledgeDrawerBtn) {
-            toggleKnowledgeDrawerBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // 阻止事件冒泡
-                this.uiManager.toggleKnowledgeDrawer();
-            });
-        }
-
-        const expandKnowledgeDrawerBtn = document.getElementById('expandKnowledgeDrawerBtn');
-        if (expandKnowledgeDrawerBtn) {
-            expandKnowledgeDrawerBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // 阻止事件冒泡
-                this.uiManager.toggleKnowledgeDrawer();
-            });
-        }
-
-        // Copilot输入框事件
-        const copilotInput = document.getElementById('copilotInput');
-        const copilotSendBtn = document.getElementById('copilotSendBtn');
-
-        if (copilotSendBtn) {
-            copilotSendBtn.addEventListener('click', () => {
-                this.noteManager.sendCopilotMessage();
-            });
-        }
-
-        if (copilotInput) {
-            copilotInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    this.noteManager.sendCopilotMessage();
-                }
-            });
-        }
-
-        // 笔记搜索
-        const noteSearch = document.getElementById('noteSearch');
-        if (noteSearch) {
-            noteSearch.addEventListener('input', (e) => {
-                // TODO: 实现笔记搜索
-            });
-        }
-
-        // 切换预览按钮
-        const togglePreviewBtn = document.getElementById('togglePreviewBtn');
-        if (togglePreviewBtn) {
-            togglePreviewBtn.addEventListener('click', () => {
-                this.noteManager.toggleEditorPreview();
-            });
-        }
-
-        // Diff视图关闭按钮
-        const closeDiffViewBtn = document.getElementById('closeDiffViewBtn');
-        if (closeDiffViewBtn) {
-            closeDiffViewBtn.addEventListener('click', () => {
-                this.noteManager.closeDiffView();
-            });
-        }
-
-        // Diff视图取消按钮
-        const cancelDiffBtn = document.getElementById('cancelDiffBtn');
-        if (cancelDiffBtn) {
-            cancelDiffBtn.addEventListener('click', () => {
-                this.noteManager.closeDiffView();
-            });
-        }
-
-        // Diff视图确认保存按钮
-        const confirmSaveBtn = document.getElementById('confirmSaveBtn');
-        if (confirmSaveBtn) {
-            confirmSaveBtn.addEventListener('click', () => {
-                this.confirmDiffSave();
-            });
-        }
-
-        // 笔记列表右键菜单事件
-        const notesList = document.getElementById('notesList');
-        if (notesList) {
-            notesList.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                this.noteManager.showContextMenu(e);
-            });
-
-            // 笔记列表拖拽放置事件（用于移动到根目录）
-            notesList.addEventListener('dragover', (e) => {
-                // 检查是否在空白区域（不在任何文件夹或文件节点上）
-                const targetFolder = e.target.closest('.folder-node');
-                const targetFile = e.target.closest('.file-node');
-
-                if (!targetFolder && !targetFile) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    notesList.style.backgroundColor = 'rgba(139, 92, 246, 0.1)';
-                }
-            });
-
-            notesList.addEventListener('dragleave', (e) => {
-                notesList.style.backgroundColor = '';
-            });
-
-            notesList.addEventListener('drop', (e) => {
-                // 检查是否在空白区域
-                const targetFolder = e.target.closest('.folder-node');
-                const targetFile = e.target.closest('.file-node');
-
-                if (!targetFolder && !targetFile) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    notesList.style.backgroundColor = '';
-
-                    const sourcePath = e.dataTransfer.getData('text/plain');
-                    if (sourcePath) {
-                        // 移动到根目录（空字符串表示根目录）
-                        this.noteManager.moveNoteOrFolder(sourcePath, '');
-                    }
-                }
-            });
-        }
-
-        // 编辑器输入事件 - 实时更新预览 + 自动保存
-        const noteEditor = document.getElementById('noteEditor');
-        if (noteEditor) {
-            noteEditor.addEventListener('input', () => {
-                // 实时更新预览（防抖500ms）
-                if (this.noteManager.isEditorPreview) {
-                    clearTimeout(this.noteManager.previewDebounceTimeout);
-                    this.noteManager.previewDebounceTimeout = setTimeout(() => {
-                        this.noteManager.updateEditorPreview();
-                    }, 500);
-                }
-
-                // 自动保存（防抖5秒）
-                clearTimeout(this.noteManager.autoSaveTimeout);
-                this.noteManager.autoSaveTimeout = setTimeout(() => {
-                    this.noteManager.saveActiveNote();
-                }, 5000);
-            });
-
-            // 编辑器拖拽上传图片事件
-            noteEditor.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                noteEditor.classList.add('drag-over');
-            });
-
-            noteEditor.addEventListener('dragleave', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                noteEditor.classList.remove('drag-over');
-            });
-
-            noteEditor.addEventListener('drop', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                noteEditor.classList.remove('drag-over');
-                this.noteManager.handleEditorImageDrop(e);
-            });
-
-            // 编辑器右键划词功能
-            noteEditor.addEventListener('contextmenu', (e) => {
-                // 对于textarea，使用selectionStart和selectionEnd获取选中文本
-                const textarea = e.target;
-                const start = textarea.selectionStart;
-                const end = textarea.selectionEnd;
-                const selectedText = textarea.value.substring(start, end).trim();
-
-                if (selectedText && selectedText.length > 0) {
-                    e.preventDefault(); // 阻止默认右键菜单
-                    this.handleEditorContextMenu(e, selectedText);
-                }
-            });
-
-            // 编辑器粘贴事件 - 支持粘贴图片
-            noteEditor.addEventListener('paste', (e) => {
-                this.noteManager.handleEditorPaste(e);
-            });
-        }
-
-        // Wiki链接和标签点击事件委托
-        document.addEventListener('click', (e) => {
-            // Wiki链接点击
-            const wikiLink = e.target.closest('.internal-link');
-            if (wikiLink) {
-                e.preventDefault();
-                const noteId = wikiLink.getAttribute('data-note-id');
-                if (noteId) {
-                    this.noteManager.handleWikiLinkClick(noteId);
-                }
-                return;
-            }
-
-            // 标签点击
-            const tagLink = e.target.closest('.tag-link');
-            if (tagLink) {
-                e.preventDefault();
-                const tag = tagLink.getAttribute('data-tag');
-                if (tag) {
-                    this.noteManager.handleTagClick(tag);
-                }
-                return;
-            }
-        });
-
-        // notePreview右键菜单 - 支持图片缩放
-        const notePreview = document.getElementById('notePreview');
-        if (notePreview) {
-            notePreview.addEventListener('contextmenu', (e) => {
-                this.handlePreviewContextMenu(e);
-            });
-        }
-
-        // Copilot输入区域拖拽事件
-        const copilotInputArea = document.getElementById('copilotInputArea');
-        if (copilotInputArea) {
-            copilotInputArea.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                copilotInputArea.style.backgroundColor = 'rgba(139, 92, 246, 0.2)';
-            });
-
-            copilotInputArea.addEventListener('dragleave', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                copilotInputArea.style.backgroundColor = '';
-            });
-
-            copilotInputArea.addEventListener('drop', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                copilotInputArea.style.backgroundColor = '';
-
-                const filePath = e.dataTransfer.getData('text/plain');
-                const itemType = e.dataTransfer.getData('item-type');
-                const noteId = e.dataTransfer.getData('note-id');
-
-                if (itemType === 'file' && (filePath || noteId)) {
-                    // 添加文件到上下文
-                    const actualPath = noteId || filePath.replace(/\.md$/, '');
-                    this.noteManager.addCopilotContextFile(actualPath);
-                } else if (itemType === 'folder' && filePath) {
-                    // TODO: 处理文件夹拖拽
-                }
-            });
-        }
     }
 
     checkUrlParams() {
@@ -1518,53 +1227,6 @@ class AIAssistant {
                 );
             }
         }
-    }
-
-    handleEditorContextMenu(e, selectedText) {
-        if (!this.config || !this.config.commands) return;
-
-        const noteEditor = document.getElementById('noteEditor');
-        const rect = noteEditor.getBoundingClientRect();
-
-        // 显示tooltip
-        this.uiManager.showTooltip(
-            e.clientX,
-            e.clientY - 10,
-            selectedText,
-            noteEditor,
-            this.config.commands,
-            (text, command, element) => this.chatManager.handleFollowup(text, command, element)
-        );
-    }
-
-    handlePreviewContextMenu(e) {
-        const selection = window.getSelection();
-        const selectedText = selection.toString().trim();
-
-        if (selectedText && selectedText.length > 0) {
-            e.preventDefault();
-
-            if (!this.config || !this.config.commands) return;
-
-            const notePreview = document.getElementById('notePreview');
-            const range = selection.getRangeAt(0);
-            const rect = range.getBoundingClientRect();
-
-            // 显示tooltip
-            this.uiManager.showTooltip(
-                rect.left + rect.width / 2,
-                rect.top - 10,
-                selectedText,
-                notePreview,
-                this.config.commands,
-                (text, command, element) => this.chatManager.handleFollowup(text, command, element)
-            );
-        }
-    }
-
-    confirmDiffSave() {
-        // 这个方法应该在 NoteManager 中
-        this.noteManager.finishDiffReview();
     }
 
     get apiSettings() {

@@ -180,40 +180,61 @@ class ChatManager {
                 }
             }
 
+            const requestBody = {
+                model: this.app.settings.model,
+                messages: messagesToSend,
+                stream: true,
+                temperature: this.app.config?.apiSettings?.temperature || 0.7,
+                max_tokens: this.app.config?.apiSettings?.maxTokens || 10000
+            };
+
+            console.log('Sending API request:', {
+                endpoint: this.app.settings.endpoint,
+                model: requestBody.model,
+                messageCount: messagesToSend.length
+            });
+
             const response = await fetch(this.app.settings.endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${this.app.settings.apiKey}`
                 },
-                body: JSON.stringify({
-                    model: this.app.settings.model,
-                    messages: messagesToSend,
-                    stream: true,
-                    temperature: this.app.config?.apiSettings?.temperature || 0.7,
-                    max_tokens: this.app.config?.apiSettings?.maxTokens || 10000
-                })
+                body: JSON.stringify(requestBody)
             });
 
+            console.log('API response status:', response.status, response.statusText);
+
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                const errorText = await response.text();
+                console.error('API error response:', errorText);
+                throw new Error(`HTTP ${response.status}: ${response.statusText}\n${errorText}`);
             }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullResponse = '';
+            let chunkCount = 0;
 
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (done) {
+                    console.log('Stream complete. Total chunks:', chunkCount);
+                    break;
+                }
 
                 const chunk = decoder.decode(value);
+                chunkCount++;
+
                 const lines = chunk.split('\n');
 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         const data = line.slice(6);
-                        if (data === '[DONE]') continue;
+                        if (data === '[DONE]') {
+                            console.log('Received [DONE] signal');
+                            continue;
+                        }
 
                         try {
                             const parsed = JSON.parse(data);
@@ -226,10 +247,13 @@ class ChatManager {
                             }
                         } catch (e) {
                             // Ignore parsing errors for incomplete JSON
+                            console.debug('JSON parse error (may be incomplete):', e.message);
                         }
                     }
                 }
             }
+
+            console.log('Full response received, length:', fullResponse.length);
 
             // 将AI响应添加到当前活动会话
             if (activeSession) {
@@ -253,7 +277,23 @@ class ChatManager {
 
         } catch (error) {
             console.error('API Error:', error);
-            contentElement.innerHTML = `<p class="text-red-400">❌ 请求失败: ${error.message}</p>`;
+            console.error('Error details:', {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
+
+            let errorMessage = error.message;
+            if (error.message.includes('Failed to fetch')) {
+                errorMessage = '网络连接失败，请检查API端点配置和网络连接';
+            } else if (error.message.includes('401')) {
+                errorMessage = 'API密钥无效或已过期，请检查设置';
+            } else if (error.message.includes('429')) {
+                errorMessage = 'API请求频率超限，请稍后再试';
+            }
+
+            contentElement.innerHTML = `<p class="text-red-400">❌ 请求失败: ${errorMessage}</p>`;
+            this.app.uiManager.showNotification(errorMessage, 'error');
         } finally {
             this.isStreaming = false;
             this.toggleSendButton(true);

@@ -37,6 +37,7 @@
     <link rel="stylesheet" href="animations.css">
     <link rel="stylesheet" href="agent/agent.css">
     <link rel="stylesheet" href="agent/notes/knowledge-base.css">
+    <link rel="stylesheet" href="js/diff/inline/inline-diff.css">
     <style>
         .chat-container {
             height: calc(100vh - 140px);
@@ -682,9 +683,12 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
+    <!-- 非模块化脚本需要在app.js（ES模块）之前加载 -->
     <script src="agent/agent.js"></script>
     <script src="agent/notes/handler.js"></script>
     <script src="shortcuts.js"></script>
+
+    <!-- ES 模块 -->
     <script type="module" src="app.js"></script>
 
     <!-- Initialize Lucide Icons -->

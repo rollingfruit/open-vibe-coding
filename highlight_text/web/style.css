@@ -1069,3 +1069,95 @@ code, pre, .code-block {
 }
 
 /* ============================================
+
+/* ============================================
+   Streaming Diff View Styles
+   ============================================ */
+
+#liveDiffContainer {
+    font-family: "JetBrains Mono", "Monaco", "Menlo", "Ubuntu Mono", monospace;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.diff-view {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.original-content,
+.modified-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--container-border);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow: auto;
+    max-height: 70vh;
+}
+
+.original-content h3,
+.modified-content h3 {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--divider-color);
+}
+
+.original-content pre,
+.modified-content pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.6;
+}
+
+/* 光标闪烁动画 */
+.cursor-blink {
+    animation: cursor-blink-animation 1s infinite;
+    color: var(--color-brand-blue);
+    font-weight: bold;
+}
+
+@keyframes cursor-blink-animation {
+    0%, 50% {
+        opacity: 1;
+    }
+    51%, 100% {
+        opacity: 0;
+    }
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+    .diff-view {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 滚动条样式 */
+.original-content::-webkit-scrollbar,
+.modified-content::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.original-content::-webkit-scrollbar-track,
+.modified-content::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+}
+
+.original-content::-webkit-scrollbar-thumb,
+.modified-content::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+}
+
+.original-content::-webkit-scrollbar-thumb:hover,
+.modified-content::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+

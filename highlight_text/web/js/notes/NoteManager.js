@@ -38,8 +38,8 @@ class NoteManager {
         this.activeNoteOriginalContent = null;
         this.contentBeforeLLMUpdate = null;
         this.copilotContextFiles = [];
-        this.diffViewer = null;
         this.notePreview = null; // 将由外部初始化
+        this.streamingDiffService = null; // 将由外部初始化
         this.currentDiffData = null;
     }
 
@@ -963,467 +963,6 @@ tags: []
     }
 
     /**
-     * 准备流式Diff渲染（隐藏编辑器，显示Diff容器）
-     * @param {string} originalContent - 原始内容
-     */
-    async prepareForStreaming(originalContent) {
-
-        const noteEditor = document.getElementById('noteEditor');
-        const notePreview = document.getElementById('notePreview');
-
-        if (!noteEditor) {
-            console.error('编辑器未找到');
-            return;
-        }
-
-        // ✨ 保存原始内容作为Diff基准（如果还没保存的话）
-        if (this.contentBeforeLLMUpdate === null || this.contentBeforeLLMUpdate === undefined) {
-            this.contentBeforeLLMUpdate = originalContent;
-        }
-
-        // 隐藏编辑器和预览
-        noteEditor.classList.add('hidden');
-        if (notePreview) {
-            notePreview.classList.add('hidden');
-        }
-
-        // 查找或创建流式Diff容器
-        let streamingDiffContainer = document.getElementById('streamingDiffContainer');
-        if (!streamingDiffContainer) {
-            streamingDiffContainer = document.createElement('div');
-            streamingDiffContainer.id = 'streamingDiffContainer';
-            streamingDiffContainer.className = noteEditor.className.replace('hidden', ''); // 继承编辑器样式
-            streamingDiffContainer.style.overflowY = 'auto';
-            streamingDiffContainer.style.fontFamily = "'JetBrains Mono', 'Courier New', monospace";
-            streamingDiffContainer.style.fontSize = '13px';
-            noteEditor.parentNode.insertBefore(streamingDiffContainer, noteEditor.nextSibling);
-        }
-
-        streamingDiffContainer.classList.remove('hidden');
-        streamingDiffContainer.innerHTML = '<div class="p-4 text-gray-400">🌊 正在流式生成内容...</div>';
-
-    }
-
-    /**
-     * 完成流式Diff渲染（更新编辑器，隐藏Diff容器）
-     * @param {string} noteId - 笔记ID
-     * @param {string} finalContent - 最终内容
-     * @param {string} originalContent - 原始内容
-     */
-    async finalizeStreaming(noteId, finalContent, originalContent) {
-
-        const noteEditor = document.getElementById('noteEditor');
-        const streamingDiffContainer = document.getElementById('streamingDiffContainer');
-
-        if (!noteEditor) {
-            console.error('编辑器未找到');
-            return;
-        }
-
-        // 更新编辑器内容
-        noteEditor.value = finalContent;
-        this.activeNoteOriginalContent = finalContent;
-
-        // 保存到后端
-        try {
-            const response = await fetch(`http://localhost:8080/api/notes/${noteId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ content: finalContent })
-            });
-
-            if (!response.ok) {
-                throw new Error('保存失败');
-            }
-
-        } catch (error) {
-            console.error('保存失败:', error);
-            this.app.uiManager.showNotification('保存失败: ' + error.message, 'error');
-        }
-
-        // 隐藏Diff容器，显示编辑器
-        if (streamingDiffContainer) {
-            streamingDiffContainer.classList.add('hidden');
-        }
-        noteEditor.classList.remove('hidden');
-
-        // 如果在预览模式，更新预览
-        if (this.isEditorPreview) {
-            this.updateEditorPreview();
-            const notePreview = document.getElementById('notePreview');
-            if (notePreview) {
-                notePreview.classList.remove('hidden');
-            }
-        }
-
-        // 显示回退按钮
-        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
-        if (rejectAllChangesBtn) {
-            rejectAllChangesBtn.classList.remove('hidden');
-        }
-
-        this.app.uiManager.showNotification('内容改写完成', 'success');
-    }
-
-    /**
-     * 直接更新编辑器内容（在 noteEditor 位置内联显示 Diff）
-     * @param {string} noteId - 笔记ID
-     * @param {string} newContent - 新内容
-     * @param {Array} diffData - Diff数据（用于回退功能）
-     */
-    async updateEditorContentDirectly(noteId, newContent, diffData) {
-
-        // 确保在编辑器模式
-        if (this.app.viewMode !== 'editor' || this.activeNoteId !== noteId) {
-            await this.switchToEditorMode(noteId);
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        const noteEditor = document.getElementById('noteEditor');
-        if (!noteEditor) {
-            console.error('❌ 编辑器未找到');
-            return;
-        }
-
-        // ✨ 关键：如果这是 Agent 的第一次修改，保存初始内容
-        if (this.contentBeforeLLMUpdate === null || this.contentBeforeLLMUpdate === undefined) {
-            this.contentBeforeLLMUpdate = noteEditor.value;
-            console.log('📌 保存初始内容作为 Diff 基准', {
-                length: this.contentBeforeLLMUpdate.length
-            });
-        }
-
-        // ✨ 使用 DiffViewer 显示累积 Diff
-        this.diffViewer.show({
-            originalContent: this.contentBeforeLLMUpdate,
-            newContent: newContent,
-            onUpdate: (updatedContent) => {
-                noteEditor.value = updatedContent;
-                this.activeNoteOriginalContent = updatedContent;
-                this.saveActiveNote();
-            },
-            onClose: () => {
-            }
-        });
-
-        // 直接应用更改（不阻塞）
-        noteEditor.value = newContent;
-        this.activeNoteOriginalContent = newContent;
-
-        // 如果在预览模式，更新预览
-        if (this.isEditorPreview) {
-            this.updateEditorPreview();
-        }
-
-        // 显示"全部回退"按钮
-        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
-        if (rejectAllChangesBtn) {
-            rejectAllChangesBtn.classList.remove('hidden');
-        }
-
-        // 隐藏"完成审查"按钮（不再需要）
-        const finishDiffReviewBtn = document.getElementById('finishDiffReviewBtn');
-        if (finishDiffReviewBtn) {
-            finishDiffReviewBtn.classList.add('hidden');
-        }
-
-    }
-
-    /**
-     * 在编辑器位置显示内联 Diff 视图（带手动应用按钮）
-     * @param {HTMLElement} noteEditor - 编辑器元素
-     * @param {Array} diffData - Diff 数据
-     * @param {string} newContent - 新内容
-     * @returns {Promise<boolean>} - 是否应用更改
-     */
-    async showInlineDiffInEditor(noteEditor, diffData, newContent) {
-
-        return new Promise((resolve) => {
-            // 隐藏编辑器
-            noteEditor.classList.add('hidden');
-
-            // 查找或创建内联 Diff 容器
-            let inlineDiffContainer = document.getElementById('inlineDiffContainer');
-            if (!inlineDiffContainer) {
-                inlineDiffContainer = document.createElement('div');
-                inlineDiffContainer.id = 'inlineDiffContainer';
-                inlineDiffContainer.className = noteEditor.className.replace('hidden', '');
-                noteEditor.parentNode.insertBefore(inlineDiffContainer, noteEditor.nextSibling);
-            }
-
-            inlineDiffContainer.classList.remove('hidden');
-            inlineDiffContainer.style.fontFamily = "'JetBrains Mono', 'Courier New', monospace";
-            inlineDiffContainer.style.fontSize = '13px';
-            inlineDiffContainer.style.position = 'relative';
-            inlineDiffContainer.innerHTML = '';
-
-            // 添加顶部操作栏
-            const actionBar = document.createElement('div');
-            actionBar.className = 'sticky top-0 z-10 bg-gray-800 border-b border-gray-700 p-3 flex items-center justify-between';
-            actionBar.innerHTML = `
-                <div class="flex items-center gap-2">
-                    <i data-lucide="git-compare" class="w-5 h-5 text-blue-400"></i>
-                    <span class="text-sm font-semibold text-blue-400">正在查看更改</span>
-                    <span class="text-xs text-gray-400">(${diffData.filter(l => l.type !== 'unchanged').length} 处修改)</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button id="applyDiffBtn" class="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded transition">
-                        <i data-lucide="check" class="w-4 h-4 inline mr-1"></i>
-                        应用更改
-                    </button>
-                    <button id="cancelDiffBtn" class="px-4 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded transition">
-                        <i data-lucide="x" class="w-4 h-4 inline mr-1"></i>
-                        取消
-                    </button>
-                </div>
-            `;
-            inlineDiffContainer.appendChild(actionBar);
-
-            // 创建滚动容器
-            const scrollContainer = document.createElement('div');
-            scrollContainer.className = 'overflow-y-auto';
-            scrollContainer.style.maxHeight = 'calc(100vh - 200px)';
-
-            // 渲染 Diff 内容
-            diffData.forEach(line => {
-                const lineDiv = document.createElement('div');
-                lineDiv.className = 'leading-6 py-1 px-3';
-
-                if (line.type === 'removed') {
-                    lineDiv.classList.add('bg-red-900', 'bg-opacity-20', 'border-l-4', 'border-red-500');
-                    lineDiv.innerHTML = `<span class="text-red-300 line-through opacity-80">${escapeHtml(line.content)}</span>`;
-                } else if (line.type === 'added') {
-                    lineDiv.classList.add('bg-green-900', 'bg-opacity-20', 'border-l-4', 'border-green-500');
-                    lineDiv.innerHTML = `<span class="text-green-300">${escapeHtml(line.content)}</span>`;
-                } else if (line.type === 'modified') {
-                    // 修改的行显示为旧内容（红色）+ 新内容（绿色），并高亮字符级差异
-                    const oldContent = line.oldContent || '';
-                    const newContent = line.content || '';
-
-                    const oldLineDiv = document.createElement('div');
-                    oldLineDiv.className = 'leading-6 py-1 px-3 bg-red-900 bg-opacity-20 border-l-4 border-red-500';
-                    // 使用字符级diff，只显示删除部分
-                    const oldDiff = this.computeInlineDiffWithDeepHighlight(oldContent, newContent, 'old');
-                    oldLineDiv.innerHTML = oldDiff;
-                    scrollContainer.appendChild(oldLineDiv);
-
-                    const newLineDiv = document.createElement('div');
-                    newLineDiv.className = 'leading-6 py-1 px-3 bg-green-900 bg-opacity-20 border-l-4 border-green-500';
-                    // 使用字符级diff，只显示新增部分
-                    const newDiff = this.computeInlineDiffWithDeepHighlight(oldContent, newContent, 'new');
-                    newLineDiv.innerHTML = newDiff;
-                    scrollContainer.appendChild(newLineDiv);
-                    return; // 已经添加了两行，跳过后面的 appendChild
-                } else {
-                    lineDiv.classList.add('bg-gray-800', 'bg-opacity-10');
-                    lineDiv.innerHTML = `<span class="text-gray-300">${escapeHtml(line.content)}</span>`;
-                }
-
-                scrollContainer.appendChild(lineDiv);
-            });
-
-            inlineDiffContainer.appendChild(scrollContainer);
-
-            // 初始化图标
-            if (window.lucide) {
-                lucide.createIcons();
-            }
-
-            // 绑定按钮事件
-            const applyBtn = document.getElementById('applyDiffBtn');
-            const cancelBtn = document.getElementById('cancelDiffBtn');
-
-            const cleanupAndResolve = (shouldApply) => {
-                // 隐藏 Diff 容器，显示编辑器
-                inlineDiffContainer.classList.add('hidden');
-                noteEditor.classList.remove('hidden');
-
-                if (shouldApply) {
-                    // 应用更改
-                    noteEditor.value = newContent;
-                    this.activeNoteOriginalContent = newContent;
-                }
-
-                resolve(shouldApply);
-            };
-
-            applyBtn.addEventListener('click', () => cleanupAndResolve(true));
-            cancelBtn.addEventListener('click', () => cleanupAndResolve(false));
-
-        });
-    }
-
-    /**
-     * 完成diff审查
-     */
-    async finishDiffReview() {
-        this.closeDiffView();
-        this.app.uiManager.showNotification('审查完成', 'success');
-    }
-
-    /**
-     * 全部回退变更
-     */
-    async rejectAllChanges() {
-        if (!confirm('确定要回退所有变更吗？这将恢复到修改前的状态。')) {
-            return;
-        }
-
-
-        // 优先使用保存的修改前内容
-        let originalContent = this.contentBeforeLLMUpdate;
-
-        // 如果没有保存的内容，从diffData中提取原始内容
-        if (!originalContent && this.currentDiffData) {
-            const originalLines = [];
-            this.currentDiffData.forEach(line => {
-                if (line.type === 'removed' || line.type === 'unchanged') {
-                    originalLines.push(line.content);
-                } else if (line.type === 'modified') {
-                    originalLines.push(line.oldContent);
-                }
-                // added类型的行不包含在原始内容中
-            });
-            originalContent = originalLines.join('\n');
-        }
-
-        if (!originalContent) {
-            this.app.uiManager.showNotification('无法找到原始内容', 'error');
-            return;
-        }
-
-        // 保存回后端
-        try {
-            const response = await fetch(`http://localhost:8080/api/notes/${this.activeNoteId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ content: originalContent })
-            });
-
-            if (!response.ok) {
-                throw new Error('回退失败');
-            }
-
-            // 更新编辑器
-            const noteEditor = document.getElementById('noteEditor');
-            if (noteEditor) {
-                noteEditor.value = originalContent;
-                this.activeNoteOriginalContent = originalContent;
-            }
-
-            // 隐藏回退按钮
-            const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
-            if (rejectAllChangesBtn) {
-                rejectAllChangesBtn.classList.add('hidden');
-            }
-
-            // 清除保存的状态
-            this.contentBeforeLLMUpdate = null;
-            this.currentDiffData = null;
-
-            this.app.uiManager.showNotification('已回退所有变更', 'success');
-            this.closeDiffView();
-        } catch (error) {
-            console.error('回退失败:', error);
-            this.app.uiManager.showNotification('回退失败: ' + error.message, 'error');
-        }
-    }
-
-    /**
-     * 关闭Diff视图
-     */
-    closeDiffView() {
-        const noteEditor = document.getElementById('noteEditor');
-        const notePreview = document.getElementById('notePreview');
-        const noteDiffViewer = document.getElementById('noteDiffViewer');
-        const inlineDiffContainer = document.getElementById('inlineDiffContainer');
-
-        // 隐藏旧的diff视图
-        if (noteDiffViewer) noteDiffViewer.classList.add('hidden');
-
-        // 隐藏内联diff容器
-        if (inlineDiffContainer) inlineDiffContainer.classList.add('hidden');
-
-        // 显示编辑器
-        if (noteEditor) noteEditor.classList.remove('hidden');
-
-        // 恢复预览状态
-        if (this.isEditorPreview && notePreview) {
-            notePreview.classList.remove('hidden');
-        }
-
-        // 恢复顶部按钮状态
-        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
-        const finishDiffReviewBtn = document.getElementById('finishDiffReviewBtn');
-        const saveNoteBtn = document.getElementById('saveNoteBtn');
-        const togglePreviewBtn = document.getElementById('togglePreviewBtn');
-
-        if (rejectAllChangesBtn) rejectAllChangesBtn.classList.add('hidden');
-        if (finishDiffReviewBtn) finishDiffReviewBtn.classList.add('hidden');
-        if (saveNoteBtn) saveNoteBtn.classList.remove('hidden');
-        if (togglePreviewBtn) togglePreviewBtn.classList.remove('hidden');
-    }
-
-    /**
-     * 计算字符级diff，使用更深的颜色高亮差异部分
-     * @param {string} oldText - 旧文本
-     * @param {string} newText - 新文本
-     * @param {string} mode - 'old' 显示旧版本（红色行），'new' 显示新版本（绿色行）
-     */
-    computeInlineDiffWithDeepHighlight(oldText, newText, mode = 'new') {
-        // 防御性编程：确保输入不为 null 或 undefined
-        const safeOldText = oldText || '';
-        const safeNewText = newText || '';
-
-        if (typeof diff_match_patch === 'undefined') {
-            console.warn('diff_match_patch未加载，使用简单显示');
-            const text = mode === 'old' ? safeOldText : safeNewText;
-            const color = mode === 'old' ? 'text-red-300' : 'text-green-300';
-            return `<span class="${color}">${escapeHtml(text)}</span>`;
-        }
-
-        const dmp = new diff_match_patch();
-        const diffs = dmp.diff_main(safeOldText, safeNewText);
-        dmp.diff_cleanupSemantic(diffs);
-
-        let html = '';
-
-        if (mode === 'old') {
-            // 红色行：显示旧内容，用深红色背景高亮被删除的字符
-            diffs.forEach(([type, text]) => {
-                const escaped = escapeHtml(text);
-                if (type === -1) {
-                    // 被删除的字符：深红色背景 + 删除线 + 更亮的文字
-                    html += `<span class="line-through" style="background-color: rgba(239, 68, 68, 0.5); color: #fecaca; font-weight: 700; text-shadow: 0 0 1px rgba(254, 202, 202, 0.5);">${escaped}</span>`;
-                } else if (type === 0) {
-                    // 不变的字符：更亮的红色
-                    html += `<span style="color: #fca5a5;">${escaped}</span>`;
-                }
-                // type === 1 (新增) 在旧版本行中不显示
-            });
-        } else {
-            // 绿色行：显示新内容，用深绿色背景高亮新增的字符
-            diffs.forEach(([type, text]) => {
-                const escaped = escapeHtml(text);
-                if (type === 1) {
-                    // 新增的字符：深绿色背景 + 加粗 + 更亮的文字
-                    html += `<span style="background-color: rgba(34, 197, 94, 0.5); color: #bbf7d0; font-weight: 700; text-shadow: 0 0 1px rgba(187, 247, 208, 0.5);">${escaped}</span>`;
-                } else if (type === 0) {
-                    // 不变的字符：更亮的绿色
-                    html += `<span style="color: #86efac;">${escaped}</span>`;
-                }
-                // type === -1 (删除) 在新版本行中不显示
-            });
-        }
-
-        return html;
-    }
-
-    /**
      * 初始化知识库WebSocket连接
      */
     initNotesWebSocket() {
@@ -1456,6 +995,350 @@ tags: []
         };
 
         connectWebSocket();
+    }
+
+    bindEditorEvents() {
+        // 返回聊天按钮
+        const backToChatBtn = document.getElementById('backToChatBtn');
+        if (backToChatBtn) {
+            backToChatBtn.addEventListener('click', () => {
+                this.switchToChatMode();
+            });
+        }
+
+        // 保存笔记按钮
+        const saveNoteBtn = document.getElementById('saveNoteBtn');
+        if (saveNoteBtn) {
+            saveNoteBtn.addEventListener('click', () => {
+                this.saveActiveNote();
+            });
+        }
+
+        // 全部回退按钮
+        const rejectAllChangesBtn = document.getElementById('rejectAllChangesBtn');
+        if (rejectAllChangesBtn) {
+            rejectAllChangesBtn.addEventListener('click', () => {
+                this.rejectAllChanges();
+            });
+        }
+
+        // 完成审查按钮
+        const finishDiffReviewBtn = document.getElementById('finishDiffReviewBtn');
+        if (finishDiffReviewBtn) {
+            finishDiffReviewBtn.addEventListener('click', () => {
+                this.finishDiffReview();
+            });
+        }
+
+        // 新建笔记按钮
+        const newNoteBtn = document.getElementById('newNoteBtn');
+        if (newNoteBtn) {
+            newNoteBtn.addEventListener('click', () => {
+                this.createNewNote();
+            });
+        }
+
+        // 新建文件夹按钮
+        const newFolderBtn = document.getElementById('newFolderBtn');
+        if (newFolderBtn) {
+            newFolderBtn.addEventListener('click', () => {
+                this.createNewFolder();
+            });
+        }
+
+        // 知识库抽屉折叠/展开按钮
+        const toggleKnowledgeDrawerBtn = document.getElementById('toggleKnowledgeDrawerBtn');
+        if (toggleKnowledgeDrawerBtn) {
+            toggleKnowledgeDrawerBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // 阻止事件冒泡
+                this.app.uiManager.toggleKnowledgeDrawer();
+            });
+        }
+
+        const expandKnowledgeDrawerBtn = document.getElementById('expandKnowledgeDrawerBtn');
+        if (expandKnowledgeDrawerBtn) {
+            expandKnowledgeDrawerBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // 阻止事件冒泡
+                this.app.uiManager.toggleKnowledgeDrawer();
+            });
+        }
+
+        // Copilot输入框事件
+        const copilotInput = document.getElementById('copilotInput');
+        const copilotSendBtn = document.getElementById('copilotSendBtn');
+
+        if (copilotSendBtn) {
+            copilotSendBtn.addEventListener('click', () => {
+                this.sendCopilotMessage();
+            });
+        }
+
+        if (copilotInput) {
+            copilotInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.sendCopilotMessage();
+                }
+            });
+        }
+
+        // 笔记搜索
+        const noteSearch = document.getElementById('noteSearch');
+        if (noteSearch) {
+            noteSearch.addEventListener('input', (e) => {
+                // TODO: 实现笔记搜索
+            });
+        }
+
+        // 切换预览按钮
+        const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+        if (togglePreviewBtn) {
+            togglePreviewBtn.addEventListener('click', () => {
+                this.toggleEditorPreview();
+            });
+        }
+
+        // Diff视图关闭按钮
+        const closeDiffViewBtn = document.getElementById('closeDiffViewBtn');
+        if (closeDiffViewBtn) {
+            closeDiffViewBtn.addEventListener('click', () => {
+                this.closeDiffView();
+            });
+        }
+
+        // Diff视图取消按钮
+        const cancelDiffBtn = document.getElementById('cancelDiffBtn');
+        if (cancelDiffBtn) {
+            cancelDiffBtn.addEventListener('click', () => {
+                this.closeDiffView();
+            });
+        }
+
+        // Diff视图确认保存按钮
+        const confirmSaveBtn = document.getElementById('confirmSaveBtn');
+        if (confirmSaveBtn) {
+            confirmSaveBtn.addEventListener('click', () => {
+                this.finishDiffReview();
+            });
+        }
+
+        // 笔记列表右键菜单事件
+        const notesList = document.getElementById('notesList');
+        if (notesList) {
+            notesList.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                this.showContextMenu(e);
+            });
+
+            // 笔记列表拖拽放置事件（用于移动到根目录）
+            notesList.addEventListener('dragover', (e) => {
+                const targetFolder = e.target.closest('.folder-node');
+                const targetFile = e.target.closest('.file-node');
+
+                if (!targetFolder && !targetFile) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    notesList.style.backgroundColor = 'rgba(139, 92, 246, 0.1)';
+                }
+            });
+
+            notesList.addEventListener('dragleave', (e) => {
+                notesList.style.backgroundColor = '';
+            });
+
+            notesList.addEventListener('drop', (e) => {
+                const targetFolder = e.target.closest('.folder-node');
+                const targetFile = e.target.closest('.file-node');
+
+                if (!targetFolder && !targetFile) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    notesList.style.backgroundColor = '';
+
+                    const sourcePath = e.dataTransfer.getData('text/plain');
+                    if (sourcePath) {
+                        this.moveNoteOrFolder(sourcePath, '');
+                    }
+                }
+            });
+        }
+
+        // 编辑器输入事件 - 实时更新预览 + 自动保存
+        const noteEditor = document.getElementById('noteEditor');
+        if (noteEditor) {
+            noteEditor.addEventListener('input', () => {
+                if (this.isEditorPreview) {
+                    clearTimeout(this.previewDebounceTimeout);
+                    this.previewDebounceTimeout = setTimeout(() => {
+                        this.updateEditorPreview();
+                    }, 500);
+                }
+
+                clearTimeout(this.autoSaveTimeout);
+                this.autoSaveTimeout = setTimeout(() => {
+                    this.saveActiveNote();
+                }, 5000);
+            });
+
+            // 编辑器拖拽上传图片事件
+            noteEditor.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                noteEditor.classList.add('drag-over');
+            });
+
+            noteEditor.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                noteEditor.classList.remove('drag-over');
+            });
+
+            noteEditor.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                noteEditor.classList.remove('drag-over');
+                this.handleEditorImageDrop(e);
+            });
+
+            // 编辑器右键划词功能
+            noteEditor.addEventListener('contextmenu', (e) => {
+                const textarea = e.target;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const selectedText = textarea.value.substring(start, end).trim();
+
+                if (selectedText && selectedText.length > 0) {
+                    e.preventDefault(); // 阻止默认右键菜单
+                    this.handleEditorContextMenu(e, selectedText);
+                }
+            });
+
+            // 编辑器粘贴事件 - 支持粘贴图片
+            noteEditor.addEventListener('paste', (e) => {
+                this.handleEditorPaste(e);
+            });
+        }
+
+        // Wiki链接和标签点击事件委托
+        document.addEventListener('click', (e) => {
+            const wikiLink = e.target.closest('.internal-link');
+            if (wikiLink) {
+                e.preventDefault();
+                const noteId = wikiLink.getAttribute('data-note-id');
+                if (noteId) {
+                    this.handleWikiLinkClick(noteId);
+                }
+                return;
+            }
+
+            const tagLink = e.target.closest('.tag-link');
+            if (tagLink) {
+                e.preventDefault();
+                const tag = tagLink.getAttribute('data-tag');
+                if (tag) {
+                    this.handleTagClick(tag);
+                }
+                return;
+            }
+        });
+
+        // notePreview右键菜单 - 支持图片缩放
+        const notePreview = document.getElementById('notePreview');
+        if (notePreview) {
+            notePreview.addEventListener('contextmenu', (e) => {
+                this.handlePreviewContextMenu(e);
+            });
+        }
+
+        // Copilot输入区域拖拽事件
+        const copilotInputArea = document.getElementById('copilotInputArea');
+        if (copilotInputArea) {
+            copilotInputArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                copilotInputArea.style.backgroundColor = 'rgba(139, 92, 246, 0.2)';
+            });
+
+            copilotInputArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                copilotInputArea.style.backgroundColor = '';
+            });
+
+            copilotInputArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                copilotInputArea.style.backgroundColor = '';
+
+                const filePath = e.dataTransfer.getData('text/plain');
+                const itemType = e.dataTransfer.getData('item-type');
+                const noteId = e.dataTransfer.getData('note-id');
+
+                if (itemType === 'file' && (filePath || noteId)) {
+                    const actualPath = noteId || filePath.replace(/\.md$/, '');
+                    this.addCopilotContextFile(actualPath);
+                } else if (itemType === 'folder' && filePath) {
+                    // TODO: 处理文件夹拖拽
+                }
+            });
+        }
+    }
+
+    handleEditorContextMenu(e, selectedText) {
+        e.preventDefault();
+
+        this.app.uiManager.showInstructionPrompt((instruction) => {
+            if (instruction && this.streamingDiffService) {
+                const textarea = this.editorInstance;
+                const fullText = textarea.value;
+                const selectionStart = textarea.selectionStart;
+                const selectionEnd = textarea.selectionEnd;
+
+                // Find the start of the line for selectionStart
+                let lineStart = fullText.lastIndexOf('\n', selectionStart - 1) + 1;
+
+                // Find the end of the line for selectionEnd
+                let lineEnd = fullText.indexOf('\n', selectionEnd);
+                if (lineEnd === -1) {
+                    lineEnd = fullText.length;
+                }
+
+                const selectedLinesText = fullText.substring(lineStart, lineEnd);
+
+                // 传递完整上下文到 StreamingDiffService
+                this.streamingDiffService.startModification(
+                    instruction,
+                    selectedLinesText,
+                    fullText,
+                    lineStart,
+                    lineEnd
+                );
+            }
+        });
+    }
+
+    handlePreviewContextMenu(e) {
+        const selection = window.getSelection();
+        const selectedText = selection.toString().trim();
+
+        if (selectedText && selectedText.length > 0) {
+            e.preventDefault();
+
+            if (!this.app.config || !this.app.config.commands) return;
+
+            const notePreview = document.getElementById('notePreview');
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+
+            this.app.uiManager.showTooltip(
+                rect.left + rect.width / 2,
+                rect.top - 10,
+                selectedText,
+                notePreview,
+                this.app.config.commands,
+                (text, command, element) => this.app.chatManager.handleFollowup(text, command, element)
+            );
+        }
     }
 }
 

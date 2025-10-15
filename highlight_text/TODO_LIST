@@ -1,7 +1,4 @@
 
-git diff --cached --name-only   
-
-
 总共的（只排除css）
 gitingest  \
 -e vision_api/ \
@@ -129,9 +126,35 @@ gitingest \
 -i /web/js/core/UIManager.js \
 -i /web/js/core/SettingsManager.js \
 -i /web/js/utils/helpers.js \
+-i /web/js/services/LLMService.js \
+-i /web/js/services/StreamingDiffService.js \
+-i /web/js/core/ChatManager.js \
 -i /web/config.json \
 .
 ```
+
+
+不需要agent：
+gitingest \
+-i /main.go \
+-i /web/index.html \
+-i /web/app.js \
+-i /web/js/notes/NoteManager.js \
+-i /web/js/core/SessionManager.js \
+-i /web/js/diff/DiffViewer.js \
+-i /web/shortcuts.js \
+-i /web/js/core/UIManager.js \
+-i /web/js/core/SettingsManager.js \
+-i /web/js/utils/helpers.js \
+-i /web/js/services/LLMService.js \
+-i /web/js/services/StreamingDiffService.js \
+-i /web/js/core/ChatManager.js \
+-i /web/config.json \
+-i /web/css/diff-view.css \
+-i /web/style.css \
+-i /web/agent/notes/handler.js \
+.
+
 
 #### 包含文件分析:
 *   **后端核心**: `/main.go`, `/agent/tools/notes/executor.go` (应用主服务和知识库工具的后端实现)
@@ -159,3 +182,31 @@ gitingest  \
 
 
 
+
+gitingest  \
+-e vision_api/ \
+-e knows/ \
+-e tools/ \
+-e tree.txt \
+-e digest.txt \
+-e Document/ \
+-e aico/ \
+-e genImg/ \
+-e "*.entitlements" \
+-e "*.xcworkspace" \
+-e "*.xcodeproj" \
+-e TODO \
+-e .claude/ \
+-e docs/ \
+-e run.sh \
+-e launch.bat \
+-e dev.md \
+-e ai-helper-web \
+-e uploads/ \
+-e logs/ \
+-e interactions.log.json \
+-e quicksort.html \
+-e web/style.css \
+-e web/theme.css \
+-e web/index.html \
+.

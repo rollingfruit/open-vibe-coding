@@ -1199,7 +1199,12 @@ ${originalContent}
     }
 }
 
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
+// 在浏览器环境中，将 KnowledgeAgentHandler 导出到全局对象
+if (typeof window !== 'undefined') {
+    window.KnowledgeAgentHandler = KnowledgeAgentHandler;
+}
+
+// Node.js 环境的导出（如果需要）
+if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
     module.exports = KnowledgeAgentHandler;
 }

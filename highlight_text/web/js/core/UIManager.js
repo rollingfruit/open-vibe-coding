@@ -760,4 +760,63 @@ export class UIManager {
         if (chatContainer) chatContainer.classList.add('hidden');
         if (editorContainer) editorContainer.classList.remove('hidden');
     }
+
+    /**
+     * Shows a modal for the user to enter an instruction.
+     * @param {function(string): void} callback - Called with the instruction when the user confirms.
+     */
+    showInstructionPrompt(callback) {
+        // Remove any existing prompt
+        const existingPrompt = document.getElementById('instruction-prompt-modal');
+        if (existingPrompt) {
+            existingPrompt.remove();
+        }
+
+        const modal = document.createElement('div');
+        modal.id = 'instruction-prompt-modal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-gray-800 rounded-lg p-6 shadow-xl w-full max-w-md">
+                <h3 class="text-lg font-bold mb-4 text-white">修改指令</h3>
+                <p class="text-sm text-gray-400 mb-2">请输入你想要如何修改选中内容的指令：</p>
+                <textarea id="instruction-input" class="w-full h-24 p-2 bg-gray-900 border border-gray-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-purple-500"></textarea>
+                <div class="flex justify-end gap-4 mt-4">
+                    <button id="cancel-instruction-btn" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-white">取消</button>
+                    <button id="confirm-instruction-btn" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded text-white">确认</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const input = document.getElementById('instruction-input');
+        input.focus();
+
+        const confirmBtn = document.getElementById('confirm-instruction-btn');
+        const cancelBtn = document.getElementById('cancel-instruction-btn');
+        const modalContainer = document.getElementById('instruction-prompt-modal');
+
+        const close = () => modal.remove();
+
+        confirmBtn.addEventListener('click', () => {
+            const instruction = input.value.trim();
+            if (instruction) {
+                callback(instruction);
+            }
+            close();
+        });
+
+        cancelBtn.addEventListener('click', close);
+        modalContainer.addEventListener('click', (e) => {
+            if (e.target === modalContainer) {
+                close();
+            }
+        });
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                confirmBtn.click();
+            }
+        });
+    }
 }

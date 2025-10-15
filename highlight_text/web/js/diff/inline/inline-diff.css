@@ -1,0 +1,442 @@
+/**
+ * inline-diff.css - 内联 Diff 视图专属样式
+ * 让 Diff 视图直接嵌入编辑器原位置
+ */
+
+/* 宿主容器 - 模拟编辑器外观 */
+#inlineDiffHost {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    font-family: "JetBrains Mono", "Monaco", "Menlo", "Ubuntu Mono", monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    tab-size: 4;
+}
+
+/* 上下文内容（未被修改的部分） */
+.inline-diff-context {
+    color: var(--text-primary, #e5e5e5);
+    opacity: 0.7; /* 稍微降低透明度，突出 Diff 区域 */
+    user-select: text;
+    margin: 0;
+    padding: 0;
+}
+
+.inline-diff-before {
+    margin-bottom: 0;
+}
+
+.inline-diff-after {
+    margin-top: 0;
+}
+
+/* Diff 容器 */
+.inline-diff-live-container {
+    margin: 1rem 0;
+    border: 2px solid var(--border-color, #3a3a3a);
+    border-radius: 8px;
+    background: var(--bg-secondary, #252525);
+    overflow: hidden;
+}
+
+/* 加载状态 */
+.inline-diff-loading {
+    padding: 3rem 2rem;
+    text-align: center;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgba(59, 130, 246, 0.2);
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 0.5rem;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-text {
+    display: block;
+    margin-top: 1rem;
+    font-size: 14px;
+    color: #3b82f6;
+}
+
+/* 统一 Diff 视图 */
+.inline-diff-unified {
+    background: var(--bg-primary, #1a1a1a);
+}
+
+/* Diff 头部 */
+.inline-diff-header {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: #ffffff;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.inline-diff-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* 关闭按钮 */
+.inline-diff-close-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.inline-diff-close-btn:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+}
+
+.diff-status-badge {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.diff-status-processing {
+    background: rgba(59, 130, 246, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.diff-status-complete {
+    background: rgba(34, 197, 94, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Diff 内容区域 */
+.inline-diff-content {
+    padding: 0.5rem 0;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--bg-primary, #1a1a1a);
+}
+
+/* 配对包装容器 - 将红绿配对分组 */
+.diff-pair-wrapper {
+    border-bottom: 1px solid var(--border-color, #3a3a3a);
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+}
+
+/* Diff 行 */
+.inline-diff-line {
+    display: flex;
+    align-items: flex-start;
+    min-height: 24px;
+    padding: 2px 1rem;
+    font-family: "JetBrains Mono", "Monaco", "Menlo", "Ubuntu Mono", monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* 行号 */
+.inline-diff-line .line-number {
+    display: inline-block;
+    width: 48px;
+    min-width: 48px;
+    text-align: right;
+    padding-right: 12px;
+    color: #6b7280;
+    user-select: none;
+    flex-shrink: 0;
+    font-size: 11px;
+}
+
+/* Diff 前缀 (-, +, space) */
+.inline-diff-line .diff-prefix {
+    display: inline-block;
+    width: 20px;
+    min-width: 20px;
+    text-align: center;
+    margin-right: 8px;
+    font-weight: 700;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+/* 行内容 */
+.inline-diff-line .line-content {
+    flex: 1;
+    min-width: 0;
+    word-wrap: break-word;
+}
+
+/* 未变化的行 */
+.inline-diff-line-unchanged {
+    background: transparent;
+}
+
+.inline-diff-line-unchanged .line-content {
+    color: #c9d1d9;
+}
+
+.inline-diff-line-unchanged .diff-prefix {
+    color: transparent;
+}
+
+/* 删除的行 */
+.inline-diff-line-removed {
+    background: rgba(239, 68, 68, 0.08);
+    border-left: 3px solid #ef4444;
+}
+
+.inline-diff-line-removed .line-number {
+    color: #f87171;
+    font-weight: 600;
+}
+
+.inline-diff-line-removed .diff-prefix {
+    color: #ef4444;
+}
+
+.inline-diff-line-removed .line-content {
+    color: #1f2937;
+}
+
+/* 新增的行 */
+.inline-diff-line-added {
+    background: rgba(34, 197, 94, 0.08);
+    border-left: 3px solid #22c55e;
+}
+
+.inline-diff-line-added .line-number {
+    color: #4ade80;
+    font-weight: 600;
+}
+
+.inline-diff-line-added .diff-prefix {
+    color: #22c55e;
+}
+
+.inline-diff-line-added .line-content {
+    color: #1f2937;
+}
+
+/* 字符级差异高亮 */
+.char-removed {
+    background-color: rgba(239, 68, 68, 0.4); /* 红色背景 */
+    color: #7f1d1d; /* 深红色文字 */
+    padding: 1px 3px;
+    border-radius: 3px;
+    text-decoration: line-through; /* 删除线 */
+    font-weight: 600;
+}
+
+.char-added {
+    background-color: rgba(34, 197, 94, 0.4); /* 绿色背景 */
+    color: #14532d; /* 深绿色文字 */
+    padding: 1px 3px;
+    border-radius: 3px;
+    font-weight: 600;
+}
+
+/* 操作按钮栏 */
+.inline-diff-actions {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: var(--bg-secondary, #252525);
+    border-top: 1px solid var(--border-color, #3a3a3a);
+}
+
+.inline-diff-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.inline-diff-btn-accept {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
+}
+
+.inline-diff-btn-accept:hover {
+    background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+    transform: translateY(-1px);
+}
+
+.inline-diff-btn-cancel {
+    background: var(--bg-tertiary, #374151);
+    color: var(--text-primary, #e5e5e5);
+}
+
+.inline-diff-btn-cancel:hover {
+    background: #4b5563;
+    transform: translateY(-1px);
+}
+
+/* 可编辑区域样式 */
+.line-content[contenteditable="true"] {
+    cursor: text;
+    outline: none; /* 移除默认的粗边框 */
+    transition: background-color 0.2s, box-shadow 0.2s;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.line-content[contenteditable="true"]:hover {
+    background-color: rgba(255, 255, 255, 0.05); /* 轻微高亮 */
+}
+
+/* 聚焦时显示清晰的边框 */
+.line-content[contenteditable="true"]:focus {
+    background-color: rgba(59, 130, 246, 0.1);
+    box-shadow: inset 0 0 0 2px #3b82f6; /* 使用内阴影作为边框 */
+}
+
+/* 光标闪烁动画 */
+.cursor-blink {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: #3b82f6;
+    margin-left: 2px;
+    animation: cursor-blink-animation 1s infinite;
+}
+
+@keyframes cursor-blink-animation {
+    0%, 49% {
+        opacity: 1;
+    }
+    50%, 100% {
+        opacity: 0;
+    }
+}
+
+/* 深色模式优化 */
+@media (prefers-color-scheme: dark) {
+    #inlineDiffHost {
+        background: #0d1117;
+        color: #c9d1d9;
+    }
+
+    .inline-diff-live-container {
+        background: #161b22;
+        border-color: #30363d;
+    }
+
+    .inline-diff-unified {
+        background: #0d1117;
+    }
+
+    .inline-diff-content {
+        background: #0d1117;
+    }
+
+    .inline-diff-line-unchanged .line-content {
+        color: #c9d1d9;
+    }
+
+    .inline-diff-line-removed {
+        background: rgba(248, 81, 73, 0.12);
+        border-left-color: #da3633;
+    }
+
+    .inline-diff-line-removed .line-content {
+        color: #c9d1d9;
+    }
+
+    .inline-diff-line-added {
+        background: rgba(63, 185, 80, 0.12);
+        border-left-color: #3fb950;
+    }
+
+    .inline-diff-line-added .line-content {
+        color: #c9d1d9;
+    }
+
+    .inline-diff-btn-cancel {
+        background: #21262d;
+    }
+
+    .inline-diff-btn-cancel:hover {
+        background: #30363d;
+    }
+
+    .char-removed {
+        background-color: rgba(248, 81, 73, 0.45);
+        color: #ffdad8;
+    }
+
+    .char-added {
+        background-color: rgba(63, 185, 80, 0.45);
+        color: #d4ffd4;
+    }
+
+    /* 深色模式下的可编辑区域 */
+    .line-content[contenteditable="true"]:hover {
+        background-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .line-content[contenteditable="true"]:focus {
+        background-color: rgba(59, 130, 246, 0.15);
+        box-shadow: inset 0 0 0 2px #3b82f6;
+    }
+
+    .diff-pair-wrapper {
+        border-bottom-color: #30363d;
+    }
+}
+
+/* 滚动条样式 */
+.inline-diff-content::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.inline-diff-content::-webkit-scrollbar-track {
+    background: var(--bg-secondary, #252525);
+}
+
+.inline-diff-content::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 4px;
+}
+
+.inline-diff-content::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}

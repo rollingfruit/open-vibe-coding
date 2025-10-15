@@ -688,7 +688,12 @@ read_file 工具已经整合了多种读取模式，通过不同的可选参数�
     }
 }
 
-// 导出给全局使用
-if (typeof module !== 'undefined' && module.exports) {
+// 在浏览器环境中，将 AgentHandler 导出到全局对象
+if (typeof window !== 'undefined') {
+    window.AgentHandler = AgentHandler;
+}
+
+// Node.js 环境的导出（如果需要）
+if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
     module.exports = AgentHandler;
 }
