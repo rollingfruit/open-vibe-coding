@@ -1,4 +1,5 @@
 import { InlineDiffView } from '../diff/inline/InlineDiffView.js';
+import { convertLinesToSelection } from '../utils/helpers.js';
 
 /**
  * StreamingDiffService - Handles real-time, line-by-line diffing from an LLM stream.
@@ -17,6 +18,49 @@ export class StreamingDiffService {
         this.fullOriginalText = '';
         this.selectionStart = 0;
         this.selectionEnd = 0;
+    }
+
+    /**
+     * 为Agent启动修改流程（基于行号）
+     * Agent调用此方法时,传入行号范围和修改指令,此方法会转换为字符位置并启动InlineDiffView
+     * @param {Object} params - 参数对象
+     * @param {string} params.note_id - 要修改的笔记ID
+     * @param {number} params.start_line - 起始行号（从1开始）
+     * @param {number} params.end_line - 结束行号（包含此行）
+     * @param {string} params.instruction - 给AI的修改指令
+     * @returns {Promise<void>}
+     */
+    async startModificationForAgent({ note_id, start_line, end_line, instruction }) {
+        if (this.isActive) {
+            this.app.uiManager.showNotification('已有修改在处理中', 'warning');
+            throw new Error('已有修改在处理中');
+        }
+
+        const editor = this.editorElement;
+
+        // 验证编辑器是否打开了目标笔记
+        if (!editor || this.app.noteManager.activeNoteId !== note_id) {
+            throw new Error(`目标笔记 ${note_id} 当前未打开`);
+        }
+
+        const fullText = editor.value;
+
+        // 关键步骤:将行号转换成字符位置
+        const selection = convertLinesToSelection(fullText, start_line, end_line);
+        if (!selection) {
+            throw new Error('无效的行号范围');
+        }
+
+        console.log(`[Agent] 启动流式Diff: 笔记=${note_id}, 行=${start_line}-${end_line}, 指令="${instruction}"`);
+
+        // 复用已有的 startModification 方法来启动视图和LLM流
+        await this.startModification(
+            instruction,
+            selection.selectedText,
+            fullText,
+            selection.selectionStart,
+            selection.selectionEnd
+        );
     }
 
     /**

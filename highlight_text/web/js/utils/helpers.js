@@ -38,3 +38,45 @@ export function unescapeUnicodeChars(text) {
             return String.fromCharCode(parseInt(hex, 16));
         });
 }
+
+/**
+ * 将行号范围转换为字符索引位置
+ * 用于Agent工具调用时将基于行号的修改转换为InlineDiffView所需的字符位置
+ * @param {string} text - 完整文本内容
+ * @param {number} startLine - 起始行号（从1开始）
+ * @param {number} endLine - 结束行号（包含此行）
+ * @returns {Object|null} 包含 {selectionStart, selectionEnd, selectedText} 的对象，失败返回null
+ */
+export function convertLinesToSelection(text, startLine, endLine) {
+    const lines = text.split('\n');
+
+    // 验证行号范围
+    if (startLine < 1 || endLine > lines.length || startLine > endLine) {
+        console.error(`Invalid line range: ${startLine}-${endLine} (total lines: ${lines.length})`);
+        return null;
+    }
+
+    // 计算起始字符位置
+    let selectionStart = 0;
+    for (let i = 0; i < startLine - 1; i++) {
+        selectionStart += lines[i].length + 1; // +1 for newline character
+    }
+
+    // 计算结束字符位置
+    let selectionEnd = selectionStart;
+    for (let i = startLine - 1; i < endLine; i++) {
+        selectionEnd += lines[i].length;
+        if (i < endLine - 1) {
+            selectionEnd += 1; // Add newline character for all but the last line in selection
+        }
+    }
+
+    // 提取选中的文本
+    const selectedText = text.substring(selectionStart, selectionEnd);
+
+    return {
+        selectionStart,
+        selectionEnd,
+        selectedText
+    };
+}

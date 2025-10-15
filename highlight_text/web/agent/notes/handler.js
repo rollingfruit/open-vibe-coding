@@ -62,6 +62,35 @@ class KnowledgeAgentHandler {
             const response = await fetch('http://localhost:8080/agent/knowledge/tools');
             const data = await response.json();
             this.availableTools = data.tools;
+
+            // 添加前端专用的交互式修改工具
+            this.availableTools.push({
+                name: 'propose_streaming_changes',
+                description: '【推荐】流式交互式修改工具。当需要修改笔记时使用此工具，它会实时生成并展示Diff预览，用户审查后才会保存。提供最佳的用户体验和控制权。',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        note_id: {
+                            type: 'string',
+                            description: '要修改的笔记ID'
+                        },
+                        start_line: {
+                            type: 'integer',
+                            description: '要修改的起始行号（从1开始）'
+                        },
+                        end_line: {
+                            type: 'integer',
+                            description: '要修改的结束行号（包含此行）。如果要插入内容，可将 start_line 和 end_line 设为同一行'
+                        },
+                        instruction: {
+                            type: 'string',
+                            description: '给AI的明确指令，告诉它如何修改选定的行。例如："将这段代码重构为函数"或"将以下要点扩展为详细段落"'
+                        }
+                    },
+                    required: ['note_id', 'start_line', 'end_line', 'instruction']
+                }
+            });
+
             return this.availableTools;
         } catch (error) {
             console.error('获取知识库工具列表失败:', error);
@@ -133,13 +162,30 @@ class KnowledgeAgentHandler {
 - replace_lines > update_note (仅替换需要修改的行)
 - insert_lines/delete_lines (更精确的内容操作)
 
+**🌟 推荐：使用交互式修改工具 propose_streaming_changes**
+当你需要修改笔记内容时，强烈建议优先使用 \`propose_streaming_changes\` 工具：
+- 提供流式、可视化的Diff预览
+- 用户可以实时审查你的修改意图
+- 在用户确认后才执行最终保存
+- 避免直接写入文件导致的意外修改
+- 提供更好的用户体验和控制权
+
+仅在以下情况使用传统工具（replace_lines等）：
+- propose_streaming_changes 不可用或不适用
+- 用户明确要求直接修改
+- 批量自动化任务
+
 ` : `
 
 **工作模式**：
 - 优先使用 \`search_notes\` 在知识库中查找相关信息（支持 tag:标签名 格式搜索标签）
 - 使用 \`read_note\` 或 \`read_lines\` 获取笔记内容
-- 使用精细化工具修改笔记：\`replace_lines\`, \`insert_lines\`, \`delete_lines\`
-- 避免使用 \`update_note\`（高风险的全文覆写操作）
+- **⚠️ 修改笔记时MUST使用 \`propose_streaming_changes\`！**
+  - 这是强制要求,提供交互式Diff预览
+  - 用户可以实时审查并编辑你的修改
+  - 只有在该工具明确不可用时才使用传统工具
+- 避免直接使用 \`replace_lines\`, \`insert_lines\`, \`delete_lines\`（除非propose_streaming_changes失败）
+- 禁止使用 \`update_note\`（高风险的全文覆写操作）
 
 `;
 
@@ -335,6 +381,31 @@ JSON格式：
             return await this.handleTodoListTool(toolName, args);
         }
 
+        // 🌟 截获流式交互式修改工具
+        if (toolName === 'propose_streaming_changes') {
+            try {
+                console.log('[Agent] 拦截到 propose_streaming_changes 调用:', args);
+
+                // 调用 StreamingDiffService 来处理
+                await this.mainApp.noteManager.streamingDiffService.startModificationForAgent(args);
+
+                // 返回成功的模拟结果，让Agent继续
+                return {
+                    success: true,
+                    output: JSON.stringify({
+                        success: true,
+                        message: '已向用户展示交互式修改视图，等待用户确认。修改将在用户点击"接受"后保存。'
+                    })
+                };
+            } catch (error) {
+                console.error('启动流式修改失败:', error);
+                return {
+                    success: false,
+                    error: error.message
+                };
+            }
+        }
+
         // 检查是否是修改文件的工具
         const modifyTools = ['update_note', 'create_note', 'replace_lines', 'insert_lines', 'delete_lines'];
         if (modifyTools.includes(toolName)) {
@@ -373,45 +444,9 @@ JSON格式：
 
             const result = await response.json();
 
-            // 处理带diff的工具执行结果
-            const diffTools = ['update_note', 'create_note', 'replace_lines', 'insert_lines', 'delete_lines'];
-            console.log('🔍 检查是否为Diff工具:', {
-                isDiffTool: diffTools.includes(toolName),
-                success: result.success,
-                toolName
-            });
-
-            if (result.success && diffTools.includes(toolName)) {
-
-                try {
-                    // 解析返回的JSON结果
-                    const diffResult = JSON.parse(result.output);
-
-                    // 注意：后端返回的字段是 newContent（小写开头）
-                    if (diffResult.newContent !== undefined) {
-
-                        // 先刷新笔记列表（如果是新创建的笔记）
-                        if (toolName === 'create_note') {
-                            await this.mainApp.loadNotes();
-                            // 等待笔记列表更新
-                            await new Promise(resolve => setTimeout(resolve, 200));
-                        }
-
-                        // 直接更新编辑器内容，不显示Diff审查页面
-                        await this.mainApp.noteManager.updateEditorContentDirectly(
-                            diffResult.noteId,
-                            diffResult.newContent,  // 使用小写的 newContent
-                            diffResult.diffData
-                        );
-                    } else {
-                        console.warn('⚠️ 没有新内容数据');
-                    }
-                } catch (parseError) {
-                    console.error('❌ 无法解析diff结果:', parseError);
-                    console.error('原始输出:', result.output);
-                    console.error('错误堆栈:', parseError.stack);
-                }
-            }
+            // ⚠️  传统工具的diff处理已移除
+            // 现在统一使用 propose_streaming_changes 工具进行交互式修改
+            // 如果仍然调用了旧工具，它们会直接执行并返回结果,但不会有UI审查
 
             return result;
         } catch (error) {

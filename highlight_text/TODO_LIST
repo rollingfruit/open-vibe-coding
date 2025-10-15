@@ -58,7 +58,6 @@ gitingest  \
 -e web/style.css \
 -e web/theme.css \
 -e web/agent/agent.css \
--e web/agent/notes/knowledge-base.css \
 -e web/app.js.backup \
 -e web/css/theme.css \
 -e KnowledgeBase/ \
