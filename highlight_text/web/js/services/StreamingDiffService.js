@@ -31,12 +31,38 @@ export class StreamingDiffService {
      * @returns {Promise<void>}
      */
     async startModificationForAgent({ note_id, start_line, end_line, instruction }) {
-        if (this.isActive) {
-            this.app.uiManager.showNotification('已有修改在处理中', 'warning');
-            throw new Error('已有修改在处理中');
-        }
+        // 移除单例限制，允许并发修改
+        // 每个实例独立管理自己的状态
 
         const editor = this.editorElement;
+
+        // 检测是否是创建新文件的操作
+        const isNewFile = start_line === 1 && end_line === 1 && (!editor.value || editor.value.trim() === '');
+
+        if (isNewFile) {
+            console.log(`[Agent] 创建新文件: ${note_id}, 指令="${instruction}"`);
+
+            // 对于新文件，设置空内容作为起点
+            const fullText = '';
+            const selection = {
+                selectedText: '',
+                selectionStart: 0,
+                selectionEnd: 0
+            };
+
+            // 标记这是新文件创建操作
+            this.isNewFileCreation = true;
+            this.newFileNoteId = note_id;
+
+            await this.startModification(
+                instruction,
+                selection.selectedText,
+                fullText,
+                selection.selectionStart,
+                selection.selectionEnd
+            );
+            return;
+        }
 
         // 验证编辑器是否打开了目标笔记
         if (!editor || this.app.noteManager.activeNoteId !== note_id) {
@@ -52,6 +78,10 @@ export class StreamingDiffService {
         }
 
         console.log(`[Agent] 启动流式Diff: 笔记=${note_id}, 行=${start_line}-${end_line}, 指令="${instruction}"`);
+
+        // 重置新文件标记
+        this.isNewFileCreation = false;
+        this.newFileNoteId = null;
 
         // 复用已有的 startModification 方法来启动视图和LLM流
         await this.startModification(
@@ -72,11 +102,7 @@ export class StreamingDiffService {
      * @param {number} selectionEnd - End position of selection in fullText.
      */
     async startModification(instruction, selectedText, fullText, selectionStart, selectionEnd) {
-        if (this.isActive) {
-            this.app.uiManager.showNotification('正在处理中，请稍候', 'warning');
-            return;
-        }
-
+        // 移除单例限制，每个实例独立工作
         this.isActive = true;
         this.originalContent = selectedText;
         this.streamedContent = '';
@@ -123,17 +149,55 @@ export class StreamingDiffService {
      * Finalize the modification by applying the new content
      * @param {string} newFullText - The complete new content
      */
-    finalizeModification(newFullText) {
+    async finalizeModification(newFullText) {
         // 应用完整的内容到编辑器
         this.editorElement.value = newFullText;
 
-        // 保存笔记
-        if (this.app.noteManager && this.app.noteManager.performActualSave) {
-            this.app.noteManager.performActualSave(newFullText);
+        // 如果是新文件创建，需要调用后端API创建文件
+        if (this.isNewFileCreation && this.newFileNoteId) {
+            try {
+                const response = await fetch('http://localhost:8080/agent/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: 'streaming_diff_service',
+                        tool: 'create_note',
+                        args: {
+                            title: this.newFileNoteId,
+                            content: newFullText
+                        },
+                        action: 'execute',
+                        agent_type: 'knowledge'
+                    })
+                });
+
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.error || '创建文件失败');
+                }
+
+                console.log(`[StreamingDiff] 新文件已创建: ${this.newFileNoteId}`);
+                this.app.uiManager.showNotification(`新文件已创建: ${this.newFileNoteId}`, 'success');
+
+                // 在NoteManager中打开新创建的文件
+                if (this.app.noteManager) {
+                    await this.app.noteManager.loadNoteFromServer(this.newFileNoteId);
+                }
+            } catch (error) {
+                console.error('[StreamingDiff] 创建文件失败:', error);
+                this.app.uiManager.showNotification(`创建文件失败: ${error.message}`, 'error');
+                this.cleanup();
+                return;
+            }
+        } else {
+            // 保存现有笔记
+            if (this.app.noteManager && this.app.noteManager.performActualSave) {
+                this.app.noteManager.performActualSave(newFullText);
+            }
+            this.app.uiManager.showNotification('修改已应用并保存', 'success');
         }
 
         this.cleanup();
-        this.app.uiManager.showNotification('修改已应用并保存', 'success');
     }
 
     /**

@@ -61,30 +61,35 @@ class KnowledgeAgentHandler {
         try {
             const response = await fetch('http://localhost:8080/agent/knowledge/tools');
             const data = await response.json();
-            this.availableTools = data.tools;
 
-            // 添加前端专用的交互式修改工具
+            // 过滤掉已弃用的写入工具
+            const deprecatedTools = ['update_note', 'create_note', 'replace_lines', 'insert_lines', 'delete_lines'];
+            this.availableTools = data.tools.filter(tool => !deprecatedTools.includes(tool.name));
+
+            console.log(`[Agent] 已过滤 ${data.tools.length - this.availableTools.length} 个已弃用工具`);
+
+            // 添加前端专用的交互式修改工具（统一所有文件写入操作）
             this.availableTools.push({
                 name: 'propose_streaming_changes',
-                description: '【推荐】流式交互式修改工具。当需要修改笔记时使用此工具，它会实时生成并展示Diff预览，用户审查后才会保存。提供最佳的用户体验和控制权。',
+                description: '【唯一写入工具】流式交互式文件操作工具。用于所有文件的创建、修改、删除操作。实时生成Diff预览，用户审查后才保存。使用方式：1) 创建新文件：note_id为新文件名，start_line=1，end_line=1，instruction描述完整内容；2) 修改现有内容：指定行号范围和修改指令；3) 删除内容：指定行号范围，instruction为"删除这些行"。',
                 parameters: {
                     type: 'object',
                     properties: {
                         note_id: {
                             type: 'string',
-                            description: '要修改的笔记ID'
+                            description: '笔记ID。对于新文件，使用期望的文件名；对于现有文件，使用实际的笔记ID'
                         },
                         start_line: {
                             type: 'integer',
-                            description: '要修改的起始行号（从1开始）'
+                            description: '起始行号（从1开始）。创建新文件时使用1'
                         },
                         end_line: {
                             type: 'integer',
-                            description: '要修改的结束行号（包含此行）。如果要插入内容，可将 start_line 和 end_line 设为同一行'
+                            description: '结束行号（包含此行）。创建新文件时使用1；插入内容时可与start_line相同'
                         },
                         instruction: {
                             type: 'string',
-                            description: '给AI的明确指令，告诉它如何修改选定的行。例如："将这段代码重构为函数"或"将以下要点扩展为详细段落"'
+                            description: '给AI的明确指令。修改时如"重构为函数"；创建时如"创建包含以下内容的新文件：[详细描述]"；删除时如"删除这些行"'
                         }
                     },
                     required: ['note_id', 'start_line', 'end_line', 'instruction']
@@ -121,7 +126,7 @@ class KnowledgeAgentHandler {
 
 1. **第一步：使用 create_todo_list 工具创建任务计划**
    - 将复杂任务分解为清晰的步骤
-   - 例如：["阅读第2段内容和相关参考笔记", "搜索相关数据支撑", "生成新段落", "使用replace_lines替换原内容"]
+   - 例如：["阅读第2段内容和相关参考笔记", "搜索相关数据支撑", "生成新段落", "使用propose_streaming_changes写入修改"]
 
 2. **后续步骤：高效执行，合理更新TODO**
    - 💡 **核心原则**：将多个小操作组合成一个逻辑单元，完成后再更新TODO状态
@@ -132,60 +137,52 @@ class KnowledgeAgentHandler {
 
    - **TODO更新时机（重要）**：
      * 开始一个有实质性产出的任务时：**必须**调用 update_todo_list 标记为 in_progress
-     * 完成该任务的核心产出后（例如执行完 replace_lines）：**必须**调用 update_todo_list 标记为 completed
-     * ⚠️ **强制要求**：每执行一次 replace_lines/insert_lines/delete_lines，必须调用一次 update_todo_list
+     * 完成该任务的核心产出后（例如执行完 propose_streaming_changes）：**必须**调用 update_todo_list 标记为 completed
+     * ⚠️ **强制要求**：每执行一次 propose_streaming_changes，必须调用一次 update_todo_list
      * ℹ️ **提示**：不需要为 read_lines、search_notes 这样的辅助操作单独更新TODO
 
-   - **文件写入要求**：
-     * ✅ 必须立即写入：涉及文件修改的任务，完成后立即使用 replace_lines/insert_lines/delete_lines 写入
-     * ❌ 禁止延迟：不要在内存中积累多个修改，等所有任务完成后才一次性写入
+   - **文件写入方式**：
+     * ✅ 使用 propose_streaming_changes 进行所有文件修改
+     * 创建新文件、修改现有内容、删除内容都使用此工具
+     * 用户会在Diff视图中审查你的修改，接受后才会保存
 
    - **高效流程示例**（重构3个段落）：
      第1轮迭代：
        - 开始任务1：update_todo_list: 任务1（重构段落1）→ in_progress
-       - 执行：read_lines(段落1) → 思考重构方案 → replace_lines(写入新内容)
+       - 执行：read_lines(段落1) → 思考重构方案 → propose_streaming_changes(写入新内容)
        - 完成任务1：update_todo_list: 任务1 → completed
      第2轮迭代：
        - 开始任务2：update_todo_list: 任务2（重构段落2）→ in_progress
-       - 执行：read_lines(段落2) → 思考重构方案 → replace_lines(写入新内容)
+       - 执行：read_lines(段落2) → 思考重构方案 → propose_streaming_changes(写入新内容)
        - 完成任务2：update_todo_list: 任务2 → completed
      ...依此类推
-
-   - **使用精细化工具**：read_lines, replace_lines, insert_lines, delete_lines（而不是update_note）
 
 3. **并行化读取**：
    - 在信息收集阶段，同时发起多个读取操作（read_lines, search_notes）
    - 例如：同时读取目标段落和搜索相关笔记
 
-**精细化工具优先级**：
+**工具使用建议**：
 - read_lines > read_note (精确读取指定行，避免加载整个文件)
-- replace_lines > update_note (仅替换需要修改的行)
-- insert_lines/delete_lines (更精确的内容操作)
-
-**🌟 推荐：使用交互式修改工具 propose_streaming_changes**
-当你需要修改笔记内容时，强烈建议优先使用 \`propose_streaming_changes\` 工具：
-- 提供流式、可视化的Diff预览
-- 用户可以实时审查你的修改意图
-- 在用户确认后才执行最终保存
-- 避免直接写入文件导致的意外修改
-- 提供更好的用户体验和控制权
-
-仅在以下情况使用传统工具（replace_lines等）：
-- propose_streaming_changes 不可用或不适用
-- 用户明确要求直接修改
-- 批量自动化任务
+- 使用 \`propose_streaming_changes\` 进行所有文件写入操作：
+  - 提供流式、可视化的Diff预览
+  - 用户可以实时审查并编辑你的修改
+  - 在用户确认后才执行最终保存
+  - 避免意外修改，提供最佳的用户体验和控制权
+  - 支持创建新文件、修改现有内容、删除内容
+  - 多个文件修改会自动排队，每个文件独立审查
 
 ` : `
 
 **工作模式**：
 - 优先使用 \`search_notes\` 在知识库中查找相关信息（支持 tag:标签名 格式搜索标签）
 - 使用 \`read_note\` 或 \`read_lines\` 获取笔记内容
-- **⚠️ 修改笔记时MUST使用 \`propose_streaming_changes\`！**
-  - 这是强制要求,提供交互式Diff预览
-  - 用户可以实时审查并编辑你的修改
-  - 只有在该工具明确不可用时才使用传统工具
-- 避免直接使用 \`replace_lines\`, \`insert_lines\`, \`delete_lines\`（除非propose_streaming_changes失败）
-- 禁止使用 \`update_note\`（高风险的全文覆写操作）
+- **⚠️ 文件写入操作的唯一工具：\`propose_streaming_changes\`**
+  - 所有文件创建、修改、删除操作都使用此工具
+  - **创建新文件**：设置 start_line=1, end_line=1, instruction中描述完整的文件内容
+  - **修改现有内容**：指定要修改的行号范围，instruction中描述如何修改
+  - **删除内容**：指定行号范围，instruction为"删除这些行"
+  - 提供实时流式Diff预览，用户审查并可编辑后才保存
+  - 多个文件修改会排队执行，每个文件独立显示在标签页中
 
 `;
 
@@ -386,44 +383,36 @@ JSON格式：
             try {
                 console.log('[Agent] 拦截到 propose_streaming_changes 调用:', args);
 
-                // 调用 StreamingDiffService 来处理
-                await this.mainApp.noteManager.streamingDiffService.startModificationForAgent(args);
+                // 使用 MultiFileDiffManager 管理多文件并发修改
+                if (this.mainApp.noteManager.multiFileDiffManager) {
+                    const taskId = await this.mainApp.noteManager.multiFileDiffManager.enqueueTask(args);
 
-                // 返回成功的模拟结果，让Agent继续
-                return {
-                    success: true,
-                    output: JSON.stringify({
+                    return {
                         success: true,
-                        message: '已向用户展示交互式修改视图，等待用户确认。修改将在用户点击"接受"后保存。'
-                    })
-                };
+                        output: JSON.stringify({
+                            success: true,
+                            taskId: taskId,
+                            message: `文件修改已加入队列（任务ID: ${taskId}），将在独立标签页中显示。用户可切换标签查看不同文件的修改。`
+                        })
+                    };
+                } else {
+                    // 降级方案：使用单例 StreamingDiffService
+                    await this.mainApp.noteManager.streamingDiffService.startModificationForAgent(args);
+
+                    return {
+                        success: true,
+                        output: JSON.stringify({
+                            success: true,
+                            message: '已向用户展示交互式修改视图，等待用户确认。修改将在用户点击"接受"后保存。'
+                        })
+                    };
+                }
             } catch (error) {
                 console.error('启动流式修改失败:', error);
                 return {
                     success: false,
                     error: error.message
                 };
-            }
-        }
-
-        // 检查是否是修改文件的工具
-        const modifyTools = ['update_note', 'create_note', 'replace_lines', 'insert_lines', 'delete_lines'];
-        if (modifyTools.includes(toolName)) {
-            // 提取文件夹路径
-            const noteId = args.note_id || args.title || '';
-            const folderPath = noteId.includes('/') ? noteId.substring(0, noteId.lastIndexOf('/')) : '';
-
-            // 检查是否已授权
-            if (!this.mainApp.approvedFolders.has(folderPath)) {
-                // 请求用户授权
-                const approved = await this.mainApp.requestFolderPermission(folderPath);
-                if (!approved) {
-                    // 用户拒绝，返回取消状态
-                    return {
-                        success: false,
-                        error: '用户拒绝修改文件'
-                    };
-                }
             }
         }
 
@@ -1198,7 +1187,7 @@ ${originalContent}
                         });
 
                         // 检查是否需要提醒更新 TODO
-                        const isModifyTool = ['replace_lines', 'insert_lines', 'delete_lines', 'update_note'].includes(parsed.action);
+                        const isModifyTool = parsed.action === 'propose_streaming_changes';
                         const hasTodoList = this.currentTodoList && this.currentTodoList.length > 0;
 
                         let userMessage = `工具执行结果:\n${result.output}`;
