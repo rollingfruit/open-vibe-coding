@@ -76,6 +76,7 @@ class AIAssistant {
         this.bindEvents();
         this.noteManager.bindEditorEvents(); // 绑定编辑器相关事件
         this.uiManager.loadThemePreference();
+        this.uiManager.loadFocusModePreference(); // 加载专注模式偏好设置
         this.checkUrlParams();
         this.loadSessions();
         this.noteManager.loadNotes(); // 加载笔记列表
@@ -875,6 +876,14 @@ class AIAssistant {
         if (this.themeToggleBtn) {
             this.themeToggleBtn.addEventListener('click', () => {
                 this.uiManager.toggleTheme();
+            });
+        }
+
+        // 专注模式按钮事件
+        const focusModeBtn = document.getElementById('focusModeBtn');
+        if (focusModeBtn) {
+            focusModeBtn.addEventListener('click', () => {
+                this.uiManager.toggleFocusMode();
             });
         }
 

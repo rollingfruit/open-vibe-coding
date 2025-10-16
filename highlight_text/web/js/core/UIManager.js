@@ -10,6 +10,7 @@ export class UIManager {
     constructor() {
         this.currentTheme = 'light';
         this.isDrawerCollapsed = false;
+        this.isFocusMode = false;
     }
 
     /**
@@ -738,6 +739,25 @@ export class UIManager {
         if (chatContainer) chatContainer.classList.remove('hidden');
         if (editorContainer) editorContainer.classList.add('hidden');
 
+        // 切换工具栏：显示聊天按钮组，隐藏编辑器按钮组
+        const chatActions = document.getElementById('chatActions');
+        const editorActions = document.getElementById('editorActions');
+
+        if (chatActions) {
+            chatActions.classList.remove('hidden');
+            chatActions.classList.add('flex');
+        }
+        if (editorActions) {
+            editorActions.classList.remove('flex');
+            editorActions.classList.add('hidden');
+        }
+
+        // 更新标题
+        const headerTitle = document.querySelector('header h1 span');
+        if (headerTitle) {
+            headerTitle.textContent = 'AI助手';
+        }
+
         // 清空消息输入框
         const messageInput = document.getElementById('messageInput');
         if (messageInput) {
@@ -747,8 +767,9 @@ export class UIManager {
 
     /**
      * 切换到编辑模式UI
+     * @param {string} noteTitle - 笔记标题（可选）
      */
-    switchToEditorMode() {
+    switchToEditorMode(noteTitle = '') {
         // 切换body类
         document.body.classList.remove('view-mode-chat');
         document.body.classList.add('view-mode-editor');
@@ -759,6 +780,71 @@ export class UIManager {
 
         if (chatContainer) chatContainer.classList.add('hidden');
         if (editorContainer) editorContainer.classList.remove('hidden');
+
+        // 切换工具栏：隐藏聊天按钮组，显示编辑器按钮组
+        const chatActions = document.getElementById('chatActions');
+        const editorActions = document.getElementById('editorActions');
+
+        if (chatActions) {
+            chatActions.classList.remove('flex');
+            chatActions.classList.add('hidden');
+        }
+        if (editorActions) {
+            editorActions.classList.remove('hidden');
+            editorActions.classList.add('flex');
+        }
+
+        // 更新标题为笔记名称
+        const headerTitle = document.querySelector('header h1 span');
+        if (headerTitle && noteTitle) {
+            headerTitle.textContent = noteTitle;
+        }
+    }
+
+    /**
+     * 切换专注模式
+     */
+    toggleFocusMode() {
+        this.isFocusMode = !this.isFocusMode;
+        const app = document.getElementById('app');
+        const focusBtn = document.getElementById('focusModeBtn');
+
+        if (this.isFocusMode) {
+            app.classList.add('focus-mode');
+            if (focusBtn) {
+                focusBtn.classList.add('active');
+                focusBtn.setAttribute('title', '退出专注模式');
+            }
+            this.showNotification('已进入专注模式', 'info');
+        } else {
+            app.classList.remove('focus-mode');
+            if (focusBtn) {
+                focusBtn.classList.remove('active');
+                focusBtn.setAttribute('title', '专注模式');
+            }
+            this.showNotification('已退出专注模式', 'info');
+        }
+
+        // 持久化专注模式状态
+        localStorage.setItem('focusMode', this.isFocusMode);
+    }
+
+    /**
+     * 加载专注模式偏好设置
+     */
+    loadFocusModePreference() {
+        const savedFocusMode = localStorage.getItem('focusMode') === 'true';
+        if (savedFocusMode) {
+            this.isFocusMode = true;
+            const app = document.getElementById('app');
+            const focusBtn = document.getElementById('focusModeBtn');
+
+            if (app) app.classList.add('focus-mode');
+            if (focusBtn) {
+                focusBtn.classList.add('active');
+                focusBtn.setAttribute('title', '退出专注模式');
+            }
+        }
     }
 
     /**

@@ -1,6 +1,7 @@
 /**
  * inline-diff.css - 内联 Diff 视图专属样式
  * 让 Diff 视图直接嵌入编辑器原位置
+ * 使用 CSS 变量系统以确保一致性
  */
 
 /* 宿主容器 - 模拟编辑器外观 */
@@ -20,7 +21,7 @@
 
 /* 上下文内容（未被修改的部分） */
 .inline-diff-context {
-    color: var(--text-primary, #e5e5e5);
+    color: var(--text-primary);
     opacity: 0.7; /* 稍微降低透明度，突出 Diff 区域 */
     user-select: text;
     margin: 0;
@@ -37,11 +38,12 @@
 
 /* Diff 容器 */
 .inline-diff-live-container {
-    margin: 1rem 0;
-    border: 2px solid var(--border-color, #3a3a3a);
-    border-radius: 8px;
-    background: var(--bg-secondary, #252525);
+    margin: var(--spacing-lg) 0;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--bg-secondary);
     overflow: hidden;
+    box-shadow: var(--shadow-lg);
 }
 
 /* 加载状态 */
@@ -209,104 +211,122 @@
 
 /* 删除的行 */
 .inline-diff-line-removed {
-    background: rgba(239, 68, 68, 0.08);
-    border-left: 3px solid #ef4444;
+    background: var(--diff-remove-bg);
+    border-left: 3px solid var(--diff-remove-border);
 }
 
 .inline-diff-line-removed .line-number {
-    color: #f87171;
+    color: var(--diff-remove-text);
     font-weight: 600;
 }
 
 .inline-diff-line-removed .diff-prefix {
-    color: #ef4444;
+    color: var(--diff-remove-border);
 }
 
 .inline-diff-line-removed .line-content {
-    color: #1f2937;
+    color: var(--text-primary);
 }
 
 /* 新增的行 */
 .inline-diff-line-added {
-    background: rgba(34, 197, 94, 0.08);
-    border-left: 3px solid #22c55e;
+    background: var(--diff-add-bg);
+    border-left: 3px solid var(--diff-add-border);
 }
 
 .inline-diff-line-added .line-number {
-    color: #4ade80;
+    color: var(--diff-add-text);
     font-weight: 600;
 }
 
 .inline-diff-line-added .diff-prefix {
-    color: #22c55e;
+    color: var(--diff-add-border);
 }
 
 .inline-diff-line-added .line-content {
-    color: #1f2937;
+    color: var(--text-primary);
 }
 
 /* 字符级差异高亮 */
 .char-removed {
-    background-color: rgba(239, 68, 68, 0.4); /* 红色背景 */
-    color: #7f1d1d; /* 深红色文字 */
+    background-color: var(--diff-char-remove-bg);
+    color: var(--diff-char-remove-text);
     padding: 1px 3px;
-    border-radius: 3px;
-    text-decoration: line-through; /* 删除线 */
+    border-radius: var(--radius-sm);
+    text-decoration: line-through;
     font-weight: 600;
 }
 
 .char-added {
-    background-color: rgba(34, 197, 94, 0.4); /* 绿色背景 */
-    color: #14532d; /* 深绿色文字 */
+    background-color: var(--diff-char-add-bg);
+    color: var(--diff-char-add-text);
     padding: 1px 3px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     font-weight: 600;
 }
 
-/* 操作按钮栏 */
+/* 操作按钮栏 - 固定在底部 */
 .inline-diff-actions {
     display: flex;
     justify-content: center;
-    gap: 1rem;
-    padding: 1.5rem;
-    background: var(--bg-secondary, #252525);
-    border-top: 1px solid var(--border-color, #3a3a3a);
+    align-items: center;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-xl);
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border-color);
+    position: sticky;
+    bottom: 0;
+    z-index: var(--z-sticky);
+    backdrop-filter: blur(10px);
+    background: linear-gradient(to top, var(--bg-tertiary) 0%, rgba(33, 38, 45, 0.95) 100%);
 }
 
 .inline-diff-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md) var(--spacing-xl);
     border: none;
-    border-radius: 6px;
-    font-size: 14px;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
-    font-family: inherit;
+    transition: all var(--transition-base);
+    font-family: var(--font-sans);
+    min-width: 120px;
+    justify-content: center;
 }
 
 .inline-diff-btn-accept {
-    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    background: linear-gradient(135deg, var(--success-color) 0%, var(--success-hover) 100%);
     color: #ffffff;
     box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
 }
 
 .inline-diff-btn-accept:hover {
-    background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+    background: linear-gradient(135deg, var(--success-hover) 0%, #15803d 100%);
     box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
     transform: translateY(-1px);
 }
 
+.inline-diff-btn-accept:active {
+    transform: translateY(0);
+}
+
 .inline-diff-btn-cancel {
-    background: var(--bg-tertiary, #374151);
-    color: var(--text-primary, #e5e5e5);
+    background: var(--bg-overlay);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
 }
 
 .inline-diff-btn-cancel:hover {
-    background: #4b5563;
+    background: var(--bg-elevated);
+    border-color: var(--border-hover);
     transform: translateY(-1px);
+}
+
+.inline-diff-btn-cancel:active {
+    transform: translateY(0);
 }
 
 /* 可编辑区域样式 */
@@ -347,79 +367,9 @@
     }
 }
 
-/* 深色模式优化 */
+/* 深色模式优化 - 现在使用 CSS 变量，无需单独定义 */
 @media (prefers-color-scheme: dark) {
-    #inlineDiffHost {
-        background: #0d1117;
-        color: #c9d1d9;
-    }
-
-    .inline-diff-live-container {
-        background: #161b22;
-        border-color: #30363d;
-    }
-
-    .inline-diff-unified {
-        background: #0d1117;
-    }
-
-    .inline-diff-content {
-        background: #0d1117;
-    }
-
-    .inline-diff-line-unchanged .line-content {
-        color: #c9d1d9;
-    }
-
-    .inline-diff-line-removed {
-        background: rgba(248, 81, 73, 0.12);
-        border-left-color: #da3633;
-    }
-
-    .inline-diff-line-removed .line-content {
-        color: #c9d1d9;
-    }
-
-    .inline-diff-line-added {
-        background: rgba(63, 185, 80, 0.12);
-        border-left-color: #3fb950;
-    }
-
-    .inline-diff-line-added .line-content {
-        color: #c9d1d9;
-    }
-
-    .inline-diff-btn-cancel {
-        background: #21262d;
-    }
-
-    .inline-diff-btn-cancel:hover {
-        background: #30363d;
-    }
-
-    .char-removed {
-        background-color: rgba(248, 81, 73, 0.45);
-        color: #ffdad8;
-    }
-
-    .char-added {
-        background-color: rgba(63, 185, 80, 0.45);
-        color: #d4ffd4;
-    }
-
-    /* 深色模式下的可编辑区域 */
-    .line-content[contenteditable="true"]:hover {
-        background-color: rgba(255, 255, 255, 0.08);
-    }
-
-    .line-content[contenteditable="true"]:focus {
-        background-color: rgba(59, 130, 246, 0.15);
-        box-shadow: inset 0 0 0 2px #3b82f6;
-    }
-
-    .diff-pair-wrapper {
-        border-bottom-color: #30363d;
-    }
+    /* CSS 变量会自动应用深色主题 */
 }
 
 /* 滚动条样式 */

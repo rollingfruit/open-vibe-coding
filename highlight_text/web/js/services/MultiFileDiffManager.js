@@ -412,15 +412,6 @@ export class MultiFileDiffManager {
     }
 
     /**
-     * 显示标签页容器
-     */
-    showTabContainer() {
-        if (this.tabContainer && this.tabContainer.parentElement) {
-            this.tabContainer.parentElement.style.display = 'block';
-        }
-    }
-
-    /**
      * 转义HTML
      */
     escapeHtml(text) {

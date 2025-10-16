@@ -257,8 +257,11 @@ class NoteManager {
         this.app.viewMode = 'editor';
         this.activeNoteId = noteId;
 
-        // UI操作：调用UIManager
-        this.app.uiManager.switchToEditorMode();
+        // 提取笔记标题（用于header显示）
+        const noteTitle = noteId.includes('/') ? noteId.substring(noteId.lastIndexOf('/') + 1) : noteId;
+
+        // UI操作：调用UIManager，传入笔记标题
+        this.app.uiManager.switchToEditorMode(noteTitle);
 
         // 业务逻辑：清空Copilot上下文文件标签，并添加当前文档
         this.copilotContextFiles = [];

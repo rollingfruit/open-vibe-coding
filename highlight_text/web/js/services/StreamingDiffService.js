@@ -37,7 +37,9 @@ export class StreamingDiffService {
         const editor = this.editorElement;
 
         // 检测是否是创建新文件的操作
-        const isNewFile = start_line === 1 && end_line === 1 && (!editor.value || editor.value.trim() === '');
+        // 判断依据：该笔记当前未打开（不是活动笔记）
+        // 注意：不再依赖行号判断，因为 Agent 可能指定任意行号范围
+        const isNewFile = this.app.noteManager.activeNoteId !== note_id;
 
         if (isNewFile) {
             console.log(`[Agent] 创建新文件: ${note_id}, 指令="${instruction}"`);
@@ -64,15 +66,26 @@ export class StreamingDiffService {
             return;
         }
 
-        // 验证编辑器是否打开了目标笔记
-        if (!editor || this.app.noteManager.activeNoteId !== note_id) {
-            throw new Error(`目标笔记 ${note_id} 当前未打开`);
+        // 修改现有笔记（当前已打开的笔记）
+        console.log(`[Agent] 修改现有笔记: ${note_id}, 行=${start_line}-${end_line}`);
+
+        if (!editor) {
+            throw new Error(`编辑器未找到`);
         }
 
         const fullText = editor.value;
 
+        // 自动修正行号范围：如果超出实际行数，使用实际的最大行数
+        const actualLines = fullText.split('\n').length;
+        const adjustedStartLine = Math.min(start_line, actualLines);
+        const adjustedEndLine = Math.min(end_line, actualLines);
+
+        if (adjustedEndLine !== end_line) {
+            console.warn(`[StreamingDiff] 行号超出范围，已自动调整: ${start_line}-${end_line} -> ${adjustedStartLine}-${adjustedEndLine} (实际行数: ${actualLines})`);
+        }
+
         // 关键步骤:将行号转换成字符位置
-        const selection = convertLinesToSelection(fullText, start_line, end_line);
+        const selection = convertLinesToSelection(fullText, adjustedStartLine, adjustedEndLine);
         if (!selection) {
             throw new Error('无效的行号范围');
         }

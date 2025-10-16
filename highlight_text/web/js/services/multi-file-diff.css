@@ -1,24 +1,25 @@
-/* 多文件Diff管理器样式 */
+/* 多文件Diff管理器样式 - 使用 CSS 变量系统 */
 
 .multi-file-diff-wrapper {
     display: flex;
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background: #1e1e1e;
-    border-radius: 8px;
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
     overflow: hidden;
-    margin-bottom: 1rem;
+    margin-bottom: var(--spacing-lg);
+    box-shadow: var(--shadow-lg);
 }
 
 /* 标签页栏 */
 .diff-tab-bar {
     display: flex;
     align-items: center;
-    gap: 4px;
-    background: #252525;
-    border-bottom: 1px solid #3a3a3a;
-    padding: 8px 12px;
+    gap: var(--spacing-sm);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: var(--spacing-sm) var(--spacing-md);
     overflow-x: auto;
     overflow-y: hidden;
     flex-shrink: 0;
@@ -37,36 +38,36 @@
 .diff-tab {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    background: #2a2a2a;
-    border: 1px solid #3a3a3a;
-    border-radius: 6px;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--transition-base);
     white-space: nowrap;
     flex-shrink: 0;
 }
 
 .diff-tab:hover {
-    background: #333333;
-    border-color: #4a4a4a;
+    background: var(--bg-overlay);
+    border-color: var(--border-hover);
 }
 
 .diff-tab.active {
-    background: #3a3a3a;
-    border-color: #6366f1;
-    box-shadow: 0 0 0 1px #6366f1 inset;
+    background: var(--bg-elevated);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 1px var(--primary-color) inset;
 }
 
 .diff-tab-name {
-    font-size: 0.875rem;
-    color: #e0e0e0;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
     font-weight: 500;
 }
 
 .diff-tab.active .diff-tab-name {
-    color: #6366f1;
+    color: var(--primary-color);
 }
 
 .diff-tab-status {
@@ -78,18 +79,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 2px;
+    padding: var(--spacing-xs);
     background: transparent;
     border: none;
-    color: #888;
+    color: var(--text-tertiary);
     cursor: pointer;
-    border-radius: 3px;
-    transition: all 0.2s;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-base);
 }
 
 .diff-tab-close:hover {
-    background: #444;
-    color: #e0e0e0;
+    background: var(--bg-overlay);
+    color: var(--text-primary);
 }
 
 /* 标签页内容区域 */
@@ -109,30 +110,31 @@
 
 /* Diff面板头部 */
 .diff-pane-header {
-    padding: 12px 16px;
-    background: #2a2a2a;
-    border-bottom: 1px solid #3a3a3a;
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
 }
 
 .diff-file-info {
     display: flex;
     align-items: center;
-    gap: 8px;
-    color: #e0e0e0;
-    margin-bottom: 4px;
+    gap: var(--spacing-sm);
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-xs);
 }
 
 .diff-instruction {
-    padding-left: 28px;
+    padding-left: calc(var(--spacing-lg) + 12px);
+    color: var(--text-secondary);
 }
 
 /* Diff内容区域 */
 .diff-content-area {
     flex: 1;
     overflow: auto;
-    padding: 16px;
-    background: #1e1e1e;
+    padding: var(--spacing-lg);
+    background: var(--bg-primary);
 }
 
 /* 克隆的编辑器（隐藏，仅用于StreamingDiffService） */

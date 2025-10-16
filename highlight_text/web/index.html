@@ -31,6 +31,7 @@
     <script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
 
     <!-- Theme System -->
+    <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="style.css">
@@ -38,6 +39,7 @@
     <link rel="stylesheet" href="agent/agent.css">
     <link rel="stylesheet" href="agent/notes/knowledge-base.css">
     <link rel="stylesheet" href="js/diff/inline/inline-diff.css">
+    <link rel="stylesheet" href="js/services/multi-file-diff.css">
     <style>
         .chat-container {
             height: calc(100vh - 140px);
@@ -192,25 +194,29 @@
         <div class="flex-1 flex flex-col">
             <!-- 顶部标题栏 -->
             <header class="bg-gray-800 p-4 border-b border-gray-700">
-                <div class="flex justify-between items-center">
-                    <div class="flex items-center space-x-3">
+                <div class="flex justify-between items-center gap-4">
+                    <!-- 左侧：Logo和标题 -->
+                    <div class="flex items-center gap-3 flex-shrink-0">
                         <button id="toggleDrawerBtn" class="md:hidden px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm">
                             <i data-lucide="menu" class="w-4 h-4"></i>
                         </button>
                         <h1 class="text-xl font-bold flex items-center gap-2">
                             <i data-lucide="bot" class="w-6 h-6"></i>
-                            <span>AI助手</span>
+                            <span class="hidden lg:inline">AI助手</span>
                         </h1>
-                        <span id="currentSessionTitle" class="text-sm text-gray-400"></span>
+                        <span id="currentSessionTitle" class="text-sm text-gray-400 hidden xl:inline"></span>
                     </div>
-                    <div class="flex items-center space-x-2">
-                        <!-- 展开知识库按钮（当知识库折叠时显示） -->
-                        <button id="expandKnowledgeDrawerBtn" class="hidden px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded flex items-center gap-2" title="打开知识库">
+
+                    <!-- 右侧：操作按钮组 -->
+                    <div class="flex items-center gap-2 flex-wrap justify-end">
+                        <!-- 展开知识库按钮 -->
+                        <button id="expandKnowledgeDrawerBtn" class="hidden px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded-md flex items-center gap-2 transition-all" title="打开知识库">
                             <i data-lucide="book-open" class="w-4 h-4"></i>
-                            <span class="text-sm">知识库</span>
+                            <span class="hidden md:inline text-sm">知识库</span>
                         </button>
+
                         <!-- Token用量指示器 -->
-                        <div id="tokenIndicator" class="flex items-center space-x-2">
+                        <div id="tokenIndicator" class="flex items-center gap-2">
                             <div class="relative w-10 h-10">
                                 <svg class="w-10 h-10 transform -rotate-90">
                                     <circle cx="20" cy="20" r="16" stroke="#374151" stroke-width="3" fill="none"></circle>
@@ -221,28 +227,59 @@
                                     <span id="tokenPercentage" class="text-xs font-semibold text-gray-300">0%</span>
                                 </div>
                             </div>
-                            <button id="compressContextBtn" class="hidden px-3 py-1 bg-orange-600 rounded hover:bg-orange-500 text-sm whitespace-nowrap flex items-center gap-1">
+                            <button id="compressContextBtn" class="hidden px-3 py-1 bg-orange-600 rounded-md hover:bg-orange-500 text-sm whitespace-nowrap flex items-center gap-1">
                                 <i data-lucide="package" class="w-4 h-4"></i>
-                                <span>压缩</span>
+                                <span class="hidden md:inline">压缩</span>
                             </button>
                         </div>
-                        <!-- 主题切换按钮 -->
-                        <button id="workspaceBtn" class="px-3 py-1 bg-indigo-600 rounded hover:bg-indigo-500 text-sm flex items-center gap-1 transition-colors" title="工作管理">
-                            <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
-                            <span>工作管理</span>
-                        </button>
-                        <button id="themeToggleBtn" class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm flex items-center gap-1 transition-colors" title="切换主题">
-                            <i data-lucide="sun" id="sunIcon" class="w-4 h-4 hidden"></i>
-                            <i data-lucide="moon" id="moonIcon" class="w-4 h-4"></i>
-                        </button>
-                        <button id="settingsBtn" class="px-3 py-1 bg-gray-700 rounded hover:bg-gray-600 text-sm flex items-center gap-1">
-                            <i data-lucide="settings" class="w-4 h-4"></i>
-                            <span>设置</span>
-                        </button>
-                        <button id="clearBtn" class="px-3 py-1 bg-green-600 rounded hover:bg-green-500 text-sm flex items-center gap-1">
-                            <i data-lucide="plus-circle" class="w-4 h-4"></i>
-                            <span>新建</span>
-                        </button>
+
+                        <!-- 分隔线 -->
+                        <div class="h-6 w-px bg-gray-600 hidden md:block"></div>
+
+                        <!-- 会话操作组（聊天模式显示） -->
+                        <div id="chatActions" class="flex items-center gap-2">
+                            <button id="clearBtn" class="px-3 py-2 bg-green-600 rounded-md hover:bg-green-500 text-sm flex items-center gap-2">
+                                <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                                <span class="hidden md:inline">新建</span>
+                            </button>
+                            <button id="workspaceBtn" class="px-3 py-2 bg-indigo-600 rounded-md hover:bg-indigo-500 text-sm flex items-center gap-2" title="工作管理">
+                                <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                                <span class="hidden lg:inline">工作管理</span>
+                            </button>
+                        </div>
+
+                        <!-- 编辑器操作组（编辑器模式显示） -->
+                        <div id="editorActions" class="hidden items-center gap-2">
+                            <button id="backToChatBtn" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-md text-sm flex items-center gap-2">
+                                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                                <span class="hidden md:inline">返回</span>
+                            </button>
+                            <button id="togglePreviewBtn" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-md text-sm flex items-center gap-2" title="切换预览模式">
+                                <i data-lucide="eye" class="w-4 h-4"></i>
+                                <span class="hidden md:inline">预览</span>
+                            </button>
+                            <button id="saveNoteBtn" class="px-3 py-2 bg-green-600 hover:bg-green-500 rounded-md text-sm flex items-center gap-2">
+                                <i data-lucide="save" class="w-4 h-4"></i>
+                                <span class="hidden md:inline">保存</span>
+                            </button>
+                        </div>
+
+                        <!-- 分隔线 -->
+                        <div class="h-6 w-px bg-gray-600 hidden md:block"></div>
+
+                        <!-- 界面控制组 -->
+                        <div class="flex items-center gap-2">
+                            <button id="focusModeBtn" class="focus-mode-btn p-2 bg-gray-700 rounded-md hover:bg-gray-600 transition-all" title="专注模式">
+                                <i data-lucide="focus" class="w-4 h-4"></i>
+                            </button>
+                            <button id="themeToggleBtn" class="p-2 bg-gray-700 rounded-md hover:bg-gray-600 transition-all" title="切换主题">
+                                <i data-lucide="sun" id="sunIcon" class="w-4 h-4 hidden"></i>
+                                <i data-lucide="moon" id="moonIcon" class="w-4 h-4"></i>
+                            </button>
+                            <button id="settingsBtn" class="p-2 bg-gray-700 rounded-md hover:bg-gray-600 transition-all" title="设置">
+                                <i data-lucide="settings" class="w-4 h-4"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -357,35 +394,6 @@
 
             <!-- 编辑器容器（编辑模式时显示） -->
             <div id="editor-container" class="hidden flex-1 flex flex-col p-4">
-                <div class="flex justify-between items-center mb-4">
-                    <!-- 左侧标题 -->
-                    <h2 id="noteTitle" class="text-lg font-bold"></h2>
-
-                    <!-- 右侧按钮组 -->
-                    <div class="flex items-center gap-2">
-                        <button id="backToChatBtn" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-2">
-                            <i data-lucide="arrow-left" class="w-4 h-4"></i>
-                            <span>返回聊天</span>
-                        </button>
-                        <button id="togglePreviewBtn" class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded flex items-center gap-2" title="切换预览模式">
-                            <i data-lucide="eye" class="w-4 h-4"></i>
-                            <span>预览</span>
-                        </button>
-                        <!-- Diff审查按钮（默认隐藏） -->
-                        <button id="rejectAllChangesBtn" class="hidden px-3 py-2 bg-red-600 hover:bg-red-500 rounded flex items-center gap-2">
-                            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
-                            <span>全部回退</span>
-                        </button>
-                        <button id="finishDiffReviewBtn" class="hidden px-3 py-2 bg-green-600 hover:bg-green-500 rounded flex items-center gap-2">
-                            <i data-lucide="check" class="w-4 h-4"></i>
-                            <span>完成审查</span>
-                        </button>
-                        <button id="saveNoteBtn" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded flex items-center gap-2">
-                            <i data-lucide="save" class="w-4 h-4"></i>
-                            <span>保存</span>
-                        </button>
-                    </div>
-                </div>
                 <!-- 编辑器和预览区域容器 -->
                 <div class="flex-1 flex gap-4 overflow-hidden">
                     <textarea

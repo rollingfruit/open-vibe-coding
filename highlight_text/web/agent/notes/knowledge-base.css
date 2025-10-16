@@ -39,6 +39,19 @@ body.view-mode-editor #sessionDrawer #newSessionBtn {
     display: none !important;
 }
 
+/* 编辑模式 - 隐藏会话节点轴、折叠面板和底部区域 */
+body.view-mode-editor #nodeAxisContainer,
+body.view-mode-editor #sessionDrawer .drawer-footer,
+body.view-mode-editor #sessionDrawer .drawer-collapsed-footer {
+    display: none !important;
+}
+
+/* 编辑模式 - 确保Copilot面板占满左侧空间 */
+body.view-mode-editor #copilotPanel {
+    flex: 1 !important;
+    min-height: 0 !important;
+}
+
 body.view-mode-editor #sessionDrawer {
     width: 350px !important;
 }
