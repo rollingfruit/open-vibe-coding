@@ -64,6 +64,13 @@ var wsClientsMutex sync.Mutex
 var lastKBModTime time.Time
 
 func main() {
+	// 初始化工作空间管理器
+	defaultWorkspace := "./KnowledgeBase"
+	InitWorkspaceManager(defaultWorkspace, func(newPath string) {
+		log.Printf("工作空间已切换至: %s", newPath)
+		broadcastWorkspaceChange(newPath)
+	})
+
 	// API端点必须在静态文件服务器之前注册
 	// API端点：记录交互日志
 	http.HandleFunc("/log", handleLog)
@@ -105,11 +112,22 @@ func main() {
 	// WebSocket端点
 	http.HandleFunc("/ws/notes", handleNotesWebSocket)
 
+	// 工作空间管理API端点
+	http.HandleFunc("/api/workspace", HandleGetWorkspace)
+	http.HandleFunc("/api/workspace/set", HandleSetWorkspace)
+	http.HandleFunc("/api/workspace/browse", HandleBrowseFolder)
+
 	// 静态文件服务：提供uploads目录的访问
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
 
 	// 静态文件服务：提供KnowledgeBase目录的访问（用于图片）
-	http.Handle("/KnowledgeBase/", http.StripPrefix("/KnowledgeBase/", http.FileServer(http.Dir("./KnowledgeBase"))))
+	// 注意：这里仍使用/KnowledgeBase/作为URL路径，但实际映射到动态工作空间
+	http.HandleFunc("/KnowledgeBase/", func(w http.ResponseWriter, r *http.Request) {
+		workspacePath := workspaceManager.GetWorkspacePath()
+		filePath := strings.TrimPrefix(r.URL.Path, "/KnowledgeBase/")
+		fullPath := filepath.Join(workspacePath, filePath)
+		http.ServeFile(w, r, fullPath)
+	})
 
 	// 设置静态文件服务器，指向web目录（必须放在最后）
 	fs := http.FileServer(http.Dir("./web"))
@@ -126,12 +144,14 @@ func main() {
 	}
 
 	// 确保知识库目录存在
-	if err := os.MkdirAll("./KnowledgeBase", 0755); err != nil {
+	workspacePath := workspaceManager.GetWorkspacePath()
+	if err := os.MkdirAll(workspacePath, 0755); err != nil {
 		log.Printf("创建知识库目录失败: %v", err)
 	}
 
 	// 确保任务目录存在
-	if err := os.MkdirAll("./KnowledgeBase/_tasks", 0755); err != nil {
+	tasksPath := filepath.Join(workspacePath, "_tasks")
+	if err := os.MkdirAll(tasksPath, 0755); err != nil {
 		log.Printf("创建任务目录失败: %v", err)
 	}
 
@@ -140,7 +160,7 @@ func main() {
 	fmt.Println("📝 交互日志将保存至: interactions.log.json")
 	fmt.Println("🔍 HTML预览: http://localhost:8080/preview")
 	fmt.Println("📷 图片上传: http://localhost:8080/upload-image")
-	fmt.Println("📚 知识库路径: ./KnowledgeBase")
+	fmt.Printf("📚 知识库路径: %s\n", workspacePath)
 	fmt.Println("🔌 WebSocket: ws://localhost:8080/ws/notes")
 	fmt.Println("⏹️  按 Ctrl+C 停止服务")
 
@@ -511,11 +531,12 @@ func handleNoteImageUpload(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 构建imgs目录路径
+		workspacePath := workspaceManager.GetWorkspacePath()
 		if noteDir != "" {
-			uploadsDir = filepath.Join("./KnowledgeBase", noteDir, "imgs")
+			uploadsDir = filepath.Join(workspacePath, noteDir, "imgs")
 			webPath = fmt.Sprintf("/KnowledgeBase/%s/imgs/%s", noteDir, filename)
 		} else {
-			uploadsDir = "./KnowledgeBase/imgs"
+			uploadsDir = filepath.Join(workspacePath, "imgs")
 			webPath = fmt.Sprintf("/KnowledgeBase/imgs/%s", filename)
 		}
 	} else {
@@ -680,14 +701,15 @@ func handleAgentExecute(w http.ResponseWriter, r *http.Request) {
 
 	if req.AgentType == "knowledge" {
 		// 执行知识库工具
-		knowledgeOutput, err := notes.ExecuteKnowledgeTool(req.Tool, req.Args, "./KnowledgeBase")
+		workspacePath := workspaceManager.GetWorkspacePath()
+		knowledgeOutput, err := notes.ExecuteKnowledgeTool(req.Tool, req.Args, workspacePath)
 		if err != nil {
 			log.Printf("Failed to execute knowledge tool: %v", err)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(AgentResponse{
 				Success: false,
 				Error:   fmt.Sprintf("Failed to execute knowledge tool: %v", err),
-				Cwd:     "./KnowledgeBase",
+				Cwd:     workspacePath,
 			})
 			return
 		}
@@ -698,7 +720,7 @@ func handleAgentExecute(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(AgentResponse{
 			Success: true,
 			Output:  output,
-			Cwd:     "./KnowledgeBase",
+			Cwd:     workspacePath,
 		})
 		return
 	}
@@ -958,7 +980,8 @@ func handleNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := notes.ExecuteKnowledgeTool("list_notes", map[string]interface{}{}, "./KnowledgeBase")
+	workspacePath := workspaceManager.GetWorkspacePath()
+	result, err := notes.ExecuteKnowledgeTool("list_notes", map[string]interface{}{}, workspacePath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -999,7 +1022,8 @@ func handleDeleteNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 调用notes包的删除函数
-	err = notes.DeleteNote(req.Path, req.Type, "./KnowledgeBase")
+	workspacePath := workspaceManager.GetWorkspacePath()
+	err = notes.DeleteNote(req.Path, req.Type, workspacePath)
 	if err != nil {
 		log.Printf("删除失败: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -1051,7 +1075,8 @@ func handleMoveNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 调用notes包的移动函数
-	err = notes.MoveNote(req.Source, req.Destination, "./KnowledgeBase")
+	workspacePath := workspaceManager.GetWorkspacePath()
+	err = notes.MoveNote(req.Source, req.Destination, workspacePath)
 	if err != nil {
 		log.Printf("移动文件失败: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -1099,9 +1124,10 @@ func handleNoteByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
+		workspacePath := workspaceManager.GetWorkspacePath()
 		result, err := notes.ExecuteKnowledgeTool("read_note", map[string]interface{}{
 			"note_id": noteID,
-		}, "./KnowledgeBase")
+		}, workspacePath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -1137,10 +1163,11 @@ func handleNoteByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		workspacePath := workspaceManager.GetWorkspacePath()
 		result, err := notes.ExecuteKnowledgeTool("update_note", map[string]interface{}{
 			"note_id": noteID,
 			"content": req.Content,
-		}, "./KnowledgeBase")
+		}, workspacePath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -1154,7 +1181,8 @@ func handleNoteByID(w http.ResponseWriter, r *http.Request) {
 
 	case "DELETE":
 		// 删除笔记
-		notePath := filepath.Join("./KnowledgeBase", noteID+".md")
+		workspacePath := workspaceManager.GetWorkspacePath()
+		notePath := filepath.Join(workspacePath, noteID+".md")
 		if err := os.Remove(notePath); err != nil {
 			http.Error(w, "Failed to delete note", http.StatusInternalServerError)
 			return
@@ -1192,9 +1220,10 @@ func handleSearchNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	workspacePath := workspaceManager.GetWorkspacePath()
 	result, err := notes.ExecuteKnowledgeTool("search_notes", map[string]interface{}{
 		"query": query,
-	}, "./KnowledgeBase")
+	}, workspacePath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1313,11 +1342,38 @@ func broadcastNotesUpdate() {
 	}
 }
 
+// broadcastWorkspaceChange 广播工作空间变更通知
+func broadcastWorkspaceChange(newPath string) {
+	wsClientsMutex.Lock()
+	defer wsClientsMutex.Unlock()
+
+	message := map[string]string{
+		"type":      "workspace_changed",
+		"workspace": newPath,
+	}
+	messageJSON, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("序列化WebSocket消息失败: %v", err)
+		return
+	}
+
+	// 向所有连接的客户端发送消息
+	for conn := range wsClients {
+		err := conn.WriteMessage(websocket.TextMessage, messageJSON)
+		if err != nil {
+			log.Printf("发送WebSocket消息失败: %v", err)
+			conn.Close()
+			delete(wsClients, conn)
+		}
+	}
+}
+
 // getKBModTime 获取知识库目录的最新修改时间
 func getKBModTime() time.Time {
 	var latestTime time.Time
+	workspacePath := workspaceManager.GetWorkspacePath()
 
-	filepath.Walk("./KnowledgeBase", func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(workspacePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -1403,7 +1459,9 @@ func handleTaskAgentExecute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 执行任务工具
-	result, err := tasks.ExecuteTaskTool(req.Tool, req.Args, "./KnowledgeBase/_tasks")
+	workspacePath := workspaceManager.GetWorkspacePath()
+	tasksPath := filepath.Join(workspacePath, "_tasks")
+	result, err := tasks.ExecuteTaskTool(req.Tool, req.Args, tasksPath)
 	if err != nil {
 		log.Printf("Failed to execute task tool: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -1501,7 +1559,9 @@ func handleTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := tasks.ExecuteTaskTool("list_tasks", map[string]interface{}{}, "./KnowledgeBase/_tasks")
+	workspacePath := workspaceManager.GetWorkspacePath()
+	tasksPath := filepath.Join(workspacePath, "_tasks")
+	result, err := tasks.ExecuteTaskTool("list_tasks", map[string]interface{}{}, tasksPath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

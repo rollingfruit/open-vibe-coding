@@ -576,6 +576,31 @@
                         <div id="knowledgeSettingsPanel" class="settings-panel hidden">
                             <h3 class="text-md font-semibold mb-4">知识库配置</h3>
                             <div class="space-y-4">
+                                <!-- 工作空间配置 -->
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">工作空间路径</label>
+                                    <div class="flex gap-2">
+                                        <input
+                                            type="text"
+                                            id="workspacePathInput"
+                                            readonly
+                                            placeholder="选择工作空间路径..."
+                                            class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                        <button
+                                            id="browseWorkspaceBtn"
+                                            class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm flex items-center gap-2"
+                                        >
+                                            <i data-lucide="folder" class="w-4 h-4"></i>
+                                            <span>浏览</span>
+                                        </button>
+                                    </div>
+                                    <div id="workspaceInfo" class="mt-2 text-xs text-gray-400">
+                                        <!-- 工作空间信息将在这里显示 -->
+                                    </div>
+                                </div>
+
+                                <!-- 图片存储模式 -->
                                 <div>
                                     <label class="block text-sm font-medium mb-2">图片存储模式</label>
                                     <select

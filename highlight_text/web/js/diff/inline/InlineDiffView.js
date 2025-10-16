@@ -29,6 +29,10 @@ export class InlineDiffView {
 
         // 用户编辑追踪
         this.userEdits = new Map();
+
+        // 自动滚动控制
+        this.shouldAutoScroll = true; // 是否启用自动滚动
+        this.lastScrollTop = 0; // 记录上次滚动位置
     }
 
     /**
@@ -121,6 +125,9 @@ export class InlineDiffView {
         setTimeout(() => {
             this.liveDiffContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
+
+        // 监听用户滚动行为
+        this.setupScrollListener();
     }
 
     /**
@@ -130,6 +137,9 @@ export class InlineDiffView {
     update(streamedContent) {
         this.streamedContent = streamedContent;
         this.renderDiff();
+
+        // 流式更新时自动滚动到底部
+        this.autoScrollToBottom();
     }
 
     /**
@@ -500,6 +510,59 @@ export class InlineDiffView {
     }
 
     /**
+     * 设置滚动监听器，检测用户是否主动滚动
+     */
+    setupScrollListener() {
+        if (!this.liveDiffContainer) return;
+
+        // 找到可滚动的内容区域
+        const diffContent = this.liveDiffContainer.querySelector('.inline-diff-content');
+        if (!diffContent) return;
+
+        // 监听滚动事件
+        diffContent.addEventListener('scroll', () => {
+            const scrollTop = diffContent.scrollTop;
+            const scrollHeight = diffContent.scrollHeight;
+            const clientHeight = diffContent.clientHeight;
+
+            // 计算是否接近底部（允许10px的误差）
+            const isNearBottom = scrollHeight - scrollTop - clientHeight < 10;
+
+            // 如果用户向上滚动（远离底部），禁用自动滚动
+            if (scrollTop < this.lastScrollTop && !isNearBottom) {
+                this.shouldAutoScroll = false;
+            }
+
+            // 如果用户滚动到接近底部，重新启用自动滚动
+            if (isNearBottom) {
+                this.shouldAutoScroll = true;
+            }
+
+            this.lastScrollTop = scrollTop;
+        });
+    }
+
+    /**
+     * 自动滚动到底部（仅在启用时）
+     */
+    autoScrollToBottom() {
+        if (!this.shouldAutoScroll || !this.liveDiffContainer) return;
+
+        // 找到可滚动的内容区域
+        const diffContent = this.liveDiffContainer.querySelector('.inline-diff-content');
+        if (!diffContent) return;
+
+        // 使用 requestAnimationFrame 确保DOM已更新
+        requestAnimationFrame(() => {
+            // 平滑滚动到底部
+            diffContent.scrollTo({
+                top: diffContent.scrollHeight,
+                behavior: 'smooth'
+            });
+        });
+    }
+
+    /**
      * 销毁视图，恢复编辑器
      */
     destroy() {
@@ -517,5 +580,9 @@ export class InlineDiffView {
         this.hostContainer = null;
         this.liveDiffContainer = null;
         this.isActive = false;
+
+        // 重置自动滚动状态
+        this.shouldAutoScroll = true;
+        this.lastScrollTop = 0;
     }
 }

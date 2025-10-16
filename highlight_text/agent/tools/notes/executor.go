@@ -318,14 +318,23 @@ func searchNotes(args map[string]interface{}, basePath string) (string, error) {
 			return err
 		}
 
-		if !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
+		// 支持多种文件格式
+		if !info.IsDir() && isSupportedFileType(info.Name()) {
 			content, err := os.ReadFile(path)
 			if err != nil {
 				return nil // 跳过无法读取的文件
 			}
 
 			contentStr := string(content)
-			metadata, plainContent, tags := parseFrontMatter(contentStr)
+			// 只对Markdown文件解析Front Matter
+			var metadata map[string]interface{}
+			var plainContent string
+			var tags []string
+			if strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
+				metadata, plainContent, tags = parseFrontMatter(contentStr)
+			} else {
+				plainContent = contentStr
+			}
 
 			matched := false
 
@@ -780,6 +789,18 @@ func parseFrontMatter(content string) (map[string]interface{}, string, []string)
 	return metadata, plainContent, tags
 }
 
+// isSupportedFileType 检查文件是否为支持的类型
+func isSupportedFileType(filename string) bool {
+	supportedExts := []string{".md", ".txt", ".log", ".json", ".yaml", ".yml", ".toml", ".xml", ".csv"}
+	ext := strings.ToLower(filepath.Ext(filename))
+	for _, supported := range supportedExts {
+		if ext == supported {
+			return true
+		}
+	}
+	return false
+}
+
 // buildFileTree 构建文件树（递归遍历目录）
 func buildFileTree(basePath string, currentPath string) (*FileNode, error) {
 	fullPath := filepath.Join(basePath, currentPath)
@@ -819,7 +840,7 @@ func buildFileTree(basePath string, currentPath string) (*FileNode, error) {
 			}
 			node.Children = append(node.Children, childNode)
 		}
-	} else if strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
+	} else if isSupportedFileType(info.Name()) {
 		node.Type = "file"
 
 		// 读取文件以提取元数据（容错处理）
@@ -828,27 +849,30 @@ func buildFileTree(basePath string, currentPath string) (*FileNode, error) {
 			contentStr := string(content)
 
 			// 安全地解析元数据，即使出错也不影响文件树构建
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						// 解析失败时静默处理
-						return
+			// 只对Markdown文件解析Front Matter
+			if strings.HasSuffix(strings.ToLower(info.Name()), ".md") {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							// 解析失败时静默处理
+							return
+						}
+					}()
+
+					metadata, _, tags := parseFrontMatter(contentStr)
+
+					if len(metadata) > 0 {
+						node.Metadata = metadata
+					}
+					if len(tags) > 0 {
+						node.Tags = tags
 					}
 				}()
-
-				metadata, _, tags := parseFrontMatter(contentStr)
-
-				if len(metadata) > 0 {
-					node.Metadata = metadata
-				}
-				if len(tags) > 0 {
-					node.Tags = tags
-				}
-			}()
+			}
 		}
 	} else {
-		// 跳过非Markdown文件
-		return nil, fmt.Errorf("not a markdown file")
+		// 跳过不支持的文件
+		return nil, fmt.Errorf("unsupported file type")
 	}
 
 	return node, nil

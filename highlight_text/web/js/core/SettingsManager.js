@@ -16,13 +16,16 @@ export class SettingsManager {
     /**
      * 显示设置模态框
      */
-    showSettings() {
+    async showSettings() {
         const modal = document.getElementById('settingsModal');
 
         // 加载LLM配置
         document.getElementById('apiKeyInput').value = this.settings.apiKey;
         document.getElementById('apiEndpointInput').value = this.settings.endpoint;
         document.getElementById('modelSelect').value = this.settings.model;
+
+        // 加载工作空间配置
+        await this.loadWorkspaceSettings();
 
         // 加载知识库配置
         const imageStorageMode = this.config?.knowledgeBase?.imageStorage?.mode || 'fixed';
@@ -40,11 +43,184 @@ export class SettingsManager {
         // 绑定标签页切换事件
         this.bindSettingsTabEvents();
 
+        // 绑定工作空间浏览按钮
+        this.bindWorkspaceBrowseBtn();
+
         modal.classList.remove('hidden');
 
         // 重新初始化图标
         if (window.lucide) {
             lucide.createIcons();
+        }
+    }
+
+    /**
+     * 加载工作空间设置
+     */
+    async loadWorkspaceSettings() {
+        try {
+            const response = await fetch('http://localhost:8080/api/workspace');
+            if (response.ok) {
+                const data = await response.json();
+                document.getElementById('workspacePathInput').value = data.absolute_path || '';
+                this.updateWorkspaceInfo(data);
+            }
+        } catch (error) {
+            console.error('加载工作空间配置失败:', error);
+        }
+    }
+
+    /**
+     * 更新工作空间信息显示
+     */
+    updateWorkspaceInfo(data) {
+        const infoDiv = document.getElementById('workspaceInfo');
+        if (data.exists && data.is_directory) {
+            const fileCountText = data.file_count !== undefined ? `，包含 ${data.file_count} 个文件` : '';
+            infoDiv.innerHTML = `<span class="text-green-400">✓ 工作空间有效${fileCountText}</span>`;
+        } else {
+            infoDiv.innerHTML = '<span class="text-red-400">✗ 工作空间不存在或无效</span>';
+        }
+    }
+
+    /**
+     * 绑定工作空间浏览按钮
+     */
+    bindWorkspaceBrowseBtn() {
+        const browseBtn = document.getElementById('browseWorkspaceBtn');
+        if (browseBtn) {
+            browseBtn.replaceWith(browseBtn.cloneNode(true));
+            document.getElementById('browseWorkspaceBtn').addEventListener('click', () => {
+                this.showWorkspaceBrowser();
+            });
+        }
+    }
+
+    /**
+     * 显示工作空间浏览器
+     */
+    async showWorkspaceBrowser() {
+        // 创建浏览器模态框
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 modal';
+        modal.style.zIndex = '1002';
+        modal.innerHTML = `
+            <div class="flex items-center justify-center h-full p-4">
+                <div class="bg-gray-800 rounded-lg w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+                    <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                        <h3 class="text-lg font-bold">选择工作空间</h3>
+                        <button class="close-browser p-1 rounded hover:bg-gray-700">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-4">
+                        <div class="mb-4">
+                            <input type="text" id="manualPathInput" placeholder="或手动输入路径..."
+                                class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white">
+                        </div>
+                        <div id="browserPath" class="text-sm text-gray-400 mb-2"></div>
+                        <div id="browserContent" class="space-y-1">
+                            <!-- 目录列表将在这里显示 -->
+                        </div>
+                    </div>
+                    <div class="p-4 border-t border-gray-700 flex justify-end gap-2">
+                        <button class="cancel-btn px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded">取消</button>
+                        <button class="select-btn px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded">选择当前目录</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        // 初始化图标
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        let currentPath = '';
+
+        // 加载目录内容
+        const loadDirectory = async (path = '') => {
+            try {
+                const response = await fetch('http://localhost:8080/api/workspace/browse', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ start_path: path })
+                });
+                const data = await response.json();
+                currentPath = data.current_path;
+
+                modal.querySelector('#browserPath').textContent = `当前路径: ${currentPath}`;
+                const content = modal.querySelector('#browserContent');
+                content.innerHTML = '';
+
+                data.directories.forEach(dir => {
+                    const item = document.createElement('div');
+                    item.className = 'p-2 hover:bg-gray-700 rounded cursor-pointer flex items-center gap-2';
+                    item.innerHTML = `
+                        <i data-lucide="${dir.is_parent ? 'arrow-left' : 'folder'}" class="w-4 h-4 text-blue-400"></i>
+                        <span>${dir.name}</span>
+                    `;
+                    item.addEventListener('click', () => loadDirectory(dir.path));
+                    content.appendChild(item);
+                });
+
+                if (window.lucide) {
+                    lucide.createIcons();
+                }
+            } catch (error) {
+                console.error('加载目录失败:', error);
+            }
+        };
+
+        // 加载初始目录
+        await loadDirectory();
+
+        // 绑定事件
+        modal.querySelector('.close-browser').addEventListener('click', () => modal.remove());
+        modal.querySelector('.cancel-btn').addEventListener('click', () => modal.remove());
+        modal.querySelector('.select-btn').addEventListener('click', async () => {
+            const manualPath = modal.querySelector('#manualPathInput').value;
+            const selectedPath = manualPath || currentPath;
+            if (selectedPath) {
+                await this.setWorkspace(selectedPath);
+                modal.remove();
+            }
+        });
+
+        modal.querySelector('#manualPathInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const path = e.target.value;
+                if (path) {
+                    loadDirectory(path);
+                }
+            }
+        });
+    }
+
+    /**
+     * 设置工作空间
+     */
+    async setWorkspace(path) {
+        try {
+            const response = await fetch('http://localhost:8080/api/workspace/set', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(error);
+            }
+
+            const data = await response.json();
+            document.getElementById('workspacePathInput').value = data.workspace.absolute_path;
+            this.updateWorkspaceInfo(data.workspace);
+            this.app.uiManager.showNotification('工作空间已更新', 'success');
+        } catch (error) {
+            console.error('设置工作空间失败:', error);
+            this.app.uiManager.showNotification('设置工作空间失败: ' + error.message, 'error');
         }
     }
 

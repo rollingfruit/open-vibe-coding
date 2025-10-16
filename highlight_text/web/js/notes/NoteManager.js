@@ -982,6 +982,12 @@ tags: []
                     const message = JSON.parse(event.data);
                     if (message.type === 'refresh_notes') {
                         this.loadNotes();
+                    } else if (message.type === 'workspace_changed') {
+                        console.log('工作空间已切换至:', message.workspace);
+                        this.loadNotes(); // 重新加载笔记列表
+                        if (this.app.uiManager) {
+                            this.app.uiManager.showNotification(`工作空间已切换至: ${message.workspace}`, 'success');
+                        }
                     }
                 } catch (error) {
                     console.error('解析WebSocket消息失败:', error);
