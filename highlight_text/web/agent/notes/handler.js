@@ -786,6 +786,37 @@ JSON格式：
     }
 
     /**
+     * 显示用户查询消息（立即显示）
+     * @param {string} message - 用户输入的消息
+     */
+    displayUserQuery(message) {
+        const copilotMessagesContainer = document.getElementById('copilotMessages');
+        if (!copilotMessagesContainer) {
+            console.error('Copilot消息容器未找到');
+            return;
+        }
+
+        const userMessageDiv = document.createElement('div');
+        userMessageDiv.className = 'copilot-message user-query bg-gray-800 rounded-lg p-3 animate__animated animate__fadeInUp';
+        userMessageDiv.innerHTML = `
+            <div class="mb-2 flex items-center gap-2">
+                <i data-lucide="user" class="w-5 h-5 text-blue-400"></i>
+                <span class="text-blue-400 font-semibold text-sm">你</span>
+                <span class="text-black-400 text-xs ml-auto">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <div class="text-sm text-black-200">${this.escapeHtml(message)}</div>
+        `;
+        copilotMessagesContainer.appendChild(userMessageDiv);
+
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        // 滚动到底部
+        copilotMessagesContainer.scrollTop = copilotMessagesContainer.scrollHeight;
+    }
+
+    /**
      * 创建Copilot追踪气泡（在左侧Copilot面板）
      */
     createCopilotBubble() {
@@ -1079,6 +1110,9 @@ ${originalContent}
         this.isActive = true;
         this.conversationHistory = [];
         this.currentTodoList = [];
+
+        // 立即显示用户的查询消息
+        this.displayUserQuery(initialTask);
 
         await this.fetchAvailableTools();
 

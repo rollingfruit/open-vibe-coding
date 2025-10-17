@@ -6,9 +6,10 @@ import { convertLinesToSelection } from '../utils/helpers.js';
  * 协调中心：负责与 LLM 通信，驱动 InlineDiffView 进行 UI 更新
  */
 export class StreamingDiffService {
-    constructor(editorElement, app) {
+    constructor(editorElement, app, parentContainer = null) {
         this.editorElement = editorElement;
         this.app = app;
+        this.parentContainer = parentContainer; // 可选的父容器
         this.originalContent = '';
         this.streamedContent = '';
         this.inlineView = null;
@@ -126,10 +127,14 @@ export class StreamingDiffService {
         this.selectionEnd = selectionEnd;
 
         // 创建并显示内联视图
-        this.inlineView = new InlineDiffView(this.editorElement, {
-            onAccept: (newFullText) => this.finalizeModification(newFullText),
-            onCancel: () => this.cancelModification()
-        });
+        this.inlineView = new InlineDiffView(
+            this.editorElement,
+            {
+                onAccept: (newFullText) => this.finalizeModification(newFullText),
+                onCancel: () => this.cancelModification()
+            },
+            this.parentContainer // 传递父容器参数
+        );
 
         this.inlineView.show(fullText, selectionStart, selectionEnd, selectedText);
 

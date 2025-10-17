@@ -61,9 +61,9 @@ export class UIManager {
         const hljsTheme = document.getElementById('hljs-theme');
         if (hljsTheme) {
             if (theme === 'light') {
-                hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css';
+                hljsTheme.href = 'css/atom-one-light.min.css';
             } else {
-                hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css';
+                hljsTheme.href = 'css/atom-one-dark.min.css';
             }
         }
 

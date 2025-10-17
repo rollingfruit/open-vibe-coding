@@ -18,6 +18,15 @@ export class MultiFileDiffManager {
         // 活动的diff实例 Map<taskId, DiffInstance>
         this.activeDiffs = new Map();
 
+        // 文件到标签页的映射 Map<note_id, tabId>
+        this.fileToTabMap = new Map();
+
+        // 标签页到文件的映射 Map<tabId, note_id>
+        this.tabToFileMap = new Map();
+
+        // 每个标签页下的diff实例列表 Map<tabId, DiffInstance[]>
+        this.tabDiffInstances = new Map();
+
         // 标签页容器
         this.tabContainer = null;
         this.tabContentContainer = null;
@@ -56,14 +65,30 @@ export class MultiFileDiffManager {
         // 创建标签页容器（如果还没有）
         this.ensureTabContainerExists();
 
-        // 立即为这个任务创建标签页和Diff实例（不等待队列）
-        try {
-            await this.createDiffInstance(task);
-        } catch (error) {
-            console.error(`[MultiFileDiff] 任务执行失败: ${task.id}`, error);
-            task.status = 'error';
-            this.updateTabStatus(task.id, 'error');
-            this.app.uiManager.showNotification(`文件修改失败: ${error.message}`, 'error');
+        // 检查该文件是否已有标签页
+        let tabId = this.fileToTabMap.get(note_id);
+
+        if (tabId) {
+            // 同一文件，在已有标签页中添加新的diff实例
+            console.log(`[MultiFileDiff] 文件 ${note_id} 已有标签页 ${tabId}，追加新的修改`);
+            try {
+                await this.appendDiffToExistingTab(tabId, task);
+            } catch (error) {
+                console.error(`[MultiFileDiff] 任务执行失败: ${task.id}`, error);
+                task.status = 'error';
+                this.app.uiManager.showNotification(`文件修改失败: ${error.message}`, 'error');
+            }
+        } else {
+            // 新文件，创建新标签页
+            console.log(`[MultiFileDiff] 文件 ${note_id} 是新文件，创建新标签页`);
+            try {
+                await this.createDiffInstance(task);
+            } catch (error) {
+                console.error(`[MultiFileDiff] 任务执行失败: ${task.id}`, error);
+                task.status = 'error';
+                this.updateTabStatus(task.id, 'error');
+                this.app.uiManager.showNotification(`文件修改失败: ${error.message}`, 'error');
+            }
         }
 
         return taskId;
@@ -75,7 +100,7 @@ export class MultiFileDiffManager {
     ensureTabContainerExists() {
         if (this.tabContainer) return;
 
-        const editorContainer = document.querySelector('.editor-container');
+        const editorContainer = document.getElementById('editor-container');
         if (!editorContainer) {
             throw new Error('编辑器容器未找到');
         }
@@ -93,8 +118,8 @@ export class MultiFileDiffManager {
             </div>
         `;
 
-        // 插入到编辑器容器内部，编辑器上方
-        editorContainer.insertBefore(wrapper, this.editorElement);
+        // 简化插入逻辑：直接插入到editor-container的开头
+        editorContainer.insertBefore(wrapper, editorContainer.firstChild);
 
         this.tabContainer = wrapper.querySelector('#diffTabBar');
         this.tabContentContainer = wrapper.querySelector('#diffTabContent');
@@ -106,11 +131,21 @@ export class MultiFileDiffManager {
      * 为任务创建Diff实例和标签页
      */
     async createDiffInstance(task) {
+        // 为新文件创建唯一的标签页ID
+        const tabId = `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
         // 创建标签页
-        const tab = this.createTab(task);
+        const tab = this.createTab(task, tabId);
 
         // 创建标签页内容区域
-        const tabContent = this.createTabContent(task);
+        const tabContent = this.createTabContent(task, tabId);
+
+        // 记录文件到标签页的映射
+        this.fileToTabMap.set(task.note_id, tabId);
+        this.tabToFileMap.set(tabId, task.note_id);
+
+        // 初始化该标签页的diff实例列表
+        this.tabDiffInstances.set(tabId, []);
 
         // 获取diff内容区域（InlineDiffView会在这里渲染）
         const diffContentArea = tabContent.querySelector('.diff-content-area');
@@ -121,20 +156,29 @@ export class MultiFileDiffManager {
         tempEditor.id = `temp-editor-${task.id}`;
         diffContentArea.appendChild(tempEditor);
 
-        // 创建独立的 StreamingDiffService 实例
-        const diffService = new StreamingDiffService(tempEditor, this.app);
+        // 创建独立的 StreamingDiffService 实例，传递 diffContentArea 作为父容器
+        const diffService = new StreamingDiffService(tempEditor, this.app, diffContentArea);
 
-        // 重写 cleanup 方法，在清理时同时关闭标签页
-        const originalCleanup = diffService.cleanup.bind(diffService);
-        diffService.cleanup = () => {
-            originalCleanup();
-            // 任务完成后不自动关闭标签页，让用户手动关闭
-            this.updateTabStatus(task.id, 'completed');
+        // 重写 finalizeModification 方法，在接受修改后关闭标签页
+        const originalFinalize = diffService.finalizeModification.bind(diffService);
+        diffService.finalizeModification = async (newFullText) => {
+            await originalFinalize(newFullText);
+            // 接受修改后，自动关闭这个标签页
+            this.closeTabSilently(tabId);
+        };
+
+        // 重写 cancelModification 方法，在取消时也关闭标签页
+        const originalCancel = diffService.cancelModification.bind(diffService);
+        diffService.cancelModification = () => {
+            originalCancel();
+            // 取消后，也关闭这个标签页
+            this.closeTabSilently(tabId);
         };
 
         // 存储实例
         const diffInstance = {
             task,
+            tabId,
             tab,
             tabContent,
             diffContentArea,
@@ -143,24 +187,90 @@ export class MultiFileDiffManager {
         };
 
         this.activeDiffs.set(task.id, diffInstance);
+        this.tabDiffInstances.get(tabId).push(diffInstance);
 
         // 激活这个标签页
-        this.switchToTab(task.id);
+        this.switchToTab(tabId);
 
         // 加载文件内容并启动diff（不阻塞，立即返回）
         this.startDiffForTask(diffInstance).catch(error => {
             console.error(`[MultiFileDiff] 启动Diff失败: ${task.id}`, error);
-            this.updateTabStatus(task.id, 'error');
+            this.updateTabStatus(tabId, 'error');
+        });
+    }
+
+    /**
+     * 在已有标签页中追加新的diff实例
+     */
+    async appendDiffToExistingTab(tabId, task) {
+        // 获取已有的标签页内容区域
+        const tabContent = this.tabContentContainer.querySelector(`[data-tab-id="${tabId}"]`);
+        if (!tabContent) {
+            throw new Error(`标签页 ${tabId} 不存在`);
+        }
+
+        const diffContentArea = tabContent.querySelector('.diff-content-area');
+
+        // 为这个任务创建独立的临时编辑器元素
+        const tempEditor = document.createElement('textarea');
+        tempEditor.style.display = 'none';
+        tempEditor.id = `temp-editor-${task.id}`;
+        diffContentArea.appendChild(tempEditor);
+
+        // 创建独立的 StreamingDiffService 实例，传递 diffContentArea 作为父容器
+        const diffService = new StreamingDiffService(tempEditor, this.app, diffContentArea);
+
+        // 重写 finalizeModification 方法，在接受修改后关闭标签页
+        const originalFinalize = diffService.finalizeModification.bind(diffService);
+        diffService.finalizeModification = async (newFullText) => {
+            await originalFinalize(newFullText);
+            // 接受修改后，自动关闭这个标签页
+            this.closeTabSilently(tabId);
+        };
+
+        // 重写 cancelModification 方法，在取消时也关闭标签页
+        const originalCancel = diffService.cancelModification.bind(diffService);
+        diffService.cancelModification = () => {
+            originalCancel();
+            // 取消后，也关闭这个标签页
+            this.closeTabSilently(tabId);
+        };
+
+        // 存储实例
+        const tab = this.tabContainer.querySelector(`[data-tab-id="${tabId}"]`);
+        const diffInstance = {
+            task,
+            tabId,
+            tab,
+            tabContent,
+            diffContentArea,
+            tempEditor,
+            diffService
+        };
+
+        this.activeDiffs.set(task.id, diffInstance);
+        this.tabDiffInstances.get(tabId).push(diffInstance);
+
+        // 激活这个标签页
+        this.switchToTab(tabId);
+
+        // 更新标签页状态为处理中
+        this.updateTabStatus(tabId, 'processing');
+
+        // 加载文件内容并启动diff（不阻塞，立即返回）
+        this.startDiffForTask(diffInstance).catch(error => {
+            console.error(`[MultiFileDiff] 启动Diff失败: ${task.id}`, error);
+            this.updateTabStatus(tabId, 'error');
         });
     }
 
     /**
      * 创建标签页元素
      */
-    createTab(task) {
+    createTab(task, tabId) {
         const tab = document.createElement('div');
         tab.className = 'diff-tab';
-        tab.dataset.taskId = task.id;
+        tab.dataset.tabId = tabId;
 
         const fileName = task.note_id.split('/').pop() || task.note_id;
 
@@ -176,13 +286,13 @@ export class MultiFileDiffManager {
 
         // 点击标签页切换
         tab.querySelector('.diff-tab-name').addEventListener('click', () => {
-            this.switchToTab(task.id);
+            this.switchToTab(tabId);
         });
 
         // 关闭按钮
         tab.querySelector('.diff-tab-close').addEventListener('click', (e) => {
             e.stopPropagation();
-            this.closeTab(task.id);
+            this.closeTab(tabId);
         });
 
         this.tabContainer.appendChild(tab);
@@ -197,10 +307,10 @@ export class MultiFileDiffManager {
     /**
      * 创建标签页内容区域
      */
-    createTabContent(task) {
+    createTabContent(task, tabId) {
         const content = document.createElement('div');
         content.className = 'diff-tab-pane';
-        content.dataset.taskId = task.id;
+        content.dataset.tabId = tabId;
         content.style.display = 'none';
 
         content.innerHTML = `
@@ -209,13 +319,10 @@ export class MultiFileDiffManager {
                     <i data-lucide="file-text" class="w-4 h-4"></i>
                     <span class="text-sm font-bold">${this.escapeHtml(task.note_id)}</span>
                 </div>
-                <div class="diff-instruction text-xs text-gray-400">
-                    指令: ${this.escapeHtml(task.instruction)}
-                </div>
             </div>
             <textarea class="diff-editor-clone" style="display: none;"></textarea>
             <div class="diff-content-area">
-                <!-- InlineDiffView 会在这里渲染 -->
+                <!-- InlineDiffView 会在这里渲染，可以有多个 inlineLiveDiffContainer -->
             </div>
         `;
 
@@ -232,14 +339,14 @@ export class MultiFileDiffManager {
      * 启动任务的Diff流程
      */
     async startDiffForTask(diffInstance) {
-        const { task, diffService, diffEditor } = diffInstance;
+        const { task, diffService, tempEditor } = diffInstance;
 
         try {
             // 读取文件内容
             const fileContent = await this.loadFileContent(task.note_id);
 
-            // 将内容设置到克隆的编辑器
-            diffEditor.value = fileContent;
+            // 将内容设置到临时编辑器
+            tempEditor.value = fileContent;
 
             // 启动 StreamingDiffService
             await diffService.startModificationForAgent({
@@ -293,8 +400,8 @@ export class MultiFileDiffManager {
     /**
      * 切换到指定标签页
      */
-    switchToTab(taskId) {
-        if (this.activeTabId === taskId) return;
+    switchToTab(tabId) {
+        if (this.activeTabId === tabId) return;
 
         // 隐藏所有标签页内容
         this.tabContentContainer.querySelectorAll('.diff-tab-pane').forEach(pane => {
@@ -307,70 +414,73 @@ export class MultiFileDiffManager {
         });
 
         // 显示目标标签页
-        const targetPane = this.tabContentContainer.querySelector(`[data-task-id="${taskId}"]`);
-        const targetTab = this.tabContainer.querySelector(`[data-task-id="${taskId}"]`);
+        const targetPane = this.tabContentContainer.querySelector(`[data-tab-id="${tabId}"]`);
+        const targetTab = this.tabContainer.querySelector(`[data-tab-id="${tabId}"]`);
 
         if (targetPane && targetTab) {
             targetPane.style.display = 'block';
             targetTab.classList.add('active');
-            this.activeTabId = taskId;
-            console.log(`[MultiFileDiff] 切换到标签页: ${taskId}`);
+            this.activeTabId = tabId;
+            console.log(`[MultiFileDiff] 切换到标签页: ${tabId}`);
         }
     }
 
     /**
      * 关闭标签页
      */
-    closeTab(taskId) {
-        const diffInstance = this.activeDiffs.get(taskId);
-        if (!diffInstance) return;
-
+    closeTab(tabId) {
         // 询问用户确认
         if (!confirm('确定要关闭此修改吗？未接受的修改将丢失。')) {
             return;
         }
 
-        // 清理 StreamingDiffService
-        if (diffInstance.diffService) {
-            diffInstance.diffService.cancelModification();
-        }
+        this.closeTabSilently(tabId);
+    }
+
+    /**
+     * 静默关闭标签页（不需要用户确认）
+     */
+    closeTabSilently(tabId) {
+        // 获取该标签页下的所有diff实例
+        const instances = this.tabDiffInstances.get(tabId) || [];
+
+        // 清理所有 StreamingDiffService 实例（但不调用cancelModification，因为可能已经finalized）
+        instances.forEach(diffInstance => {
+            // 从activeDiffs中移除
+            this.activeDiffs.delete(diffInstance.task.id);
+        });
 
         // 移除 DOM 元素
-        diffInstance.tab.remove();
-        diffInstance.tabContent.remove();
+        const tab = this.tabContainer.querySelector(`[data-tab-id="${tabId}"]`);
+        const tabContent = this.tabContentContainer.querySelector(`[data-tab-id="${tabId}"]`);
+        if (tab) tab.remove();
+        if (tabContent) tabContent.remove();
 
-        // 从Map中移除
-        this.activeDiffs.delete(taskId);
-
-        // 从队列中移除
-        const taskIndex = this.taskQueue.findIndex(t => t.id === taskId);
-        if (taskIndex !== -1) {
-            this.taskQueue.splice(taskIndex, 1);
+        // 从映射中移除
+        const note_id = this.tabToFileMap.get(tabId);
+        if (note_id) {
+            this.fileToTabMap.delete(note_id);
         }
-
-        // 如果关闭的是当前任务，处理下一个
-        if (taskIndex === 0) {
-            this.isProcessing = false;
-            this.processNextTask();
-        }
+        this.tabToFileMap.delete(tabId);
+        this.tabDiffInstances.delete(tabId);
 
         // 如果没有标签页了，隐藏容器
-        if (this.activeDiffs.size === 0) {
+        if (this.tabDiffInstances.size === 0) {
             this.hideTabContainer();
         } else {
             // 切换到第一个标签页
-            const firstTaskId = this.activeDiffs.keys().next().value;
-            this.switchToTab(firstTaskId);
+            const firstTabId = this.tabDiffInstances.keys().next().value;
+            this.switchToTab(firstTabId);
         }
 
-        console.log(`[MultiFileDiff] 标签页已关闭: ${taskId}`);
+        console.log(`[MultiFileDiff] 标签页已关闭: ${tabId}`);
     }
 
     /**
      * 更新标签页状态图标
      */
-    updateTabStatus(taskId, status) {
-        const tab = this.tabContainer.querySelector(`[data-task-id="${taskId}"]`);
+    updateTabStatus(tabId, status) {
+        const tab = this.tabContainer.querySelector(`[data-tab-id="${tabId}"]`);
         if (!tab) return;
 
         const statusIcon = tab.querySelector('.diff-tab-status i');

@@ -10,10 +10,12 @@ export class InlineDiffView {
      * @param {Object} callbacks - 回调函数
      * @param {Function} callbacks.onAccept - 接受修改的回调
      * @param {Function} callbacks.onCancel - 取消修改的回调
+     * @param {HTMLElement} [parentContainer=null] - 可选的父容器，如果提供则渲染到该容器而不是替换编辑器
      */
-    constructor(editorElement, callbacks = {}) {
+    constructor(editorElement, callbacks = {}, parentContainer = null) {
         this.editorElement = editorElement;
         this.callbacks = callbacks;
+        this.parentContainer = parentContainer; // 可选的父容器
 
         // DOM 元素引用
         this.hostContainer = null;
@@ -51,30 +53,41 @@ export class InlineDiffView {
         this.isActive = true;
         this.userEdits.clear(); // 清空之前的编辑记录
 
-        // 隐藏原始编辑器
-        this.editorElement.style.display = 'none';
+        // 如果没有指定父容器，使用默认行为（隐藏编辑器，在其位置渲染）
+        if (!this.parentContainer) {
+            // 隐藏原始编辑器
+            this.editorElement.style.display = 'none';
 
-        // 创建宿主容器，样式与 noteEditor 一致
-        this.hostContainer = document.createElement('div');
-        this.hostContainer.id = 'inlineDiffHost';
-        this.hostContainer.className = this.editorElement.className;
+            // 创建宿主容器，样式与 noteEditor 一致
+            this.hostContainer = document.createElement('div');
+            this.hostContainer.id = 'inlineDiffHost';
+            this.hostContainer.className = this.editorElement.className;
 
-        // 复制编辑器的样式
-        const computedStyle = window.getComputedStyle(this.editorElement);
-        this.hostContainer.style.backgroundColor = computedStyle.backgroundColor;
-        this.hostContainer.style.color = computedStyle.color;
-        this.hostContainer.style.fontFamily = computedStyle.fontFamily;
-        this.hostContainer.style.fontSize = computedStyle.fontSize;
-        this.hostContainer.style.lineHeight = computedStyle.lineHeight;
-        this.hostContainer.style.padding = computedStyle.padding;
-        this.hostContainer.style.border = computedStyle.border;
-        this.hostContainer.style.borderRadius = computedStyle.borderRadius;
-        this.hostContainer.style.overflow = 'auto';
-        this.hostContainer.style.whiteSpace = 'pre-wrap';
-        this.hostContainer.style.wordWrap = 'break-word';
+            // 复制编辑器的样式
+            const computedStyle = window.getComputedStyle(this.editorElement);
+            this.hostContainer.style.backgroundColor = computedStyle.backgroundColor;
+            this.hostContainer.style.color = computedStyle.color;
+            this.hostContainer.style.fontFamily = computedStyle.fontFamily;
+            this.hostContainer.style.fontSize = computedStyle.fontSize;
+            this.hostContainer.style.lineHeight = computedStyle.lineHeight;
+            this.hostContainer.style.padding = computedStyle.padding;
+            this.hostContainer.style.border = computedStyle.border;
+            this.hostContainer.style.borderRadius = computedStyle.borderRadius;
+            this.hostContainer.style.overflow = 'auto';
+            this.hostContainer.style.whiteSpace = 'pre-wrap';
+            this.hostContainer.style.wordWrap = 'break-word';
 
-        // 插入到编辑器位置
-        this.editorElement.parentNode.insertBefore(this.hostContainer, this.editorElement);
+            // 插入到编辑器位置
+            this.editorElement.parentNode.insertBefore(this.hostContainer, this.editorElement);
+        } else {
+            // 使用指定的父容器，不隐藏编辑器
+            // 创建宿主容器（简化版，不需要复制编辑器的所有样式）
+            this.hostContainer = document.createElement('div');
+            this.hostContainer.className = 'inlineDiffHost-in-parent';
+
+            // 添加到指定的父容器
+            this.parentContainer.appendChild(this.hostContainer);
+        }
 
         // 渲染三段式内容
         this.renderThreePartView();
@@ -571,8 +584,8 @@ export class InlineDiffView {
             this.hostContainer.parentNode.removeChild(this.hostContainer);
         }
 
-        // 恢复编辑器显示
-        if (this.editorElement) {
+        // 只有在没有使用父容器时才恢复编辑器显示
+        if (!this.parentContainer && this.editorElement) {
             this.editorElement.style.display = '';
         }
 
