@@ -1,0 +1,95 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f0f2f5;
+    color: #333;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    box-sizing: border-box;
+}
+
+.app-container {
+    display: flex;
+    width: 100%;
+    max-width: 1600px;
+    height: 90vh;
+    gap: 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    padding: 20px;
+}
+
+.editor-pane, .preview-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+h1 {
+    margin-top: 0;
+    font-size: 1.5em;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+#markdown-input {
+    width: 100%;
+    height: 80%;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 15px;
+    font-size: 16px;
+    line-height: 1.6;
+    resize: none;
+    box-sizing: border-box;
+}
+
+.controls {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.controls button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+}
+
+.controls button:hover {
+    background-color: #0056b3;
+}
+
+#pause-btn { background-color: #ffc107; }
+#pause-btn:hover { background-color: #e0a800; }
+#reset-btn { background-color: #dc3545; }
+#reset-btn:hover { background-color: #c82333; }
+
+/* 可调整尺寸的容器样式 */
+.resizable {
+    width: 100%;
+    height: 100%;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    padding: 25px;
+    box-sizing: border-box;
+    position: relative;
+    overflow: hidden; /* 关键：隐藏超出部分的内容 */
+    touch-action: none; /* Interact.js 推荐 */
+}
+
+/* 渲染内容的样式 */
+.markdown-body {
+    width: 100%;
+    /* GSAP 会改变这个元素的 transform */
+}

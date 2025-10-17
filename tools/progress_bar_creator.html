@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态视频进度条生成器</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://unpkg.com/ccapture.js@1.1.0/build/CCapture.all.min.js"></script>
+    <style>
+        :root {
+            --bar-height: 60px;
+            --text-color-dim: #999;
+            --text-color-clear: #000;
+            --bg-color-dim: #e9ecef;
+            --bg-color-bright: #007bff;
+            --pointer-color: #dc3545;
+            --border-radius: 8px;
+            --transition-speed: 0.3s;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: #212529;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            background: white;
+            padding: 25px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        h1, h2 {
+            text-align: center;
+            color: #343a40;
+        }
+
+        .controls, .segments-list {
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .input-group input {
+            flex-grow: 1;
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        .input-group button {
+            padding: 8px 15px;
+            border: none;
+            background-color: #28a745;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color var(--transition-speed);
+        }
+        .input-group button:hover {
+            background-color: #218838;
+        }
+
+        .segment-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            background-color: #f1f3f5;
+            border-radius: 4px;
+            margin-bottom: 5px;
+        }
+        .segment-item span {
+            margin-right: 15px;
+        }
+        .segment-item .text { flex-grow: 1; }
+        .segment-item button.delete {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+
+        #progress-bar-container {
+            position: relative;
+            height: var(--bar-height);
+            background-color: #ccc;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            margin-top: 30px;
+            border: 1px solid #ddd;
+            resize: horizontal;
+            min-width: 300px;
+            max-width: 100%;
+        }
+
+        #progress-bar {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        .segment {
+            height: 100%;
+            box-sizing: border-box;
+            border-right: 2px solid white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--text-color-dim);
+            background-color: var(--bg-color-dim);
+            transition: background-color var(--transition-speed), color var(--transition-speed);
+            overflow: hidden;
+            text-align: center;
+            padding: 0 5px;
+        }
+        .segment:last-child {
+            border-right: none;
+        }
+        .segment.active {
+            color: white;
+            background-color: var(--bg-color-bright);
+        }
+        .segment.played {
+             color: var(--text-color-clear);
+             background-color: #d1e7ff; /* A slightly different color for played segments */
+        }
+
+
+        #pointer {
+            position: absolute;
+            top: -10px;
+            left: 0;
+            width: 4px;
+            height: calc(var(--bar-height) + 20px);
+            background-color: var(--pointer-color);
+            transform: translateX(-50%);
+            z-index: 10;
+        }
+        
+        .action-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 25px;
+        }
+        .action-buttons button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+        .action-buttons button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        #play-btn { background-color: #007bff; color: white; }
+        #export-btn { background-color: #17a2b8; color: white; }
+
+        #status {
+            margin-top: 15px;
+            text-align: center;
+            color: #6c757d;
+            height: 20px;
+        }
+
+        .resize-hint {
+            text-align: center;
+            color: #6c757d;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>动态视频进度条生成器</h1>
+
+        <div class="controls">
+            <h2>1. 添加视频段落</h2>
+            <div class="input-group">
+                <input type="text" id="segment-text" placeholder="段落主要内容">
+                <input type="number" id="segment-end-time" placeholder="结束时间(秒)" step="0.1" min="0">
+                <button id="add-segment-btn">添加段落</button>
+            </div>
+        </div>
+
+        <div class="segments-list">
+            <h2>2. 段落列表</h2>
+            <div id="segments-container">
+                </div>
+        </div>
+
+        <h2>3. 效果预览</h2>
+        <div id="progress-bar-container">
+            <div id="pointer"></div>
+            <div id="progress-bar">
+                </div>
+        </div>
+        <div class="resize-hint">提示：可以拖动右边缘调整进度条宽度</div>
+        <div id="total-duration">总时长: 0s</div>
+
+
+        <div class="action-buttons">
+            <button id="play-btn" disabled>播放预览</button>
+            <button id="export-btn" disabled>导出WEBP视频</button>
+        </div>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM Elements
+            const segmentTextInput = document.getElementById('segment-text');
+            const segmentEndTimeInput = document.getElementById('segment-end-time');
+            const addSegmentBtn = document.getElementById('add-segment-btn');
+            const segmentsContainer = document.getElementById('segments-container');
+            const progressBar = document.getElementById('progress-bar');
+            const pointer = document.getElementById('pointer');
+            const totalDurationEl = document.getElementById('total-duration');
+            const playBtn = document.getElementById('play-btn');
+            const exportBtn = document.getElementById('export-btn');
+            const statusBar = document.getElementById('status');
+            const progressBarContainer = document.getElementById('progress-bar-container');
+
+            // Data store
+            let segments = [];
+            let totalDuration = 0;
+            let animationFrameId = null;
+
+            // --- Core Logic ---
+
+            function updateAndRender() {
+                recalculateTimes();
+                renderSegmentsList();
+                renderProgressBar();
+                updateButtonsState();
+            }
+
+            function recalculateTimes() {
+                // Segments are already stored with startTime and endTime
+                // Calculate duration for each segment
+                segments.forEach(seg => {
+                    seg.duration = seg.endTime - seg.startTime;
+                });
+                totalDuration = segments.length > 0 ? segments[segments.length - 1].endTime : 0;
+                totalDurationEl.textContent = `总时长: ${totalDuration.toFixed(1)}s`;
+            }
+
+            function renderSegmentsList() {
+                segmentsContainer.innerHTML = '';
+                if(segments.length === 0) {
+                    segmentsContainer.innerHTML = '<p>暂无段落, 请添加.</p>';
+                }
+                segments.forEach((seg, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'segment-item';
+                    item.innerHTML = `
+                        <span class="text"><strong>${index + 1}. ${seg.text}</strong></span>
+                        <span class="time">(${seg.startTime.toFixed(1)}s - ${seg.endTime.toFixed(1)}s, 时长: ${seg.duration.toFixed(1)}s)</span>
+                        <button class="delete" data-index="${index}">删除</button>
+                    `;
+                    segmentsContainer.appendChild(item);
+                });
+            }
+
+            function renderProgressBar() {
+                progressBar.innerHTML = '';
+                if (totalDuration === 0) return;
+
+                segments.forEach(seg => {
+                    const segDiv = document.createElement('div');
+                    segDiv.className = 'segment';
+                    segDiv.textContent = seg.text;
+                    const widthPercentage = (seg.duration / totalDuration) * 100;
+                    segDiv.style.width = `${widthPercentage}%`;
+                    progressBar.appendChild(segDiv);
+                });
+            }
+            
+            function updateButtonsState() {
+                const hasSegments = segments.length > 0;
+                playBtn.disabled = !hasSegments;
+                exportBtn.disabled = !hasSegments;
+            }
+
+            // --- Event Handlers ---
+
+            addSegmentBtn.addEventListener('click', () => {
+                const text = segmentTextInput.value.trim();
+                const endTime = parseFloat(segmentEndTimeInput.value);
+
+                if (!text) {
+                    alert('请输入段落内容！');
+                    return;
+                }
+
+                if (isNaN(endTime) || endTime <= 0) {
+                    alert('请输入有效的结束时间（大于0）！');
+                    return;
+                }
+
+                // Get the start time from the last segment's end time, or 0 if no segments
+                const startTime = segments.length > 0 ? segments[segments.length - 1].endTime : 0;
+
+                if (endTime <= startTime) {
+                    alert(`结束时间必须大于 ${startTime.toFixed(1)}s（上一段的结束时间）！`);
+                    return;
+                }
+
+                segments.push({ 
+                    text, 
+                    startTime, 
+                    endTime,
+                    duration: endTime - startTime
+                });
+                
+                segmentTextInput.value = '';
+                segmentEndTimeInput.value = '';
+                // Set placeholder for next segment
+                segmentEndTimeInput.placeholder = `结束时间(秒) > ${endTime.toFixed(1)}`;
+                
+                updateAndRender();
+            });
+
+            segmentsContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('delete')) {
+                    const index = parseInt(e.target.dataset.index, 10);
+                    segments.splice(index, 1);
+                    
+                    // Recalculate all segment times after deletion
+                    let cumulativeTime = 0;
+                    segments.forEach(seg => {
+                        const duration = seg.duration;
+                        seg.startTime = cumulativeTime;
+                        seg.endTime = cumulativeTime + duration;
+                        cumulativeTime = seg.endTime;
+                    });
+                    
+                    // Update placeholder
+                    if (segments.length > 0) {
+                        segmentEndTimeInput.placeholder = `结束时间(秒) > ${segments[segments.length - 1].endTime.toFixed(1)}`;
+                    } else {
+                        segmentEndTimeInput.placeholder = '结束时间(秒)';
+                    }
+                    
+                    updateAndRender();
+                }
+            });
+
+            playBtn.addEventListener('click', () => {
+                if (animationFrameId) { // If playing, stop it
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                    playBtn.textContent = '播放预览';
+                    resetAnimation();
+                    return;
+                }
+                playBtn.textContent = '停止播放';
+                playAnimation();
+            });
+            
+            exportBtn.addEventListener('click', () => {
+                exportVideo();
+            });
+
+            // --- Animation & Export ---
+            
+            function resetAnimation() {
+                pointer.style.left = '0%';
+                document.querySelectorAll('.segment').forEach(el => {
+                    el.classList.remove('active', 'played');
+                });
+            }
+
+            function playAnimation() {
+                const startTime = performance.now();
+                resetAnimation();
+
+                function animate(currentTime) {
+                    const elapsedTime = (currentTime - startTime) / 1000; // in seconds
+                    
+                    if (elapsedTime > totalDuration) {
+                        playBtn.textContent = '播放预览';
+                        resetAnimation();
+                        animationFrameId = null;
+                        return;
+                    }
+                    
+                    const progressPercentage = (elapsedTime / totalDuration) * 100;
+                    pointer.style.left = `${progressPercentage}%`;
+                    
+                    const segmentElements = progressBar.querySelectorAll('.segment');
+                    let currentSegmentIndex = -1;
+                    for(let i = 0; i < segments.length; i++) {
+                        if (elapsedTime >= segments[i].startTime && elapsedTime < segments[i].endTime) {
+                            currentSegmentIndex = i;
+                            break;
+                        }
+                    }
+
+                    segmentElements.forEach((el, index) => {
+                        if (index < currentSegmentIndex) {
+                           el.classList.add('played');
+                           el.classList.remove('active');
+                        } else if (index === currentSegmentIndex) {
+                           el.classList.remove('played');
+                           el.classList.add('active');
+                        } else {
+                           el.classList.remove('played', 'active');
+                        }
+                    });
+                    
+                    animationFrameId = requestAnimationFrame(animate);
+                }
+                
+                animationFrameId = requestAnimationFrame(animate);
+            }
+
+            async function exportVideo() {
+                if (segments.length === 0) return;
+
+                exportBtn.disabled = true;
+                playBtn.disabled = true;
+                statusBar.textContent = '正在初始化录制...';
+                
+                const frameRate = 30;
+                const capturer = new CCapture({
+                    format: 'webm',
+                    framerate: frameRate,
+                    verbose: false,
+                    quality: 90
+                });
+
+                const canvas = document.createElement('canvas');
+                const rect = progressBarContainer.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+                const ctx = canvas.getContext('2d');
+                
+                capturer.start();
+                
+                let frameCount = 0;
+                const totalFrames = Math.ceil(totalDuration * frameRate);
+
+                for (let i = 0; i <= totalFrames; i++) {
+                    const currentTime = (i / frameRate);
+                    
+                    // Update UI state for this frame
+                    const progressPercentage = (currentTime / totalDuration) * 100;
+                    pointer.style.left = `${Math.min(100, progressPercentage)}%`;
+                    
+                    const segmentElements = progressBar.querySelectorAll('.segment');
+                    let currentSegmentIndex = -1;
+                    if(currentTime < totalDuration) {
+                        for(let j = 0; j < segments.length; j++) {
+                            if (currentTime >= segments[j].startTime && currentTime < segments[j].endTime) {
+                                currentSegmentIndex = j;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    segmentElements.forEach((el, index) => {
+                        if (index < currentSegmentIndex) {
+                           el.classList.add('played');
+                           el.classList.remove('active');
+                        } else if (index === currentSegmentIndex) {
+                           el.classList.remove('played');
+                           el.classList.add('active');
+                        } else {
+                           el.classList.remove('played', 'active');
+                        }
+                    });
+
+                    // Capture the frame
+                    statusBar.textContent = `正在渲染第 ${i} / ${totalFrames} 帧...`;
+                    const capturedCanvas = await html2canvas(progressBarContainer, {
+                        useCORS: true,
+                        logging: false
+                    });
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(capturedCanvas, 0, 0, canvas.width, canvas.height);
+                    capturer.capture(canvas);
+                }
+
+                statusBar.textContent = '编码视频中，请稍候...';
+                capturer.stop();
+                capturer.save(blob => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `progress-bar-video.webm`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    
+                    statusBar.textContent = '导出完成！';
+                    exportBtn.disabled = false;
+                    playBtn.disabled = false;
+                    resetAnimation();
+                });
+            }
+
+
+            // Initial call to set up the view
+            updateAndRender();
+        });
+    </script>
+
+</body>
+</html>
