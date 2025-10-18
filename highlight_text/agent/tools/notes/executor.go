@@ -424,9 +424,13 @@ func readNote(args map[string]interface{}, basePath string) (string, error) {
 		return "", fmt.Errorf("缺少必需参数: note_id")
 	}
 
-	// 支持路径：如果不包含.md扩展名，则添加
-	if !strings.HasSuffix(noteID, ".md") {
+	// 检查文件扩展名
+	ext := strings.ToLower(filepath.Ext(noteID))
+
+	// 如果没有扩展名，默认添加 .md
+	if ext == "" {
 		noteID += ".md"
+		ext = ".md"
 	}
 
 	// 安全路径检查
@@ -441,11 +445,22 @@ func readNote(args map[string]interface{}, basePath string) (string, error) {
 	}
 
 	contentStr := string(content)
-	metadata, plainContent, tags := parseFrontMatter(contentStr)
+
+	// 只对 Markdown 文件解析 Front Matter
+	var metadata map[string]interface{}
+	var plainContent string
+	var tags []string
+
+	if ext == ".md" {
+		metadata, plainContent, tags = parseFrontMatter(contentStr)
+	} else {
+		// 其他文件类型直接返回原始内容
+		plainContent = contentStr
+	}
 
 	// 返回结构化的JSON数据
 	result := map[string]interface{}{
-		"id":      strings.TrimSuffix(noteID, ".md"),
+		"id":      noteID,
 		"content": plainContent,
 	}
 
@@ -791,7 +806,7 @@ func parseFrontMatter(content string) (map[string]interface{}, string, []string)
 
 // isSupportedFileType 检查文件是否为支持的类型
 func isSupportedFileType(filename string) bool {
-	supportedExts := []string{".md", ".txt", ".log", ".json", ".yaml", ".yml", ".toml", ".xml", ".csv"}
+	supportedExts := []string{".md", ".txt", ".pdf", ".log", ".json", ".yaml", ".yml", ".toml", ".xml", ".csv"}
 	ext := strings.ToLower(filepath.Ext(filename))
 	for _, supported := range supportedExts {
 		if ext == supported {
@@ -1576,6 +1591,51 @@ func createTodoList(args map[string]interface{}) (string, error) {
 
 	resultJSON, _ := json.MarshalIndent(result, "", "  ")
 	return string(resultJSON), nil
+}
+
+// AppendToFollowupNote PDF划词追问，追加到同名md文件
+func AppendToFollowupNote(selectedText, question, answer, pdfFileName, basePath string) error {
+	// 生成对应的Markdown文件路径
+	mdFileName := pdfFileName + ".md"
+	mdPath, err := sanitizePath(basePath, mdFileName)
+	if err != nil {
+		return fmt.Errorf("路径无效: %v", err)
+	}
+
+	// 检查md文件是否存在
+	var existingContent string
+	if content, err := os.ReadFile(mdPath); err == nil {
+		existingContent = string(content)
+	} else {
+		// 文件不存在，创建初始内容
+		pdfBaseName := filepath.Base(pdfFileName)
+		existingContent = fmt.Sprintf("# %s 笔记\n\n此文件记录了对 `%s.pdf` 的阅读笔记和追问。\n\n---\n\n", pdfBaseName, pdfBaseName)
+	}
+
+	// 构造追加内容
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	appendContent := fmt.Sprintf("\n## 追问 - %s\n\n> %s\n\n**Q:** %s\n\n**A:** %s\n\n---\n\n",
+		timestamp,
+		selectedText,
+		question,
+		answer)
+
+	// 追加到文件
+	newContent := existingContent + appendContent
+
+	// 确保目录存在
+	mdDir := filepath.Dir(mdPath)
+	if err := os.MkdirAll(mdDir, 0755); err != nil {
+		return fmt.Errorf("创建目录失败: %v", err)
+	}
+
+	// 写入文件
+	err = os.WriteFile(mdPath, []byte(newContent), 0644)
+	if err != nil {
+		return fmt.Errorf("写入文件失败: %v", err)
+	}
+
+	return nil
 }
 
 // updateTodoList 更新任务列表状态

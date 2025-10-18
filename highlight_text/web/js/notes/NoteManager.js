@@ -189,15 +189,17 @@ class NoteManager {
                 fileDiv.dataset.path = node.path;
                 fileDiv.dataset.type = 'file';
 
-                // 从path提取noteId（移除.md扩展名）
-                const noteId = node.path.replace(/\.md$/, '');
+                // 从path提取noteId
+                // 对于 .md 文件，移除扩展名；对于其他文件（.txt, .pdf等），保留完整路径
+                const noteId = node.path.endsWith('.md') ? node.path.replace(/\.md$/, '') : node.path;
 
                 if (noteId === this.activeNoteId) {
                     fileDiv.classList.add('bg-purple-900', 'bg-opacity-30');
                 }
 
                 // 获取标题（优先使用metadata中的title）
-                const title = node.metadata?.title || node.name.replace(/\.md$/, '');
+                // 对于 .md 文件移除扩展名，其他文件保留原名
+                const title = node.metadata?.title || (node.name.endsWith('.md') ? node.name.replace(/\.md$/, '') : node.name);
 
                 // 渲染标签
                 let tagsHtml = '';
@@ -260,6 +262,9 @@ class NoteManager {
         // 提取笔记标题（用于header显示）
         const noteTitle = noteId.includes('/') ? noteId.substring(noteId.lastIndexOf('/') + 1) : noteId;
 
+        // 检查文件类型
+        const fileExt = noteId.split('.').pop().toLowerCase();
+
         // UI操作：调用UIManager，传入笔记标题
         this.app.uiManager.switchToEditorMode(noteTitle);
 
@@ -270,13 +275,63 @@ class NoteManager {
         }
         this.renderCopilotContextTags();
 
-        // 业务逻辑：加载笔记内容
+        // 业务逻辑：根据文件类型加载内容
         try {
-            const response = await fetch(`http://localhost:8080/api/notes/${noteId}`);
-            const content = await response.text();
+            if (fileExt === 'pdf') {
+                // PDF文件：直接在预览区域显示
+                const filePath = `/KnowledgeBase/${noteId}`;
 
-            // 初始化编辑器
-            this.initEditor(content, noteId);
+                // 隐藏编辑器，显示预览
+                const noteEditor = document.getElementById('noteEditor');
+                if (noteEditor) {
+                    noteEditor.classList.add('hidden');
+                }
+
+                // 自动切换到预览模式
+                if (this.notePreview) {
+                    this.notePreview.show();
+                    this.notePreview.renderPdf(filePath);
+
+                    // 更新预览按钮状态
+                    const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+                    if (togglePreviewBtn) {
+                        togglePreviewBtn.classList.add('bg-blue-600');
+                        togglePreviewBtn.classList.remove('bg-gray-700');
+                    }
+                    this.isEditorPreview = true;
+                }
+            } else if (fileExt === 'txt') {
+                // TXT文件：在预览区域显示纯文本
+                const response = await fetch(`http://localhost:8080/api/notes/${noteId}`);
+                const content = await response.text();
+
+                // 隐藏编辑器，显示预览
+                const noteEditor = document.getElementById('noteEditor');
+                if (noteEditor) {
+                    noteEditor.classList.add('hidden');
+                }
+
+                // 自动切换到预览模式
+                if (this.notePreview) {
+                    this.notePreview.show();
+                    this.notePreview.renderText(content);
+
+                    // 更新预览按钮状态
+                    const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+                    if (togglePreviewBtn) {
+                        togglePreviewBtn.classList.add('bg-blue-600');
+                        togglePreviewBtn.classList.remove('bg-gray-700');
+                    }
+                    this.isEditorPreview = true;
+                }
+            } else {
+                // Markdown文件：正常加载到编辑器
+                const response = await fetch(`http://localhost:8080/api/notes/${noteId}`);
+                const content = await response.text();
+
+                // 初始化编辑器
+                this.initEditor(content, noteId);
+            }
         } catch (error) {
             console.error('加载笔记内容失败:', error);
             this.app.uiManager.showNotification('加载笔记失败: ' + error.message, 'error');
@@ -1259,6 +1314,16 @@ tags: []
             });
         }
 
+        // 监听PDF文本选择事件
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'pdf-text-selected') {
+                this.handlePdfTextSelection(event.data);
+            } else if (event.data.type === 'pdf-selection-cleared') {
+                // 清除tooltip
+                this.app.uiManager.hideTooltip();
+            }
+        });
+
         // Copilot输入区域拖拽事件
         const copilotInputArea = document.getElementById('copilotInputArea');
         if (copilotInputArea) {
@@ -1347,6 +1412,100 @@ tags: []
                 this.app.config.commands,
                 (text, command, element) => this.app.chatManager.handleFollowup(text, command, element)
             );
+        }
+    }
+
+    /**
+     * 处理PDF文本选择
+     */
+    handlePdfTextSelection(data) {
+        const { text, position, pdfPath } = data;
+
+        if (!this.app.config || !this.app.config.commands) return;
+
+        const notePreview = document.getElementById('notePreview');
+
+        // 显示tooltip，并传递特殊的回调来处理PDF追问
+        this.app.uiManager.showTooltip(
+            position.x,
+            position.y,
+            text,
+            notePreview,
+            this.app.config.commands,
+            (selectedText, command, element) => this.handlePdfFollowup(selectedText, command, pdfPath)
+        );
+    }
+
+    /**
+     * 处理PDF追问
+     */
+    async handlePdfFollowup(selectedText, question, pdfPath) {
+        try {
+            // 显示加载中的模态框
+            this.app.chatManager.showFollowupModal('正在思考中...');
+
+            // 使用 LLMService 调用 LLM
+            const llmService = this.app.llmService;
+            if (!llmService) {
+                throw new Error('LLM服务未初始化');
+            }
+
+            let fullAnswer = '';
+
+            // 构造 prompt
+            const prompt = `请基于以下PDF文档的选中内容，回答用户的问题。
+
+【选中内容】
+${selectedText}
+
+【用户问题】
+${question}
+
+请提供详细、准确的回答：`;
+
+            // 流式调用 LLM
+            await llmService.streamCodeModification({
+                codeToEdit: '',
+                instruction: prompt,
+                onData: (chunk) => {
+                    fullAnswer += chunk;
+                    // 实时更新模态框内容
+                    this.app.chatManager.showFollowupModal(fullAnswer);
+                },
+                onComplete: async () => {
+                    console.log('LLM响应完成');
+
+                    // 调用后端保存到 Markdown 文件
+                    try {
+                        await fetch('http://localhost:8080/api/notes/pdf-followup', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                selectedText: selectedText,
+                                question: question,
+                                answer: fullAnswer,
+                                pdfPath: pdfPath
+                            })
+                        });
+
+                        this.app.uiManager.showNotification('回答已保存到笔记', 'success');
+                    } catch (saveError) {
+                        console.error('保存回答失败:', saveError);
+                        this.app.uiManager.showNotification('回答保存失败', 'warning');
+                    }
+                },
+                onError: (error) => {
+                    console.error('LLM调用失败:', error);
+                    this.app.chatManager.showFollowupModal('抱歉，AI回答失败：' + error.message);
+                    this.app.uiManager.showNotification('AI回答失败: ' + error.message, 'error');
+                }
+            });
+
+        } catch (error) {
+            console.error('PDF追问失败:', error);
+            this.app.uiManager.showNotification('PDF追问失败: ' + error.message, 'error');
         }
     }
 }

@@ -95,6 +95,7 @@ func main() {
 	http.HandleFunc("/api/notes/upload-image", handleNoteImageUpload)
 	http.HandleFunc("/api/notes/move", handleMoveNote)
 	http.HandleFunc("/api/notes/delete", handleDeleteNote)
+	http.HandleFunc("/api/notes/pdf-followup", handlePdfFollowup)
 	http.HandleFunc("/api/notes/", handleNoteByID)
 	http.HandleFunc("/api/search", handleSearchNotes)
 	http.HandleFunc("/agent/knowledge/tools", handleKnowledgeAgentTools)
@@ -989,6 +990,65 @@ func handleNotes(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(result))
+}
+
+// handlePdfFollowup 处理PDF划词追问
+func handlePdfFollowup(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		SelectedText string `json:"selectedText"`
+		Question     string `json:"question"`
+		Answer       string `json:"answer"`
+		PdfPath      string `json:"pdfPath"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 从PDF路径提取文件名（去除/KnowledgeBase/前缀和.pdf扩展名）
+	pdfFileName := strings.TrimPrefix(req.PdfPath, "/KnowledgeBase/")
+	pdfFileName = strings.TrimSuffix(pdfFileName, ".pdf")
+
+	// 调用notes包的AppendToFollowupNote函数
+	workspacePath := workspaceManager.GetWorkspacePath()
+	err = notes.AppendToFollowupNote(req.SelectedText, req.Question, req.Answer, pdfFileName, workspacePath)
+	if err != nil {
+		log.Printf("PDF追问失败: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// 广播更新通知（因为创建了新的md文件）
+	broadcastNotesUpdate()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "追问内容已保存到对应的Markdown文件",
+	})
 }
 
 // handleDeleteNote 处理笔记或文件夹删除

@@ -59,7 +59,9 @@ gitingest  \
 -e web/theme.css \
 -e web/agent/agent.css \
 -e web/app.js.backup \
--e web/css/theme.css \
+-e web/animations.css \
+-e web/css/ \
+-e web/js/lib/ \
 -e KnowledgeBase/ \
 -e history/ \
 -e /README-Task.md \

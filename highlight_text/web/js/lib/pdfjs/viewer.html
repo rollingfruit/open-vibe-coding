@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Viewer</title>
+    <script src="pdf.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background: #2d3748;
+            color: white;
+            overflow-x: hidden;
+        }
+        #toolbar {
+            background: #1a202c;
+            padding: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid #4a5568;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        button {
+            background: #4299e1;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #3182ce;
+        }
+        button:disabled {
+            background: #718096;
+            cursor: not-allowed;
+        }
+        #pageInfo {
+            font-size: 14px;
+            color: #cbd5e0;
+        }
+        #viewerContainer {
+            overflow-y: auto;
+            height: calc(100vh - 51px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .page {
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            background: white;
+        }
+        canvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        .textLayer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            opacity: 0.2;
+            line-height: 1;
+        }
+        .textLayer > span {
+            color: transparent;
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+            transform-origin: 0% 0%;
+        }
+        .textLayer ::selection {
+            background: rgba(0, 100, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <button id="prevPage">Previous</button>
+        <span id="pageInfo">Page <span id="pageNum"></span> / <span id="pageCount"></span></span>
+        <button id="nextPage">Next</button>
+        <button id="zoomIn">Zoom In</button>
+        <button id="zoomOut">Zoom Out</button>
+    </div>
+    <div id="viewerContainer"></div>
+
+    <script>
+        // Configure PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
+
+        let pdfDoc = null;
+        let pageNum = 1;
+        let pageRendering = false;
+        let pageNumPending = null;
+        let scale = 1.5;
+
+        const viewerContainer = document.getElementById('viewerContainer');
+        const pageNumSpan = document.getElementById('pageNum');
+        const pageCountSpan = document.getElementById('pageCount');
+        const prevButton = document.getElementById('prevPage');
+        const nextButton = document.getElementById('nextPage');
+        const zoomInButton = document.getElementById('zoomIn');
+        const zoomOutButton = document.getElementById('zoomOut');
+
+        // Get PDF URL from query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const pdfUrl = urlParams.get('file');
+
+        if (!pdfUrl) {
+            viewerContainer.innerHTML = '<div style="color: red; padding: 20px;">Error: No PDF file specified</div>';
+        } else {
+            loadPDF(pdfUrl);
+        }
+
+        function loadPDF(url) {
+            // Decode the URL
+            const decodedUrl = decodeURIComponent(url);
+
+            pdfjsLib.getDocument(decodedUrl).promise.then(function(pdf) {
+                pdfDoc = pdf;
+                pageCountSpan.textContent = pdf.numPages;
+
+                // Render all pages
+                renderAllPages();
+            }).catch(function(error) {
+                console.error('Error loading PDF:', error);
+                viewerContainer.innerHTML = `<div style="color: red; padding: 20px;">Error loading PDF: ${error.message}</div>`;
+            });
+        }
+
+        function renderAllPages() {
+            viewerContainer.innerHTML = '';
+
+            for (let num = 1; num <= pdfDoc.numPages; num++) {
+                const pageContainer = document.createElement('div');
+                pageContainer.className = 'page';
+                pageContainer.id = `page-${num}`;
+
+                const canvas = document.createElement('canvas');
+                const textLayerDiv = document.createElement('div');
+                textLayerDiv.className = 'textLayer';
+
+                pageContainer.appendChild(canvas);
+                pageContainer.appendChild(textLayerDiv);
+                viewerContainer.appendChild(pageContainer);
+
+                renderPage(num, canvas, textLayerDiv);
+            }
+        }
+
+        function renderPage(num, canvas, textLayerDiv) {
+            pdfDoc.getPage(num).then(function(page) {
+                const viewport = page.getViewport({ scale: scale });
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                // Position text layer
+                textLayerDiv.style.width = viewport.width + 'px';
+                textLayerDiv.style.height = viewport.height + 'px';
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+
+                page.render(renderContext).promise.then(function() {
+                    return page.getTextContent();
+                }).then(function(textContent) {
+                    // Render text layer for selection
+                    textLayerDiv.innerHTML = '';
+                    const textLayer = pdfjsLib.renderTextLayer({
+                        textContent: textContent,
+                        container: textLayerDiv,
+                        viewport: viewport,
+                        textDivs: []
+                    });
+                });
+            });
+        }
+
+        // Navigation
+        prevButton.addEventListener('click', function() {
+            if (pageNum <= 1) return;
+            pageNum--;
+            scrollToPage(pageNum);
+        });
+
+        nextButton.addEventListener('click', function() {
+            if (pageNum >= pdfDoc.numPages) return;
+            pageNum++;
+            scrollToPage(pageNum);
+        });
+
+        function scrollToPage(num) {
+            const pageElement = document.getElementById(`page-${num}`);
+            if (pageElement) {
+                pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                updatePageNum(num);
+            }
+        }
+
+        function updatePageNum(num) {
+            pageNum = num;
+            pageNumSpan.textContent = num;
+            prevButton.disabled = (pageNum <= 1);
+            nextButton.disabled = (pageNum >= pdfDoc.numPages);
+        }
+
+        // Zoom
+        zoomInButton.addEventListener('click', function() {
+            scale += 0.25;
+            renderAllPages();
+        });
+
+        zoomOutButton.addEventListener('click', function() {
+            if (scale <= 0.5) return;
+            scale -= 0.25;
+            renderAllPages();
+        });
+
+        // Track current page on scroll
+        viewerContainer.addEventListener('scroll', function() {
+            const pages = document.querySelectorAll('.page');
+            let currentPage = 1;
+
+            pages.forEach((page, index) => {
+                const rect = page.getBoundingClientRect();
+                if (rect.top <= 100 && rect.bottom >= 100) {
+                    currentPage = index + 1;
+                }
+            });
+
+            if (currentPage !== pageNum) {
+                updatePageNum(currentPage);
+            }
+        });
+
+        // Enable text selection and send to parent window
+        document.addEventListener('mouseup', function(e) {
+            const selection = window.getSelection();
+            const selectedText = selection.toString().trim();
+
+            if (selectedText.length > 0) {
+                // Get selection position
+                const range = selection.getRangeAt(0);
+                const rect = range.getBoundingClientRect();
+
+                // Send selected text and position to parent window
+                window.parent.postMessage({
+                    type: 'pdf-text-selected',
+                    text: selectedText,
+                    position: {
+                        x: rect.left + rect.width / 2,
+                        y: rect.top,
+                        width: rect.width,
+                        height: rect.height
+                    },
+                    pdfPath: pdfUrl
+                }, '*');
+            }
+        });
+
+        // Clear selection when clicking elsewhere
+        document.addEventListener('click', function(e) {
+            if (e.target.tagName !== 'SPAN') {
+                const selection = window.getSelection();
+                if (selection.toString().trim().length === 0) {
+                    window.parent.postMessage({
+                        type: 'pdf-selection-cleared'
+                    }, '*');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

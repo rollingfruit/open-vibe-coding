@@ -82,4 +82,59 @@ export class NotePreview {
             this.previewElement.classList.add('hidden');
         }
     }
+
+    /**
+     * 渲染纯文本内容
+     * @param {string} content - 纯文本内容
+     */
+    renderText(content) {
+        if (!this.previewElement) {
+            console.error("Preview element not found!");
+            return;
+        }
+
+        // 清空并移除markdown样式
+        this.previewElement.classList.remove('markdown-body');
+
+        // 将文本包装在<pre>标签中以保留格式
+        this.previewElement.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word; font-family: monospace; padding: 1rem;">${this.escapeHtml(content)}</pre>`;
+    }
+
+    /**
+     * 渲染PDF文件
+     * @param {string} filePath - PDF文件路径
+     */
+    renderPdf(filePath) {
+        if (!this.previewElement) {
+            console.error("Preview element not found!");
+            return;
+        }
+
+        // 清空并移除markdown样式
+        this.previewElement.classList.remove('markdown-body');
+
+        // 使用iframe + PDF.js viewer
+        const viewerUrl = `/js/lib/pdfjs/web/viewer.html?file=${encodeURIComponent(filePath)}`;
+        this.previewElement.innerHTML = `
+            <iframe
+                src="${viewerUrl}"
+                style="width: 100%; height: 100%; border: none; min-height: 600px;"
+                id="pdfViewerFrame"
+            ></iframe>
+        `;
+
+        // 存储当前PDF路径，用于后续的划词功能
+        this.currentPdfPath = filePath;
+    }
+
+    /**
+     * HTML转义
+     * @param {string} text - 需要转义的文本
+     * @returns {string} 转义后的文本
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 }
