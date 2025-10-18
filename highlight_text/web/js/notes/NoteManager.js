@@ -201,6 +201,15 @@ class NoteManager {
                 // 对于 .md 文件移除扩展名，其他文件保留原名
                 const title = node.metadata?.title || (node.name.endsWith('.md') ? node.name.replace(/\.md$/, '') : node.name);
 
+                // 根据文件扩展名选择图标
+                const getFileIcon = (fileName) => {
+                    const ext = fileName.split('.').pop().toLowerCase();
+                    if (ext === 'pdf') return { icon: 'file-text', color: 'text-red-400' }; // PDF用红色
+                    if (ext === 'txt') return { icon: 'file-text', color: 'text-green-400' }; // TXT用绿色
+                    return { icon: 'file-text', color: 'text-purple-400' }; // MD用紫色
+                };
+                const fileIconInfo = getFileIcon(node.name);
+
                 // 渲染标签
                 let tagsHtml = '';
                 if (node.tags && node.tags.length > 0) {
@@ -211,7 +220,7 @@ class NoteManager {
 
                 fileDiv.innerHTML = `
                     <div class="flex items-center gap-2">
-                        <i data-lucide="file-text" class="w-4 h-4 text-purple-400"></i>
+                        <i data-lucide="${fileIconInfo.icon}" class="w-4 h-4 ${fileIconInfo.color}"></i>
                         <span class="font-medium text-sm">${escapeHtml(title)}</span>
                     </div>
                     ${tagsHtml}

@@ -114,7 +114,7 @@ export class NotePreview {
         this.previewElement.classList.remove('markdown-body');
 
         // 使用iframe + PDF.js viewer
-        const viewerUrl = `/js/lib/pdfjs/web/viewer.html?file=${encodeURIComponent(filePath)}`;
+        const viewerUrl = `/js/lib/pdfjs/viewer.html?file=${encodeURIComponent(filePath)}`;
         this.previewElement.innerHTML = `
             <iframe
                 src="${viewerUrl}"
