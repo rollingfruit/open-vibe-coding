@@ -8,6 +8,8 @@ import { ChatManager } from './js/core/ChatManager.js';
 import { StreamingDiffService } from './js/services/StreamingDiffService.js';
 import { MultiFileDiffManager } from './js/services/MultiFileDiffManager.js';
 import { LLMService } from './js/services/LLMService.js';
+import { SelectionHighlighter } from './js/ui/SelectionHighlighter.js';
+import { PdfSelectionEnhancer } from './js/ui/PdfSelectionEnhancer.js';
 
 class AIAssistant {
     constructor() {
@@ -23,7 +25,7 @@ class AIAssistant {
         this.isAgentMode = false; // 是否处于Agent模式
 
         // UI管理器
-        this.uiManager = new UIManager();
+        this.uiManager = new UIManager(this);
         this.agentHandler = null; // Agent处理器
         this.chatManager = null; // 聊天管理器（延迟初始化）
 
@@ -54,6 +56,12 @@ class AIAssistant {
 
         // 初始化设置管理器（需要在loadConfig之后）
         this.settingsManager = new SettingsManager(this.config, this.settings, this);
+
+        // 初始化SelectionHighlighter（在UIManager创建后立即初始化）
+        this.uiManager.selectionHighlighter = new SelectionHighlighter(this);
+
+        // 初始化PdfSelectionEnhancer（PDF文本选择增强器）
+        this.pdfSelectionEnhancer = new PdfSelectionEnhancer();
 
         this.agentHandler = new AgentHandler(this); // 初始化Agent处理器
         this.knowledgeAgentHandler = new KnowledgeAgentHandler(this); // 初始化知识库Agent

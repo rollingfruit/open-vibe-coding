@@ -284,6 +284,24 @@ class NoteManager {
         }
         this.renderCopilotContextTags();
 
+        const noteEditor = document.getElementById('noteEditor');
+        const togglePreviewBtn = document.getElementById('togglePreviewBtn');
+
+        if (noteEditor) {
+            noteEditor.classList.remove('hidden');
+        }
+
+        if (this.notePreview) {
+            this.notePreview.clear();
+            this.notePreview.hide();
+        }
+
+        if (togglePreviewBtn) {
+            togglePreviewBtn.classList.remove('bg-blue-600');
+            togglePreviewBtn.classList.add('bg-gray-700');
+        }
+        this.isEditorPreview = false;
+
         // 业务逻辑：根据文件类型加载内容
         try {
             if (fileExt === 'pdf') {
@@ -291,7 +309,6 @@ class NoteManager {
                 const filePath = `/KnowledgeBase/${noteId}`;
 
                 // 隐藏编辑器，显示预览
-                const noteEditor = document.getElementById('noteEditor');
                 if (noteEditor) {
                     noteEditor.classList.add('hidden');
                 }
@@ -302,7 +319,6 @@ class NoteManager {
                     this.notePreview.renderPdf(filePath);
 
                     // 更新预览按钮状态
-                    const togglePreviewBtn = document.getElementById('togglePreviewBtn');
                     if (togglePreviewBtn) {
                         togglePreviewBtn.classList.add('bg-blue-600');
                         togglePreviewBtn.classList.remove('bg-gray-700');
@@ -315,7 +331,6 @@ class NoteManager {
                 const content = await response.text();
 
                 // 隐藏编辑器，显示预览
-                const noteEditor = document.getElementById('noteEditor');
                 if (noteEditor) {
                     noteEditor.classList.add('hidden');
                 }
@@ -326,7 +341,6 @@ class NoteManager {
                     this.notePreview.renderText(content);
 
                     // 更新预览按钮状态
-                    const togglePreviewBtn = document.getElementById('togglePreviewBtn');
                     if (togglePreviewBtn) {
                         togglePreviewBtn.classList.add('bg-blue-600');
                         togglePreviewBtn.classList.remove('bg-gray-700');
@@ -1325,10 +1339,23 @@ tags: []
 
         // 监听PDF文本选择事件
         window.addEventListener('message', (event) => {
-            if (event.data.type === 'pdf-text-selected') {
-                this.handlePdfTextSelection(event.data);
-            } else if (event.data.type === 'pdf-selection-cleared') {
-                // 清除tooltip
+            const data = event.data;
+            if (!data || typeof data !== 'object' || !data.type) {
+                return;
+            }
+
+            if (data.type !== 'pdf-text-selected' && data.type !== 'pdf-selection-cleared') {
+                return;
+            }
+
+            const pdfFrame = document.getElementById('pdfViewerFrame');
+            if (pdfFrame && pdfFrame.contentWindow && event.source !== pdfFrame.contentWindow) {
+                return;
+            }
+
+            if (data.type === 'pdf-text-selected') {
+                this.handlePdfTextSelection(data);
+            } else if (data.type === 'pdf-selection-cleared') {
                 this.app.uiManager.hideTooltip();
             }
         });
@@ -1369,6 +1396,10 @@ tags: []
 
     handleEditorContextMenu(e, selectedText) {
         e.preventDefault();
+
+        // 传递isTextarea选项，让UIManager知道这是textarea场景
+        // 注意：showInstructionPrompt内部不使用tooltip，所以这里暂不调用showTooltip
+        // 而是继续使用原有的modal方式
 
         this.app.uiManager.showInstructionPrompt((instruction) => {
             if (instruction && this.streamingDiffService) {
@@ -1413,13 +1444,15 @@ tags: []
             const range = selection.getRangeAt(0);
             const rect = range.getBoundingClientRect();
 
+            // 传递空options对象，让UIManager知道这是Markdown/Div场景
             this.app.uiManager.showTooltip(
                 rect.left + rect.width / 2,
                 rect.top - 10,
                 selectedText,
                 notePreview,
                 this.app.config.commands,
-                (text, command, element) => this.app.chatManager.handleFollowup(text, command, element)
+                (text, command, element) => this.app.chatManager.handleFollowup(text, command, element),
+                { isTextarea: false } // Markdown预览场景
             );
         }
     }
@@ -1428,90 +1461,79 @@ tags: []
      * 处理PDF文本选择
      */
     handlePdfTextSelection(data) {
-        const { text, position, pdfPath } = data;
+        let { text, position, pdfPath } = data;
 
         if (!this.app.config || !this.app.config.commands) return;
 
         const notePreview = document.getElementById('notePreview');
+        if (!notePreview) return;
+
+        // 使用PdfSelectionEnhancer清理文本
+        if (this.app.pdfSelectionEnhancer && text) {
+            const cleaned = this.app.pdfSelectionEnhancer.cleanSelectedText(text);
+            console.log('PDF文本清理:', {
+                原始长度: text.length,
+                清理后长度: cleaned.length,
+                原始: text.substring(0, 100),
+                清理后: cleaned.substring(0, 100)
+            });
+            text = cleaned;
+        }
+
+        // 如果清理后文本为空，不显示tooltip
+        if (!text || text.trim().length === 0) {
+            console.warn('PDF选中文本为空，跳过显示tooltip');
+            return;
+        }
+
+        const tooltipX = position && typeof position.x === 'number' ? position.x : Number(position?.x) || 0;
+        const tooltipY = position && typeof position.y === 'number' ? position.y : Number(position?.y) || 0;
+        const resolvedPdfPath = pdfPath || this.notePreview?.currentPdfPath;
+
+        // 传递pdfPosition选项，让UIManager创建PDF高亮浮层
+        // 注意：PDF的position可能需要相对于notePreview容器的坐标
+        const pdfPositionRect = position ? {
+            x: position.x || 0,
+            y: position.y || 0,
+            width: position.width || 100,
+            height: position.height || 20
+        } : null;
 
         // 显示tooltip，并传递特殊的回调来处理PDF追问
         this.app.uiManager.showTooltip(
-            position.x,
-            position.y,
+            tooltipX,
+            tooltipY,
             text,
             notePreview,
             this.app.config.commands,
-            (selectedText, command, element) => this.handlePdfFollowup(selectedText, command, pdfPath)
+            (selectedText, command, element) => this.handlePdfFollowup(selectedText, command, element, resolvedPdfPath),
+            { pdfPosition: pdfPositionRect } // PDF场景
         );
     }
 
     /**
      * 处理PDF追问
      */
-    async handlePdfFollowup(selectedText, question, pdfPath) {
-        try {
-            // 显示加载中的模态框
-            this.app.chatManager.showFollowupModal('正在思考中...');
+    async handlePdfFollowup(selectedText, command, messageElement, pdfPath) {
+        if (!this.app?.chatManager) {
+            console.error('PDF追问失败: ChatManager 未初始化');
+            this.app.uiManager.showNotification('PDF追问失败: 系统未就绪', 'error');
+            return;
+        }
 
-            // 使用 LLMService 调用 LLM
-            const llmService = this.app.llmService;
-            if (!llmService) {
-                throw new Error('LLM服务未初始化');
+        try {
+            let commandForFollowup = command;
+            const basePrompt = typeof command.prompt === 'string' ? command.prompt : '';
+
+            if (pdfPath) {
+                const promptHasTrailingNewline = basePrompt.endsWith('\n');
+                const augmentedPrompt = `${basePrompt}${promptHasTrailingNewline ? '' : '\n'}【PDF来源】${pdfPath}\n`;
+                commandForFollowup = { ...command, prompt: augmentedPrompt };
             }
 
-            let fullAnswer = '';
+            const contextElement = messageElement || document.getElementById('notePreview');
 
-            // 构造 prompt
-            const prompt = `请基于以下PDF文档的选中内容，回答用户的问题。
-
-【选中内容】
-${selectedText}
-
-【用户问题】
-${question}
-
-请提供详细、准确的回答：`;
-
-            // 流式调用 LLM
-            await llmService.streamCodeModification({
-                codeToEdit: '',
-                instruction: prompt,
-                onData: (chunk) => {
-                    fullAnswer += chunk;
-                    // 实时更新模态框内容
-                    this.app.chatManager.showFollowupModal(fullAnswer);
-                },
-                onComplete: async () => {
-                    console.log('LLM响应完成');
-
-                    // 调用后端保存到 Markdown 文件
-                    try {
-                        await fetch('http://localhost:8080/api/notes/pdf-followup', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                selectedText: selectedText,
-                                question: question,
-                                answer: fullAnswer,
-                                pdfPath: pdfPath
-                            })
-                        });
-
-                        this.app.uiManager.showNotification('回答已保存到笔记', 'success');
-                    } catch (saveError) {
-                        console.error('保存回答失败:', saveError);
-                        this.app.uiManager.showNotification('回答保存失败', 'warning');
-                    }
-                },
-                onError: (error) => {
-                    console.error('LLM调用失败:', error);
-                    this.app.chatManager.showFollowupModal('抱歉，AI回答失败：' + error.message);
-                    this.app.uiManager.showNotification('AI回答失败: ' + error.message, 'error');
-                }
-            });
-
+            await this.app.chatManager.handleFollowup(selectedText, commandForFollowup, contextElement);
         } catch (error) {
             console.error('PDF追问失败:', error);
             this.app.uiManager.showNotification('PDF追问失败: ' + error.message, 'error');
@@ -1520,4 +1542,3 @@ ${question}
 }
 
 export { NoteManager };
-

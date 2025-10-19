@@ -11,6 +11,9 @@
             padding: 0;
             box-sizing: border-box;
         }
+        html, body {
+            height: 100%;
+        }
         body {
             font-family: Arial, sans-serif;
             background: #2d3748;
@@ -56,9 +59,13 @@
             flex-direction: column;
             align-items: center;
             padding: 20px;
+            gap: 20px;
+            width: 100%;
+            min-height: 0;
+            -webkit-overflow-scrolling: touch;
         }
         .page {
-            margin-bottom: 20px;
+            position: relative;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
             background: white;
         }
@@ -74,8 +81,10 @@
             right: 0;
             bottom: 0;
             overflow: hidden;
-            opacity: 0.2;
+            opacity: 1;
             line-height: 1;
+            pointer-events: auto;
+            user-select: text;
         }
         .textLayer > span {
             color: transparent;
@@ -116,10 +125,122 @@
         const nextButton = document.getElementById('nextPage');
         const zoomInButton = document.getElementById('zoomIn');
         const zoomOutButton = document.getElementById('zoomOut');
+        const messageTargetOrigin = window.location.origin && window.location.origin !== 'null'
+            ? window.location.origin
+            : '*';
+        let selectionChangeTimeout = null;
+        let lastSelectionSignature = null;
+        let hasActiveSelection = false;
+
+        function isNodeInsideViewer(node) {
+            if (!node) return false;
+            if (node.nodeType === Node.TEXT_NODE) {
+                node = node.parentNode;
+            }
+            return viewerContainer.contains(node);
+        }
+
+        function getValidRect(range) {
+            if (!range) return null;
+            let rect = range.getBoundingClientRect();
+            if (rect && rect.width > 0 && rect.height > 0) {
+                return rect;
+            }
+
+            const rects = range.getClientRects ? range.getClientRects() : [];
+            for (let i = 0; i < rects.length; i++) {
+                const candidate = rects[i];
+                if (candidate.width > 0 && candidate.height > 0) {
+                    return candidate;
+                }
+            }
+
+            return rects.length > 0 ? rects[0] : rect;
+        }
+
+        function notifySelectionCleared() {
+            if (!hasActiveSelection) {
+                return;
+            }
+
+            hasActiveSelection = false;
+            lastSelectionSignature = null;
+            window.parent.postMessage({
+                type: 'pdf-selection-cleared'
+            }, messageTargetOrigin);
+        }
+
+        function postSelectionToParent() {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) {
+                notifySelectionCleared();
+                return;
+            }
+
+            const anchorInside = isNodeInsideViewer(selection.anchorNode);
+            const focusInside = isNodeInsideViewer(selection.focusNode);
+            if (!anchorInside && !focusInside) {
+                notifySelectionCleared();
+                return;
+            }
+
+            const selectedText = selection.toString().trim();
+            if (!selectedText) {
+                notifySelectionCleared();
+                return;
+            }
+
+            const range = selection.getRangeAt(0).cloneRange();
+            const rect = getValidRect(range);
+            if (!rect) {
+                notifySelectionCleared();
+                return;
+            }
+
+            const frameElement = window.frameElement;
+            const frameRect = frameElement && frameElement.getBoundingClientRect
+                ? frameElement.getBoundingClientRect()
+                : { left: 0, top: 0 };
+
+            const position = {
+                x: frameRect.left + rect.left + rect.width / 2,
+                y: frameRect.top + rect.top,
+                width: rect.width,
+                height: rect.height
+            };
+
+            const signature = `${selectedText}|${position.x}|${position.y}|${position.width}|${position.height}`;
+            if (signature === lastSelectionSignature) {
+                return;
+            }
+
+            lastSelectionSignature = signature;
+            hasActiveSelection = true;
+
+            window.parent.postMessage({
+                type: 'pdf-text-selected',
+                text: selectedText,
+                position,
+                pdfPath: pdfUrl
+            }, messageTargetOrigin);
+        }
 
         // Get PDF URL from query parameter
         const urlParams = new URLSearchParams(window.location.search);
-        const pdfUrl = urlParams.get('file');
+        const rawPdfUrl = urlParams.get('file');
+        const pdfUrl = rawPdfUrl ? decodeURIComponent(rawPdfUrl) : null;
+
+        try {
+            const legacyKeys = ['pdfjs.preferences', 'pdfjs.metadata', 'pdfjs.history'];
+            legacyKeys.forEach((key) => {
+                const value = window.localStorage ? window.localStorage.getItem(key) : null;
+                if (value === 'undefined') {
+                    window.localStorage.removeItem(key);
+                }
+            });
+        } catch (storageError) {
+            console.warn('Failed to clean PDF.js localStorage preferences:', storageError);
+        }
 
         if (!pdfUrl) {
             viewerContainer.innerHTML = '<div style="color: red; padding: 20px;">Error: No PDF file specified</div>';
@@ -128,10 +249,7 @@
         }
 
         function loadPDF(url) {
-            // Decode the URL
-            const decodedUrl = decodeURIComponent(url);
-
-            pdfjsLib.getDocument(decodedUrl).promise.then(function(pdf) {
+            pdfjsLib.getDocument(url).promise.then(function(pdf) {
                 pdfDoc = pdf;
                 pageCountSpan.textContent = pdf.numPages;
 
@@ -159,16 +277,22 @@
                 pageContainer.appendChild(textLayerDiv);
                 viewerContainer.appendChild(pageContainer);
 
-                renderPage(num, canvas, textLayerDiv);
+                renderPage(num, pageContainer, canvas, textLayerDiv);
             }
         }
 
-        function renderPage(num, canvas, textLayerDiv) {
+        function renderPage(num, pageContainer, canvas, textLayerDiv) {
             pdfDoc.getPage(num).then(function(page) {
                 const viewport = page.getViewport({ scale: scale });
                 const context = canvas.getContext('2d');
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
+                canvas.style.width = viewport.width + 'px';
+                canvas.style.height = viewport.height + 'px';
+                if (pageContainer) {
+                    pageContainer.style.width = viewport.width + 'px';
+                    pageContainer.style.height = viewport.height + 'px';
+                }
 
                 // Position text layer
                 textLayerDiv.style.width = viewport.width + 'px';
@@ -249,42 +373,38 @@
             if (currentPage !== pageNum) {
                 updatePageNum(currentPage);
             }
-        });
-
-        // Enable text selection and send to parent window
-        document.addEventListener('mouseup', function(e) {
-            const selection = window.getSelection();
-            const selectedText = selection.toString().trim();
-
-            if (selectedText.length > 0) {
-                // Get selection position
-                const range = selection.getRangeAt(0);
-                const rect = range.getBoundingClientRect();
-
-                // Send selected text and position to parent window
-                window.parent.postMessage({
-                    type: 'pdf-text-selected',
-                    text: selectedText,
-                    position: {
-                        x: rect.left + rect.width / 2,
-                        y: rect.top,
-                        width: rect.width,
-                        height: rect.height
-                    },
-                    pdfPath: pdfUrl
-                }, '*');
+            if (hasActiveSelection) {
+                requestAnimationFrame(postSelectionToParent);
             }
         });
 
-        // Clear selection when clicking elsewhere
-        document.addEventListener('click', function(e) {
-            if (e.target.tagName !== 'SPAN') {
-                const selection = window.getSelection();
-                if (selection.toString().trim().length === 0) {
-                    window.parent.postMessage({
-                        type: 'pdf-selection-cleared'
-                    }, '*');
-                }
+        // Enable text selection and send to parent window
+        document.addEventListener('mouseup', function() {
+            requestAnimationFrame(postSelectionToParent);
+        });
+
+        document.addEventListener('keyup', function(event) {
+            if (event.key === 'Shift' || event.key.startsWith('Arrow')) {
+                postSelectionToParent();
+            }
+        });
+
+        document.addEventListener('selectionchange', function() {
+            if (selectionChangeTimeout) {
+                clearTimeout(selectionChangeTimeout);
+            }
+            selectionChangeTimeout = setTimeout(postSelectionToParent, 80);
+        });
+
+        document.addEventListener('mousedown', function(event) {
+            if (!viewerContainer.contains(event.target)) {
+                notifySelectionCleared();
+            }
+        });
+
+        document.addEventListener('click', function(event) {
+            if (!viewerContainer.contains(event.target)) {
+                notifySelectionCleared();
             }
         });
     </script>

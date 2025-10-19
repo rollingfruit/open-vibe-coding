@@ -22,6 +22,10 @@ export class NotePreview {
             return;
         }
 
+        this.previewElement.classList.remove('pdf-viewer');
+        this.previewElement.classList.add('markdown-body');
+        this.currentPdfPath = null;
+
         // 使用ChatManager中的formatMessage方法来渲染Markdown
         const html = this.app.chatManager.formatMessage(content);
         this.previewElement.innerHTML = html;
@@ -93,11 +97,13 @@ export class NotePreview {
             return;
         }
 
+        this.previewElement.classList.remove('pdf-viewer');
         // 清空并移除markdown样式
         this.previewElement.classList.remove('markdown-body');
 
         // 将文本包装在<pre>标签中以保留格式
         this.previewElement.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word; font-family: monospace; padding: 1rem;">${this.escapeHtml(content)}</pre>`;
+        this.currentPdfPath = null;
     }
 
     /**
@@ -112,6 +118,7 @@ export class NotePreview {
 
         // 清空并移除markdown样式
         this.previewElement.classList.remove('markdown-body');
+        this.previewElement.classList.add('pdf-viewer');
 
         // 使用iframe + PDF.js viewer
         const viewerUrl = `/js/lib/pdfjs/viewer.html?file=${encodeURIComponent(filePath)}`;
@@ -125,6 +132,19 @@ export class NotePreview {
 
         // 存储当前PDF路径，用于后续的划词功能
         this.currentPdfPath = filePath;
+    }
+
+    /**
+     * 清空预览内容
+     */
+    clear() {
+        if (!this.previewElement) {
+            return;
+        }
+
+        this.previewElement.innerHTML = '';
+        this.previewElement.classList.remove('pdf-viewer');
+        this.currentPdfPath = null;
     }
 
     /**

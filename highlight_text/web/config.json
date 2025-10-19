@@ -1,8 +1,8 @@
 {
   "apiSettings": {
     "defaultEndpoint": "",
-    "maxContextTokens": 20000,
-    "maxTokens": 10000,
+    "maxContextTokens": 40000,
+    "maxTokens": 20000,
     "model": "gpt-4.1-mini",
     "temperature": 0.7
   },

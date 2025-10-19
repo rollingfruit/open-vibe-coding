@@ -1,0 +1,284 @@
+/**
+ * SelectionHighlighter 样式
+ * 统一管理划词文本的高亮显示样式
+ */
+
+/* ==================== Markdown 和 div 内容的划词高亮 ==================== */
+.highlight-selection {
+    background-color: var(--highlight-selection-bg, rgba(59, 130, 246, 0.4));
+    color: var(--highlight-selection-text, inherit);
+    border-radius: 2px;
+    padding: 1px 2px;
+    transition: background-color 0.2s ease, opacity 0.2s ease;
+    box-shadow: 0 0 0 1px var(--highlight-selection-border, rgba(59, 130, 246, 0.6));
+}
+
+/* 当tooltip激活时,增强高亮效果 */
+body.tooltip-active .highlight-selection {
+    background-color: var(--highlight-selection-bg-active, rgba(59, 130, 246, 0.6));
+    box-shadow: 0 0 0 2px var(--highlight-selection-border-active, rgba(59, 130, 246, 0.8));
+}
+
+/* ==================== PDF 划词的浮层高亮 ==================== */
+.pdf-highlight-overlay {
+    background-color: var(--highlight-pdf-overlay-bg, rgba(255, 204, 0, 0.4));
+    position: absolute;
+    pointer-events: none; /* 确保不阻挡鼠标事件 */
+    z-index: 998; /* 位于tooltip(z-index:1000)之下,但高于内容 */
+    border-radius: 2px;
+    transition: background-color 0.2s ease, opacity 0.2s ease;
+    box-shadow: 0 0 0 1px var(--highlight-pdf-border, rgba(255, 204, 0, 0.6));
+    mix-blend-mode: multiply; /* 混合模式,使高亮更自然 */
+}
+
+/* 当tooltip激活时,增强PDF高亮效果 */
+body.tooltip-active .pdf-highlight-overlay {
+    background-color: var(--highlight-pdf-overlay-bg-active, rgba(255, 204, 0, 0.6));
+    box-shadow: 0 0 0 2px var(--highlight-pdf-border-active, rgba(255, 204, 0, 0.8));
+}
+
+/* ==================== Tooltip 中显示选中文本的容器 ==================== */
+.tooltip .selected-text-display {
+    font-weight: 600;
+    color: var(--text-primary);
+    background-color: var(--bg-secondary);
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+    white-space: pre-wrap; /* 保持换行 */
+    word-break: break-word; /* 自动换行 */
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* 为选中文本显示添加滚动条样式 */
+.tooltip .selected-text-display::-webkit-scrollbar {
+    width: 6px;
+}
+
+.tooltip .selected-text-display::-webkit-scrollbar-track {
+    background: var(--bg-tertiary, #2d3748);
+    border-radius: 3px;
+}
+
+.tooltip .selected-text-display::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb, #4a5568);
+    border-radius: 3px;
+}
+
+.tooltip .selected-text-display::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover, #5a6578);
+}
+
+/* ==================== 空选中状态提示 ==================== */
+.tooltip .selected-text-display.empty {
+    opacity: 0.6;
+    font-style: italic;
+}
+
+/* ==================== 响应式调整 ==================== */
+@media (max-width: 768px) {
+    .tooltip .selected-text-display {
+        max-height: 80px;
+        font-size: 0.8125rem;
+        padding: 5px 8px;
+    }
+}
+
+/* ==================== 暗色主题适配 ==================== */
+/* 默认(暗色主题)的CSS变量值 */
+:root {
+    /* Markdown/Div 高亮 */
+    --highlight-selection-bg: rgba(59, 130, 246, 0.4); /* 蓝色半透明 */
+    --highlight-selection-text: inherit;
+    --highlight-selection-border: rgba(59, 130, 246, 0.6);
+    --highlight-selection-bg-active: rgba(59, 130, 246, 0.6);
+    --highlight-selection-border-active: rgba(59, 130, 246, 0.8);
+
+    /* PDF 高亮 */
+    --highlight-pdf-overlay-bg: rgba(255, 204, 0, 0.4); /* 黄色半透明 */
+    --highlight-pdf-border: rgba(255, 204, 0, 0.6);
+    --highlight-pdf-overlay-bg-active: rgba(255, 204, 0, 0.6);
+    --highlight-pdf-border-active: rgba(255, 204, 0, 0.8);
+
+    /* 文本显示容器 */
+    --text-primary: #e5e7eb; /* 主要文本颜色(暗色主题) */
+    --bg-secondary: #1f2937; /* 次要背景色(暗色主题) */
+    --bg-tertiary: #2d3748; /* 第三背景色 */
+    --border-color: #374151; /* 边框颜色(暗色主题) */
+    --scrollbar-thumb: #4a5568;
+    --scrollbar-thumb-hover: #5a6578;
+}
+
+/* 亮色主题覆盖值 */
+body.light-theme {
+    /* Markdown/Div 高亮 */
+    --highlight-selection-bg: rgba(173, 216, 230, 0.6); /* 淡蓝色 */
+    --highlight-selection-border: rgba(100, 150, 200, 0.7);
+    --highlight-selection-bg-active: rgba(135, 206, 235, 0.8);
+    --highlight-selection-border-active: rgba(70, 130, 180, 0.9);
+
+    /* PDF 高亮 */
+    --highlight-pdf-overlay-bg: rgba(255, 238, 173, 0.6); /* 淡黄色 */
+    --highlight-pdf-border: rgba(255, 215, 100, 0.7);
+    --highlight-pdf-overlay-bg-active: rgba(255, 228, 140, 0.8);
+    --highlight-pdf-border-active: rgba(255, 200, 80, 0.9);
+
+    /* 文本显示容器 */
+    --text-primary: #1f2937; /* 主要文本颜色(亮色主题) */
+    --bg-secondary: #f3f4f6; /* 次要背景色(亮色主题) */
+    --bg-tertiary: #e5e7eb; /* 第三背景色 */
+    --border-color: #d1d5db; /* 边框颜色(亮色主题) */
+    --scrollbar-thumb: #cbd5e0;
+    --scrollbar-thumb-hover: #a0aec0;
+}
+
+/* ==================== 动画效果 ==================== */
+@keyframes highlightPulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
+
+/* 高亮元素出现时的脉冲动画 */
+.highlight-selection,
+.pdf-highlight-overlay {
+    animation: highlightPulse 0.6s ease-in-out;
+}
+
+/* ==================== Tooltip 追问结果容器样式 ==================== */
+.tooltip {
+    transition: all 0.3s ease;
+    max-width: 90vw;
+}
+
+/* 当显示追问结果时，tooltip扩展 */
+.tooltip.expanded {
+    width: 600px;
+    max-width: 90vw;
+}
+
+/* 追问容器 */
+.tooltip-followup-container {
+    margin-top: 12px;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    opacity: 0;
+}
+
+.tooltip-followup-container:not(.hidden) {
+    max-height: 500px;
+    opacity: 1;
+}
+
+/* 追问内容区域 */
+.tooltip-followup-content {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 12px;
+    background-color: var(--bg-tertiary, #1a202c);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+/* 追问内容滚动条样式 */
+.tooltip-followup-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.tooltip-followup-content::-webkit-scrollbar-track {
+    background: var(--bg-secondary, #2d3748);
+    border-radius: 4px;
+}
+
+.tooltip-followup-content::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb, #4a5568);
+    border-radius: 4px;
+}
+
+.tooltip-followup-content::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover, #5a6578);
+}
+
+/* 追问加载状态 */
+.tooltip-followup-content.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    color: var(--text-secondary, #9ca3af);
+}
+
+/* 隐藏输入区域（当显示追问结果时） */
+.tooltip.showing-followup .tooltip-input-section {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Tooltip关闭按钮 */
+.tooltip-close-btn {
+    flex-shrink: 0;
+}
+
+/* 追问内容内的代码块样式 */
+.tooltip-followup-content pre {
+    background-color: var(--bg-secondary, #2d3748);
+    padding: 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 8px 0;
+}
+
+.tooltip-followup-content code {
+    font-family: 'Courier New', monospace;
+    font-size: 0.8125rem;
+}
+
+.tooltip-followup-content p {
+    margin: 8px 0;
+}
+
+.tooltip-followup-content ul,
+.tooltip-followup-content ol {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+/* ==================== 响应式调整 ==================== */
+@media (max-width: 768px) {
+    .tooltip.expanded {
+        width: 95vw;
+    }
+
+    .tooltip-followup-content {
+        max-height: 300px;
+        font-size: 0.8125rem;
+    }
+}
+
+/* ==================== 打印样式 ==================== */
+@media print {
+    .highlight-selection {
+        background-color: transparent;
+        box-shadow: none;
+        text-decoration: underline;
+    }
+
+    .pdf-highlight-overlay {
+        display: none;
+    }
+
+    .tooltip-followup-container {
+        display: block !important;
+        max-height: none !important;
+    }
+}

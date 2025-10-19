@@ -1161,3 +1161,26 @@ code, pre, .code-block {
     background: var(--scrollbar-thumb-hover);
 }
 
+/* PDF 预览区域布局调整 */
+#editor-container > .flex {
+    min-height: 0;
+}
+
+#editor-container > .flex > * {
+    min-height: 0;
+}
+
+#notePreview.pdf-viewer {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+}
+
+#notePreview.pdf-viewer iframe {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    border: none;
+    background-color: transparent;
+}

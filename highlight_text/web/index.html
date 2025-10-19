@@ -31,6 +31,7 @@
     <!-- Theme System -->
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/selection-highlight.css">
     <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="animations.css">
@@ -692,12 +693,35 @@
     <!-- 划词菜单模板 -->
     <template id="tooltipTemplate">
         <div class="tooltip bg-gray-800 border border-gray-600 rounded-lg shadow-lg p-3">
-            <div class="flex flex-wrap gap-2 mb-2">
+            <!-- 选中文本显示区域（将由JavaScript动态插入） -->
+
+            <!-- 快捷按钮容器 -->
+            <div class="tooltip-buttons-container flex flex-wrap gap-2 mb-2">
                 <!-- 快捷按钮将动态生成 -->
             </div>
-            <div class="flex space-x-2">
+
+            <!-- 输入区域 -->
+            <div class="flex space-x-2 tooltip-input-section">
                 <input type="text" class="custom-prompt-input flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-400" placeholder="自定义提示词...">
                 <button class="custom-prompt-btn px-2 py-1 bg-green-600 hover:bg-green-500 rounded text-sm">发送</button>
+            </div>
+
+            <!-- 追问结果显示区域 -->
+            <div class="tooltip-followup-container hidden">
+                <div class="tooltip-followup-header">
+                    <div class="flex items-center justify-between mb-2 pt-3 border-t border-gray-600">
+                        <div class="flex items-center gap-2 text-sm text-gray-300">
+                            <i data-lucide="message-circle" class="w-4 h-4"></i>
+                            <span>追问结果</span>
+                        </div>
+                        <button class="tooltip-close-btn text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700 transition-colors">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="tooltip-followup-content">
+                    <!-- 追问内容将在这里显示 -->
+                </div>
             </div>
         </div>
     </template>

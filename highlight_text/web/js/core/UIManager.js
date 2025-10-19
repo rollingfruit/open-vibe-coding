@@ -7,10 +7,12 @@
 import { escapeHtml } from '../utils/helpers.js';
 
 export class UIManager {
-    constructor() {
+    constructor(app = null) {
+        this.app = app;
         this.currentTheme = 'light';
         this.isDrawerCollapsed = false;
         this.isFocusMode = false;
+        this.selectionHighlighter = null; // 将在app初始化时设置
     }
 
     /**
@@ -382,8 +384,10 @@ export class UIManager {
      * @param {Element} messageElement - 消息元素
      * @param {Array} commands - 命令列表
      * @param {Function} handleFollowupCallback - 处理追问的回调函数
+     * @param {object} options - 额外选项 {isTextarea: boolean, pdfPosition: object}
      */
-    showTooltip(x, y, selectedText, messageElement, commands, handleFollowupCallback) {
+    showTooltip(x, y, selectedText, messageElement, commands, handleFollowupCallback, options = {}) {
+        // 先清除旧的高亮和tooltip
         this.hideTooltip();
 
         if (!commands) {
@@ -395,14 +399,49 @@ export class UIManager {
             return;
         }
 
-        // 保存当前选区，用于后续恢复
-        const selection = window.getSelection();
-        const range = selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
+        // 添加body类，表示tooltip已激活
+        document.body.classList.add('tooltip-active');
+
+        // 根据不同场景应用高亮
+        if (this.selectionHighlighter) {
+            const { isTextarea, pdfPosition } = options;
+
+            if (isTextarea) {
+                // Textarea场景：存储选区信息
+                this.selectionHighlighter.highlightTextareaContent(messageElement, selectedText);
+            } else if (pdfPosition) {
+                // PDF场景：创建浮层高亮
+                this.selectionHighlighter.highlightPdfOverlay(pdfPosition, messageElement);
+            } else {
+                // Markdown/Div场景：高亮选中文本
+                const selection = window.getSelection();
+                if (selection && selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    this.selectionHighlighter.highlightDivSelection(messageElement, range);
+                }
+            }
+        }
 
         const tooltip = template.content.cloneNode(true).querySelector('.tooltip');
-        const buttonsContainer = tooltip.querySelector('div.flex.flex-wrap');
+        const buttonsContainer = tooltip.querySelector('.tooltip-buttons-container');
         const customInput = tooltip.querySelector('.custom-prompt-input');
         const customButton = tooltip.querySelector('.custom-prompt-btn');
+
+        // 在tooltip开头添加选中文本显示区域
+        const selectedTextDisplay = document.createElement('div');
+        selectedTextDisplay.className = 'selected-text-display';
+        selectedTextDisplay.textContent = selectedText || '(无选中文本)';
+        if (!selectedText) {
+            selectedTextDisplay.classList.add('empty');
+        }
+
+        // 将选中文本显示区域插入到tooltip顶部
+        const tooltipFirstChild = tooltip.firstElementChild;
+        if (tooltipFirstChild) {
+            tooltip.insertBefore(selectedTextDisplay, tooltipFirstChild);
+        } else {
+            tooltip.appendChild(selectedTextDisplay);
+        }
 
         // 根据配置生成快捷按钮
         commands.forEach(command => {
@@ -414,7 +453,11 @@ export class UIManager {
                 if (handleFollowupCallback) {
                     handleFollowupCallback(selectedText, command, messageElement);
                 }
-                this.hideTooltip();
+                // 只有在非notePreview场景下才关闭tooltip
+                // notePreview会在tooltip内展示追问结果，不应关闭
+                if (messageElement.id !== 'notePreview') {
+                    this.hideTooltip();
+                }
             });
             buttonsContainer.appendChild(button);
         });
@@ -430,7 +473,12 @@ export class UIManager {
                 if (handleFollowupCallback) {
                     handleFollowupCallback(selectedText, customCommand, messageElement);
                 }
-                this.hideTooltip();
+                // 清空输入框
+                customInput.value = '';
+                // 只有在非notePreview场景下才关闭tooltip
+                if (messageElement.id !== 'notePreview') {
+                    this.hideTooltip();
+                }
             }
         };
 
@@ -475,22 +523,13 @@ export class UIManager {
 
         document.body.appendChild(tooltip);
 
-        // 自动聚焦到输入框，同时恢复文本选中状态
+        // 自动聚焦到输入框
         setTimeout(() => {
-            // 恢复notePreview的文本选中状态
-            if (range) {
-                const selection = window.getSelection();
-                selection.removeAllRanges();
-                selection.addRange(range);
-            }
-
-            // 聚焦到输入框
             const activeInput = document.querySelector('#activeTooltip .custom-prompt-input');
             if (activeInput) {
                 activeInput.focus();
             }
         }, 50);
-
     }
 
     /**
@@ -501,6 +540,119 @@ export class UIManager {
         if (tooltip) {
             tooltip.remove();
         }
+
+        // 移除body类
+        document.body.classList.remove('tooltip-active');
+
+        // 清除所有高亮
+        if (this.selectionHighlighter) {
+            this.selectionHighlighter.clearHighlights();
+        }
+    }
+
+    /**
+     * 在tooltip中显示追问结果
+     * @param {string} content - 追问内容（支持增量更新）
+     * @param {boolean} isComplete - 是否完成
+     */
+    showTooltipFollowup(content, isComplete = false) {
+        const tooltip = document.getElementById('activeTooltip');
+        if (!tooltip) {
+            console.warn('Tooltip not found, cannot show followup');
+            return;
+        }
+
+        const followupContainer = tooltip.querySelector('.tooltip-followup-container');
+        const followupContent = tooltip.querySelector('.tooltip-followup-content');
+        const closeBtn = tooltip.querySelector('.tooltip-close-btn');
+
+        if (!followupContainer || !followupContent) {
+            console.warn('Followup container not found in tooltip');
+            return;
+        }
+
+        // 首次显示追问结果
+        if (followupContainer.classList.contains('hidden')) {
+            followupContainer.classList.remove('hidden');
+            tooltip.classList.add('expanded', 'showing-followup');
+
+            // 绑定关闭按钮事件
+            if (closeBtn) {
+                closeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.hideTooltip();
+                });
+            }
+
+            // 初始化图标
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+        }
+
+        // 更新内容
+        if (content) {
+            // 使用ChatManager的formatMessage方法格式化内容
+            if (this.app && this.app.chatManager) {
+                followupContent.innerHTML = this.app.chatManager.formatMessage(content);
+                // 添加代码复制按钮
+                this.app.chatManager.addCopyButtons();
+            } else {
+                followupContent.innerHTML = escapeHtml(content).replace(/\n/g, '<br>');
+            }
+
+            // 移除loading类
+            followupContent.classList.remove('loading');
+        }
+
+        // 如果完成，重新初始化图标
+        if (isComplete && window.lucide) {
+            lucide.createIcons();
+        }
+
+        // 自动滚动到底部
+        followupContent.scrollTop = followupContent.scrollHeight;
+    }
+
+    /**
+     * 隐藏tooltip中的追问结果
+     */
+    hideTooltipFollowup() {
+        const tooltip = document.getElementById('activeTooltip');
+        if (!tooltip) return;
+
+        const followupContainer = tooltip.querySelector('.tooltip-followup-container');
+        if (followupContainer) {
+            followupContainer.classList.add('hidden');
+            tooltip.classList.remove('expanded', 'showing-followup');
+        }
+    }
+
+    /**
+     * 显示tooltip追问加载状态
+     */
+    showTooltipFollowupLoading() {
+        const tooltip = document.getElementById('activeTooltip');
+        if (!tooltip) {
+            console.warn('Tooltip not found, cannot show loading state');
+            return;
+        }
+
+        const followupContent = tooltip.querySelector('.tooltip-followup-content');
+        if (!followupContent) {
+            console.warn('Followup content element not found');
+            return;
+        }
+
+        followupContent.classList.add('loading');
+        followupContent.innerHTML = '<div class="flex items-center gap-2"><i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>正在生成回答...</span></div>';
+
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+
+        // 显示追问容器
+        this.showTooltipFollowup('', false);
     }
 
     /**

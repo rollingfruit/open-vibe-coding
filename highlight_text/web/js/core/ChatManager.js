@@ -698,12 +698,15 @@ class ChatManager {
     async handleFollowup(selectedText, command, originalMessage) {
         // 判断上下文来源：textarea、notePreview或普通消息
         let originalContent;
+        let useTooltipMode = false;
+
         if (originalMessage.tagName === 'TEXTAREA') {
             // 来自编辑器
             originalContent = originalMessage.value;
         } else if (originalMessage.id === 'notePreview') {
-            // 来自笔记预览
+            // 来自笔记预览 - 使用tooltip模式
             originalContent = this.app.noteManager.editorInstance ? this.app.noteManager.editorInstance.value : '';
+            useTooltipMode = true;
         } else {
             // 来自聊天消息
             originalContent = originalMessage.querySelector('.message-content').textContent;
@@ -711,12 +714,37 @@ class ChatManager {
 
         const followupPrompt = command.prompt + selectedText + '\n\n原始对话内容:\n' + originalContent;
 
-        // 创建追问模态框
-        const modal = this.createFollowupModal();
-        document.body.appendChild(modal);
+        // 根据场景选择显示方式
+        let contentElement;
 
-        const contentElement = modal.querySelector('.followup-content');
-        contentElement.innerHTML = '<div class="text-gray-400">正在生成回答...</div>';
+        if (useTooltipMode) {
+            // Tooltip模式：在tooltip内显示追问结果
+            // 使用setTimeout确保tooltip已经存在
+            await new Promise(resolve => setTimeout(resolve, 50));
+            this.app.uiManager.showTooltipFollowupLoading();
+            contentElement = {
+                innerHTML: '',
+                // 模拟DOM元素的innerHTML setter
+                set innerHTML(value) {
+                    this._content = value;
+                    // 更新tooltip内容
+                    if (this.app && this.app.uiManager) {
+                        this.app.uiManager.showTooltipFollowup(value, false);
+                    }
+                },
+                get innerHTML() {
+                    return this._content || '';
+                },
+                app: this.app,
+                _content: ''
+            };
+        } else {
+            // Modal模式：弹出模态框（原有逻辑）
+            const modal = this.createFollowupModal();
+            document.body.appendChild(modal);
+            contentElement = modal.querySelector('.followup-content');
+            contentElement.innerHTML = '<div class="text-gray-400">正在生成回答...</div>';
+        }
 
         try {
             const response = await fetch(this.app.settings.endpoint, {
@@ -761,8 +789,14 @@ class ChatManager {
                             const delta = parsed.choices?.[0]?.delta?.content;
                             if (delta) {
                                 fullResponse += delta;
-                                contentElement.innerHTML = this.formatMessage(fullResponse);
-                                this.addCopyButtons();
+                                if (useTooltipMode) {
+                                    // Tooltip模式：使用UIManager方法更新
+                                    this.app.uiManager.showTooltipFollowup(fullResponse, false);
+                                } else {
+                                    // Modal模式：直接更新DOM
+                                    contentElement.innerHTML = this.formatMessage(fullResponse);
+                                    this.addCopyButtons();
+                                }
                             }
                         } catch (e) {
                             // Ignore parsing errors
@@ -771,9 +805,15 @@ class ChatManager {
                 }
             }
 
-            // 保存追问记录到消息数据
+            // 流式传输完成
+            if (useTooltipMode) {
+                // Tooltip模式：标记为完成
+                this.app.uiManager.showTooltipFollowup(fullResponse, true);
+            }
+
+            // 保存追问记录到消息数据（仅在非tooltip模式下）
             const activeSession = this.app.getActiveSession();
-            if (activeSession) {
+            if (activeSession && !useTooltipMode) {
                 // 找到原始消息的索引
                 const messageIndex = parseInt(originalMessage.getAttribute('data-message-index'));
                 if (!isNaN(messageIndex) && activeSession.messages[messageIndex]) {
@@ -803,7 +843,13 @@ class ChatManager {
             this.logInteraction(followupPrompt, fullResponse, 'followup');
 
         } catch (error) {
-            contentElement.innerHTML = `<p class="text-red-400">❌ 请求失败: ${error.message}</p>`;
+            if (useTooltipMode) {
+                // Tooltip模式：显示错误
+                this.app.uiManager.showTooltipFollowup(`<p class="text-red-400">❌ 请求失败: ${error.message}</p>`, true);
+            } else {
+                // Modal模式：直接更新DOM
+                contentElement.innerHTML = `<p class="text-red-400">❌ 请求失败: ${error.message}</p>`;
+            }
         }
     }
 
