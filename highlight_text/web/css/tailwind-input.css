@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 自定义样式 */
+@layer components {
+  .chat-container {
+    height: calc(100vh - 140px);
+  }
+
+  .typewriter {
+    @apply animate-blink-caret;
+  }
+
+  .tooltip {
+    z-index: 1000;
+  }
+
+  .modal {
+    z-index: 1001;
+  }
+
+  .message-bubble {
+    @apply p-4 rounded-lg mb-3 shadow-lg;
+  }
+
+  .ai-message {
+    @apply bg-gray-800 border border-gray-700;
+  }
+
+  .user-message {
+    @apply bg-blue-900 bg-opacity-30 border border-blue-700;
+  }
+
+  .code-block {
+    @apply relative bg-gray-800 rounded-lg mt-2 mb-2;
+  }
+
+  .session-item {
+    @apply p-3 rounded hover:bg-gray-700 transition-colors cursor-pointer;
+  }
+
+  .session-item.active {
+    @apply bg-blue-900 bg-opacity-30 border-l-4 border-blue-500;
+  }
+}

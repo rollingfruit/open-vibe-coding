@@ -12,6 +12,43 @@ class ChatManager {
         this.isStreaming = false;
         this.uploadedImageFile = null;
         this.uploadedImageBase64 = null;
+        this._throttleTimeout = null;
+
+        // 初始化事件委托
+        this.initEventDelegation();
+    }
+
+    /**
+     * 初始化事件委托 - 在父容器上监听所有代码块按钮的点击
+     */
+    initEventDelegation() {
+        const messagesContainer = document.getElementById('messages');
+        if (!messagesContainer) return;
+
+        // 使用事件委托处理所有代码块按钮
+        messagesContainer.addEventListener('click', (e) => {
+            const target = e.target.closest('.copy-code-btn, .render-html-btn, .fullscreen-html-btn');
+            if (!target) return;
+
+            const codeId = target.getAttribute('data-code-id');
+            const code = window.codeStorage ? window.codeStorage.get(codeId) : '';
+
+            if (!code) {
+                this.app.uiManager.showNotification('代码不存在', 'error');
+                return;
+            }
+
+            // 根据按钮类型执行不同操作
+            if (target.classList.contains('copy-code-btn')) {
+                navigator.clipboard.writeText(code).then(() => {
+                    this.app.uiManager.showNotification('代码已复制', 'success');
+                });
+            } else if (target.classList.contains('render-html-btn')) {
+                this.showHtmlPreview(code);
+            } else if (target.classList.contains('fullscreen-html-btn')) {
+                this.showFullscreenHtmlPreview(code);
+            }
+        });
     }
 
     async sendMessage() {
@@ -241,8 +278,8 @@ class ChatManager {
                             const delta = parsed.choices?.[0]?.delta?.content;
                             if (delta) {
                                 fullResponse += delta;
-                                // 直接调用完整的更新函数，不再需要 shouldRerenderContent 和 simpleUpdateContent
-                                this.updateMessageContent(contentElement, fullResponse);
+                                // 流式更新(未完成)
+                                this.updateMessageContent(contentElement, fullResponse, false);
                                 this.app.uiManager.scrollToBottom();
                             }
                         } catch (e) {
@@ -254,6 +291,9 @@ class ChatManager {
             }
 
             console.log('Full response received, length:', fullResponse.length);
+
+            // 流式完成，执行最终渲染
+            this.updateMessageContent(contentElement, fullResponse, true);
 
             // 将AI响应添加到当前活动会话
             if (activeSession) {
@@ -312,23 +352,43 @@ class ChatManager {
         );
     }
 
-    updateMessageContent(element, content) {
+    updateMessageContent(element, content, isStreamComplete = false) {
+        // 性能优化：使用节流，避免过于频繁的DOM更新
+        if (!isStreamComplete && this._throttleTimeout) {
+            return;
+        }
+
         // 处理Unicode转义字符
         content = unescapeUnicodeChars(content);
-        element.innerHTML = this.formatMessage(content);
-        this.addCopyButtons();
 
-        // Reinitialize Lucide icons for new content
-        if (typeof lucide !== 'undefined') {
-            lucide.createIcons();
+        // 如果是流式更新且内容较短，使用节流
+        if (!isStreamComplete && content.length < 5000) {
+            this._throttleTimeout = setTimeout(() => {
+                this._throttleTimeout = null;
+            }, 16); // 60fps
         }
 
-        // 重新应用代码高亮
-        if (typeof hljs !== 'undefined') {
-            element.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-            });
-        }
+        // 使用requestAnimationFrame优化DOM更新时机
+        requestAnimationFrame(() => {
+            element.innerHTML = this.formatMessage(content);
+
+            // 只在流式完成后才执行昂贵的操作
+            if (isStreamComplete) {
+                this.addCopyButtons();
+
+                // Reinitialize Lucide icons for new content
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
+
+                // 重新应用代码高亮
+                if (typeof hljs !== 'undefined') {
+                    element.querySelectorAll('pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                    });
+                }
+            }
+        });
     }
 
     formatMessage(content) {
@@ -493,7 +553,6 @@ class ChatManager {
 
 
     addCopyButtons() {
-
         // Reinitialize Lucide icons for code block buttons
         if (typeof lucide !== 'undefined') {
             lucide.createIcons();
@@ -506,62 +565,7 @@ class ChatManager {
             });
         }
 
-        // 复制按钮事件
-        const copyButtons = document.querySelectorAll('.copy-code-btn');
-
-        copyButtons.forEach(btn => {
-            btn.replaceWith(btn.cloneNode(true));
-        });
-
-        const copyButtonsAfterClone = document.querySelectorAll('.copy-code-btn');
-
-        copyButtonsAfterClone.forEach((btn, index) => {
-            btn.addEventListener('click', () => {
-                const codeId = btn.getAttribute('data-code-id');
-                const code = window.codeStorage ? window.codeStorage.get(codeId) : '';
-                if (code) {
-                    navigator.clipboard.writeText(code).then(() => {
-                        this.app.uiManager.showNotification('代码已复制', 'success');
-                    });
-                } else {
-                    this.app.uiManager.showNotification('代码不存在', 'error');
-                }
-            });
-        });
-
-        // HTML渲染按钮事件
-        document.querySelectorAll('.render-html-btn').forEach(btn => {
-            btn.replaceWith(btn.cloneNode(true));
-        });
-
-        document.querySelectorAll('.render-html-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const codeId = btn.getAttribute('data-code-id');
-                const htmlCode = window.codeStorage ? window.codeStorage.get(codeId) : '';
-                if (htmlCode) {
-                    this.showHtmlPreview(htmlCode);
-                } else {
-                    this.app.uiManager.showNotification('HTML代码不存在', 'error');
-                }
-            });
-        });
-
-        // HTML全屏预览按钮事件
-        document.querySelectorAll('.fullscreen-html-btn').forEach(btn => {
-            btn.replaceWith(btn.cloneNode(true));
-        });
-
-        document.querySelectorAll('.fullscreen-html-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const codeId = btn.getAttribute('data-code-id');
-                const htmlCode = window.codeStorage ? window.codeStorage.get(codeId) : '';
-                if (htmlCode) {
-                    this.showFullscreenHtmlPreview(htmlCode);
-                } else {
-                    this.app.uiManager.showNotification('HTML代码不存在', 'error');
-                }
-            });
-        });
+        // 注意：按钮事件已通过事件委托处理，不需要重复绑定
     }
 
     showHtmlPreview(htmlCode) {

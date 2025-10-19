@@ -7,8 +7,8 @@
     <!-- Fonts -->
     <link rel="stylesheet" href="css/fonts.css">
 
-    <!-- Tailwind CSS -->
-    <script src="js/lib/tailwindcss.js"></script>
+    <!-- Tailwind CSS (预编译版本) -->
+    <link rel="stylesheet" href="css/tailwind-output.css">
 
     <!-- Animate.css -->
     <link rel="stylesheet" href="css/animate.min.css"/>
@@ -39,24 +39,6 @@
     <link rel="stylesheet" href="agent/notes/knowledge-base.css">
     <link rel="stylesheet" href="js/diff/inline/inline-diff.css">
     <link rel="stylesheet" href="js/services/multi-file-diff.css">
-    <style>
-        .chat-container {
-            height: calc(100vh - 140px);
-        }
-        .typewriter {
-            animation: blink-caret 0.75s step-end infinite;
-        }
-        @keyframes blink-caret {
-            from, to { border-color: transparent }
-            50% { border-color: orange; }
-        }
-        .tooltip {
-            z-index: 1000;
-        }
-        .modal {
-            z-index: 1001;
-        }
-    </style>
 </head>
 <body class="bg-gray-900 text-white view-mode-chat">
     <!-- 主容器 -->
@@ -548,7 +530,7 @@
                                         <option value="Qwen/QwQ-32B">Qwen/QwQ-32B</option>
                                         <option value="Qwen/Qwen3-Coder-30B-A3B-Instruct">Qwen/Qwen3-Coder-30B-A3B-Instruct</option>
                                         <option value="Qwen/Qwen3-Next-80B-A3B-Instruct">Qwen/Qwen3-Next-80B-A3B-Instruct</option>
-                                        <option value="gpt-4.1">GPT-4.1</option>
+                                        <option value="gpt-5-nano">gpt-5-nano</option>
                                     </select>
                                 </div>
                             </div>
