@@ -1,8 +1,10 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -20,6 +22,9 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+//go:embed all:dist
+var embeddedFiles embed.FS
 
 type InteractionLog struct {
 	Timestamp string `json:"timestamp"`
@@ -130,9 +135,13 @@ func main() {
 		http.ServeFile(w, r, fullPath)
 	})
 
-	// 设置静态文件服务器，指向web目录（必须放在最后）
-	fs := http.FileServer(http.Dir("./web"))
-	http.Handle("/", fs)
+	// 设置静态文件服务器，指向嵌入的dist目录（必须放在最后）
+	distFS, err := fs.Sub(embeddedFiles, "dist")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fileServer := http.FileServer(http.FS(distFS))
+	http.Handle("/", fileServer)
 
 	// 确保uploads目录存在
 	if err := os.MkdirAll("./uploads", 0755); err != nil {

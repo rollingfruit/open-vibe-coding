@@ -3,7 +3,7 @@ import { resolve } from 'path';
 
 export default defineConfig({
   root: 'web',
-  publicDir: '../uploads',
+  publicDir: false,  // 不复制任何public目录，uploads和KnowledgeBase在运行时动态创建
 
   build: {
     outDir: '../dist',
@@ -12,51 +12,14 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'web/index.html'),
         performanceTest: resolve(__dirname, 'web/test/performance-tests.html')
-      },
-      output: {
-        manualChunks: {
-          // 第三方库分离
-          'vendor-highlight': ['highlight.js'],
-          'vendor-marked': ['marked'],
-          // UI组件
-          'ui': [
-            './web/js/ui/SelectionHighlighter.js',
-            './web/js/ui/PdfSelectionEnhancer.js'
-          ],
-          // 核心功能
-          'core': [
-            './web/js/core/ChatManager.js',
-            './web/js/core/UIManager.js',
-            './web/js/core/SessionManager.js',
-            './web/js/core/SettingsManager.js'
-          ],
-          // 笔记功能
-          'notes': [
-            './web/js/notes/NoteManager.js',
-            './web/js/notes/NotePreview.js'
-          ],
-          // 工作空间功能（懒加载）
-          'workspace': [
-            './web/views/workspace/WorkspaceView.js',
-            './web/views/workspace/CalendarView.js',
-            './web/views/workspace/GanttView.js',
-            './web/views/workspace/AnalyticsView.js'
-          ]
-        }
       }
     },
     // 优化chunk大小
-    chunkSizeWarningLimit: 500,
+    chunkSizeWarningLimit: 1000,
     // 启用CSS代码分割
     cssCodeSplit: true,
     // 压缩选项
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true
-      }
-    }
+    minify: 'esbuild'
   },
 
   server: {
@@ -76,9 +39,7 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    include: [
-      'diff-match-patch'
-    ]
+    exclude: []
   },
 
   css: {
